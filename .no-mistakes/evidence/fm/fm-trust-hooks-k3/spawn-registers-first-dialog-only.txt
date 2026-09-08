@@ -1,0 +1,26 @@
+A real bin/fm-spawn.sh claude spawn into a fresh linked worktree (fake claude binary,
+isolated HOME and CLAUDE_CONFIG_DIR). This is the launch path the record describes.
+
+spawn exit: 0
+warning: <tmp>/spawn/home/data/evid/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned evid harness=claude kind=ship mode=no-mistakes yolo=off window=firstmate:fm-evid worktree=<tmp>/spawn/wt
+
+--- 1. what the spawn pre-registered in the worker's .claude.json ---
+{
+  "hasTrustDialogAccepted": true
+}
+
+--- 2. every hasTrustDialog* key in that store ---
+"hasTrustDialogAccepted"
+
+--- 3. the .claude/settings.local.json the spawn injected into the worktree ---
+hook events: UserPromptSubmit, Stop, StopFailure, SessionEnd
+permissions key present: false
+
+--- 4. this repository's OWN tracked .claude/settings.json (the record's standing arm) ---
+hook events: SessionStart, PreToolUse, Stop
+permissions key present: false
+
+=> The spawn registers hasTrustDialogAccepted and nothing else, exactly as the record states.
+=> Firstmate's own repo is hooks-with-no-permissions, the shape the record names as the
+   standing arm that never met the second prompt.

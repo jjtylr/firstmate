@@ -1,0 +1,33 @@
+Reference pointers in .agents/skills/harness-adapters/references/harness/claude.md resolve
+against the SKILL root - the convention every other pointer in the file uses,
+and the same anchor tests/fm-harness-adapter-references.test.sh enforces for
+the routing targets in SKILL.md.
+
+line   resolves  pointer
+----   --------  -------
+21     OK        ../../../bin/fm-claude-trust.sh
+21     OK        ../../../bin/fm-spawn.sh
+28     OK        ../../../docs/verification/runtime-backends.md
+48     OK        ../../../bin/fm-composer-lib.sh
+49     OK        ../../../docs/herdr-backend.md
+49     OK        ../../../docs/verification/runtime-backends.md
+55     OK        ../../../bin/fm-spawn.sh
+62     OK        ../../../bin/fm-turnend-guard.sh
+62     OK        ../../../bin/fm-claude-stop-autoarm.sh
+68     OK        ../../../docs/turnend-guard.md
+70     OK        ../../../bin/fm-watch-arm.sh
+72     OK        ../../../docs/arm-pretool-check.md
+77     OK        ../../../bin/fm-subagent-pretool-check.sh
+80     OK        ../../../docs/subagent-guard.md
+
+Pointers this change adds or touches:
+  21:`../../../bin/fm-claude-trust.sh` records `hasTrustDialogAccepted` for that worktree path in `${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json`, and `../../../bin/fm-spawn.sh` refuses the spawn when the write fails rather than launching a worker that would wedge.
+  28:`../../../docs/verification/runtime-backends.md` under "Claude workspace trust" owns that observation, what it rules out, and why refreshing it needs a live spawn.
+  49:`../../../docs/herdr-backend.md` under "Composer and injection safety" owns dark-TRUECOLOR tradeoffs and `../../../docs/verification/runtime-backends.md` owns captures.
+  55:The controls are scoped to the launched process and never modify the captain's global Claude settings; `launch_template()` in `../../../bin/fm-spawn.sh` owns their exact mechanics and defense-in-depth rationale.
+
+The section the new record pointer names exists in the target file:
+  docs/verification/runtime-backends.md:233:## Claude workspace trust
+
+Existing test over the routing artifact, still green:
+  ok - harness adapter routing artifact is normalized and every target is readable

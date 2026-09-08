@@ -1,0 +1,34 @@
+The record publishes a reproduction command for its central measurement.
+Running it verbatim against the live store, read-only, on 2026-09-08.
+
+--- the command as it appears in docs/verification/runtime-backends.md ---
+node -e 'const p=JSON.parse(require("node:fs").readFileSync(process.env.HOME+"/.claude.json","utf8")).projects;
+const c={};for(const v of Object.values(p))if("hasTrustDialogHooksAccepted" in v)c[v.hasTrustDialogHooksAccepted]=(c[v.hasTrustDialogHooksAccepted]||0)+1;
+console.log(c);'
+grep -c 'hasTrustDialogHooksAccepted"[[:space:]]*:[[:space:]]*true' ~/.claude.json
+
+--- actual output ---
+{ false: 7 }
+0
+
+--- the record's documented output ---
+{ false: 7 }
+0
+
+--- every other figure the record states, measured (aggregates only; no paths reproduced) ---
+measurement                       measured              record states
+----------                        --------              -------------
+project entries                   71                    71
+hasTrustDialogAccepted true       37                    37
+entries carrying the hooks key    7                     7
+  ...of those, non-treehouse      7                     all 7
+treehouse slots                   8                     8
+keys per treehouse slot           1                     exactly one each
+  the key each slot holds         hasTrustDialogAccepted    hasTrustDialogAccepted
+treehouse slots with hooks key    0                     none acquired it
+non-treehouse entries             63                    63
+keys per non-treehouse entry      9 to 38               9 to 38
+slots with session transcripts    8/8                   all 8 ran sessions
+
+=> Every figure in the record reproduces exactly, and its published command
+   produces the documented output verbatim.

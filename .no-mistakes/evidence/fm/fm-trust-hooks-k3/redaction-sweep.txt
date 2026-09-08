@@ -1,0 +1,33 @@
+Redaction check for publication to the public repo (kunchenguid/firstmate).
+Scope: every commit on fm/fm-trust-hooks-k3 above base b84e0e362face25f3dd8945297a3df1320d7668c, so the unredacted
+text must be absent from branch HISTORY, not just from the tip.
+
+Commits scanned: 16
+Lines added by the branch: 94 across 3 files
+
+--- 1. Every line this branch ADDS, swept for operator infrastructure ---
+patterns: /Users/<name> home path | *.ts.net tailnet host | root@<host> | bare IPv4 |
+          gh[pousr]_/sk-/AKIA token shapes | known private project names (case-insensitive)
+RESULT: 0 matches. No added line carries a home path, tailnet host, root@host, IP, or token.
+private project names in added lines: 0
+
+--- 2. Every historical revision of the three touched files ---
+(the unredacted first draft must not survive anywhere in branch history)
+RESULT: 0 revisions carry a tailnet host, root@host, IP, or private project name.
+
+--- 3. Pre-existing, NOT introduced by this branch ---
+docs/verification/runtime-backends.md already carried the upstream maintainer's own
+home path in unrelated sections at the base commit; unchanged by this branch:
+  occurrences at base: 5
+  occurrences added or removed by this branch: 0
+
+--- 4. What ships in place of the redacted material ---
+317:Bash(ssh root@<internal-host>:*) and Bash(ssh -o BatchMode=yes ...)
+311:The three projects below are the operator's own and are labelled by their settings shape rather than named; the operator's records hold the mapping.
+
+| project | tracked `.claude/settings.json` | second prompt |
+| --- | --- | --- |
+| A | `PreToolUse` hooks AND 2 `permissions.allow` entries, both remote-root shell wildcards | YES |
+| B | 8 `permissions.allow` entries, all narrow local-CLI subcommand patterns, no hooks | no |
+| C | one `SessionStart` hook, no `permissions.allow` | no |
+

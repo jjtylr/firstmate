@@ -1,0 +1,18 @@
+Pre-registration a claude spawn performs, run against an isolated store.
+Folder shape: tracked .claude/settings.json with PreToolUse hooks + 2 permissions.allow entries
+(the shape docs/verification/runtime-backends.md records as still hitting the second prompt).
+
+$ bin/fm-claude-trust.sh <worktree> <project>
+trusted: <sandbox>/wt
+
+$ the worktree entry the launched Claude worker reads back from .claude.json:
+{
+  "hasTrustDialogAccepted": true
+}
+
+$ every hasTrustDialog* key anywhere in the resulting store:
+"hasTrustDialogAccepted"
+
+=> hasTrustDialogAccepted: true is registered. hasTrustDialogHooksAccepted is never written.
+=> This is the record's central claim, observed: the registration covers the first dialog only,
+   and a worker in a hooks+allow folder still meets the uncovered second prompt.
