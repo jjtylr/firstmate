@@ -1,5 +1,7 @@
 ---
 name: writing-for-agents
+metadata:
+  internal: true
 description: Writing documents for agents. Use when creating or editing skills, or modifying AGENTS.md or CLAUDE.md.
 disable-model-invocation: true
 ---

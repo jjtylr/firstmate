@@ -1,5 +1,7 @@
 ---
 name: wait-what
+metadata:
+  internal: true
 description: Stop. That last message did not land — re-pitch it.
 disable-model-invocation: true
 ---

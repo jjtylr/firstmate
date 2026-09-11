@@ -1,5 +1,7 @@
 ---
 name: atlas
+metadata:
+  internal: true
 description: Maintain this repo's Atlas, the standing project map under docs/atlas/. Charts one from the PM's domain and the repo's own code where none exists; where one does, orients from the index and the gap queue, works the queue, advises, and carves the next spec-sized bite.
 disable-model-invocation: true
 argument-hint: "fleet, to enter the fleet sitting in the repo that holds docs/fleet-atlas/"

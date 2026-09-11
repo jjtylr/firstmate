@@ -1,5 +1,7 @@
 ---
 name: to-tickets
+metadata:
+  internal: true
 description: Break a plan, spec, or the current conversation into a set of tracer-bullet tickets, each declaring its blocking edges, published to the repo's issue tracker with native blocking links drawn between them.
 disable-model-invocation: true
 ---

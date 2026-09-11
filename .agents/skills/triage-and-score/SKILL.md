@@ -1,5 +1,7 @@
 ---
 name: triage-and-score
+metadata:
+  internal: true
 description: Triage and score the backlog — one fresh subagent per issue verifies the claim and scores value / agent-effort / PM-cost against the repo's anchors, then a calibration pass re-ranks the batch. Labels and comments only; never writes code.
 disable-model-invocation: true
 ---

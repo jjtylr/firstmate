@@ -434,7 +434,7 @@ else
   PLUGIN_ROOT="$(cd "$here/../../.." 2>/dev/null && pwd)" || PLUGIN_ROOT=""
   [ -n "$PLUGIN_ROOT" ] && [ -f "$PLUGIN_ROOT/.claude-plugin/plugin.json" ] || PLUGIN_ROOT=""
 fi
-[ -n "$PLUGIN_ROOT" ] || say "RUNNER-NO-PLUGIN-ROOT: no plugin root three directories above $here carries .claude-plugin/plugin.json, so no --add-dir is passed and Bash reads of the plugin tree will be denied. The Read tool still reaches it. Set RUNNER_PLUGIN_DIR to name the snapshot"
+[ -n "$PLUGIN_ROOT" ] || say "RUNNER-NO-PLUGIN-ROOT: no plugin root three directories above this runner carries .claude-plugin/plugin.json, so no --add-dir is passed and Bash reads of the plugin tree will be denied. The Read tool still reaches it. Set RUNNER_PLUGIN_DIR to name the snapshot"
 
 # --- the lock -----------------------------------------------------------------
 LOCK="$(lock_path)" || refuse "this repo's git directory could not be resolved, so the run lock has no home"
@@ -448,12 +448,12 @@ else
   elif pid_alive "$holder"; then
     refuse "the run lock $LOCK is held by live pid $holder (since $(lock_started)) — a headless run is already draining this repo"
   fi
-  say "RUNNER-LOCK-STALE: $LOCK recorded pid $holder, which is gone — claiming it"
+  say "RUNNER-LOCK-STALE: the run lock recorded pid $holder, which is gone — claiming it"
   rm -f "$LOCK"
   lock_claim || refuse "the run lock $LOCK was taken by another runner while this one cleared the stale claim"
   LOCK_HELD=1
 fi
-say "RUNNER-LOCK: pid $$ holds $LOCK for this run"
+say "RUNNER-LOCK: pid $$ holds the run lock for this run"
 
 # --- the gate, before anything is opened --------------------------------------
 GATE_ERR=""

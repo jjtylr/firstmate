@@ -1,5 +1,7 @@
 ---
 name: drain-ready-queue
+metadata:
+  internal: true
 description: Drain the ready-for-agent backlog — one fresh subagent per ticket implements and opens a PR, a verifier and CI witness it, and the repo's merge_policy decides who merges. Never deploys.
 disable-model-invocation: true
 ---

@@ -1,5 +1,7 @@
 ---
 name: unslop
+metadata:
+  internal: true
 description: Edits prose to remove AI writing tells and restore a human voice. Must always apply.
 ---
 

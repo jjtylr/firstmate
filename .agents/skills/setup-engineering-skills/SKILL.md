@@ -1,5 +1,7 @@
 ---
 name: setup-engineering-skills
+metadata:
+  internal: true
 description: Configure this repo for the engineering skills — record its issue tracker, install the plugin's label vocabulary, and set up its domain doc and agentic-loop config. Run once before first use of the other engineering skills; rerun any time to reconcile the generated files against the current plugin.
 disable-model-invocation: true
 ---

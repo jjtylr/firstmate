@@ -122,7 +122,7 @@ test_local_links_and_no_keyword_heuristic() {
 ```
 
 Observed version 1.2.3 on branch `fm/example`.
-The [runtime role](${TOOL_ROOT}/role.md) resolves only after the tool exports its root.
+The [runtime role](${CLAUDE_PLUGIN_ROOT}/role.md) resolves only after the tool exports its root.
 
 ```markdown
 [Illustrative link](missing-example.md)
@@ -136,6 +136,14 @@ MD
   git -C "$repo" add README.md docs
   "$CHECK" --root "$repo" >/dev/null \
     || fail "structural checker rejected legitimate maintainer evidence prose"
+
+  sed 's/CLAUDE_PLUGIN_ROOT/TOOL_ROOT/' "$repo/docs/evidence.md" > "$repo/docs/evidence.tmp"
+  mv "$repo/docs/evidence.tmp" "$repo/docs/evidence.md"
+  git -C "$repo" add docs/evidence.md
+  run_expect_failure "unresolved local link" "$CHECK" --root "$repo"
+  sed 's/TOOL_ROOT/CLAUDE_PLUGIN_ROOT/' "$repo/docs/evidence.md" > "$repo/docs/evidence.tmp"
+  mv "$repo/docs/evidence.tmp" "$repo/docs/evidence.md"
+  git -C "$repo" add docs/evidence.md
 
   printf '%s\n' '[Setup](docs/setup.md) [Policy](docs/policy.md) [Broken](docs/missing.bin)' \
     > "$repo/README.md"

@@ -1,5 +1,7 @@
 ---
 name: resolving-merge-conflicts
+metadata:
+  internal: true
 description: "Use when you need to resolve an in-progress git merge/rebase conflict."
 ---
 

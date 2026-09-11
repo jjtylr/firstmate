@@ -1,5 +1,7 @@
 ---
 name: implement
+metadata:
+  internal: true
 description: Implement work that is already written down. Takes a spec or a set of tickets, edits the code, runs the tests, reviews the result, and records the change on the atlas. Use when the user asks to implement or build an existing spec, ticket, or set of tickets. Writing the spec is to-spec; draining the whole backlog with subagents is drain-ready-queue.
 ---
 

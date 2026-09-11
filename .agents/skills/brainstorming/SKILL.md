@@ -1,5 +1,7 @@
 ---
 name: brainstorming
+metadata:
+  internal: true
 description: Establish the ground before a grilling — what you know, what I verified, and what nobody knows — and write it up as a brief.
 disable-model-invocation: true
 argument-hint: "the idea you can't state yet"
