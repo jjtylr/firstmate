@@ -1526,7 +1526,12 @@ families_for_changed_path() {
       printf '%s\n' pure-contract-unit
       printf '%s\n' live-harness-optin
       ;;
-    .agents/skills/*/SKILL.md)
+    .agents/skills/*)
+      # A skill's referenced prose, scripts, role definitions, and metadata are
+      # part of the same runtime surface as its SKILL.md entry point.
+      printf '%s\n' pure-contract-unit
+      ;;
+    .codex/*|skills-lock.json)
       printf '%s\n' pure-contract-unit
       ;;
     .github/workflows/ci.yml|.no-mistakes.yaml)

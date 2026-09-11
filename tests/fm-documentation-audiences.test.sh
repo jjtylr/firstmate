@@ -122,6 +122,15 @@ test_local_links_and_no_keyword_heuristic() {
 ```
 
 Observed version 1.2.3 on branch `fm/example`.
+The [runtime role](${TOOL_ROOT}/role.md) resolves only after the tool exports its root.
+
+```markdown
+[Illustrative link](missing-example.md)
+```
+
+~~~html
+<a href="missing-rendered-example.html">Illustrative HTML link</a>
+~~~
 MD
   write_fixture_inventory "$repo"
   git -C "$repo" add README.md docs

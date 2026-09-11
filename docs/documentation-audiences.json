@@ -117,7 +117,35 @@
       "audience": "agent-runtime"
     },
     {
+      "path": ".agents/skills/ask-matt/PHASE-BOUNDARIES.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/ask-matt/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": ".agents/skills/ask-user-authority/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/atlas/FLEET.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/atlas/SCHEMA.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/atlas/SITTING.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/atlas/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/atlas/TOUCH.md",
       "audience": "agent-runtime"
     },
     {
@@ -129,7 +157,31 @@
       "audience": "agent-runtime"
     },
     {
+      "path": ".agents/skills/brainstorming/EVIDENCE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/brainstorming/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": ".agents/skills/captain-hold-lifecycle/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/code-review/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/codebase-design/DEEPENING.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/codebase-design/DESIGN-IT-TWICE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/codebase-design/SKILL.md",
       "audience": "agent-runtime"
     },
     {
@@ -137,7 +189,83 @@
       "audience": "agent-runtime"
     },
     {
+      "path": ".agents/skills/diagnosing-bugs/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": ".agents/skills/diagnostic-reasoning/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/domain-modeling/ADR-FORMAT.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/domain-modeling/CONTEXT-FORMAT.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/domain-modeling/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/drain-ready-queue/CLAIM.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/drain-ready-queue/CODEX-OPERATIVE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/drain-ready-queue/DISPATCH-BRIEF.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/drain-ready-queue/HEADLESS.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/drain-ready-queue/LEDGER-REFERENCE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/drain-ready-queue/MERGE-PIPELINE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/drain-ready-queue/MERGE-POLICY.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/drain-ready-queue/ORCHESTRATION.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/drain-ready-queue/RATIONALE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/drain-ready-queue/SCHEDULER.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/drain-ready-queue/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/drain-ready-queue/STAGE-CONTRACT.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/drain-ready-queue/VERDICT.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/drain-ready-queue/agent-roles/operative.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/drain-ready-queue/agent-roles/verifier.md",
       "audience": "agent-runtime"
     },
     {
@@ -154,6 +282,22 @@
     },
     {
       "path": ".agents/skills/fmx-respond/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/grill-me/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/grill-with-docs/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/grilling/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/handoff/SKILL.md",
       "audience": "agent-runtime"
     },
     {
@@ -221,6 +365,18 @@
       "audience": "agent-runtime"
     },
     {
+      "path": ".agents/skills/implement/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/improve-codebase-architecture/HTML-REPORT.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/improve-codebase-architecture/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": ".agents/skills/process-event-sources/SKILL.md",
       "audience": "agent-runtime"
     },
@@ -229,11 +385,63 @@
       "audience": "agent-runtime"
     },
     {
+      "path": ".agents/skills/prototype/LOGIC.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/prototype/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/prototype/UI.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": ".agents/skills/quota-array-dispatch/SKILL.md",
       "audience": "agent-runtime"
     },
     {
+      "path": ".agents/skills/research/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/resolving-merge-conflicts/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": ".agents/skills/secondmate-provisioning/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/setup-engineering-skills/DOMAIN-TEMPLATE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/setup-engineering-skills/ISSUE-TRACKER-GITHUB-TEMPLATE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/setup-engineering-skills/LABELS-TEMPLATE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/setup-engineering-skills/LABELS.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/setup-engineering-skills/LOOP-DEFAULTS.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/setup-engineering-skills/LOOP-TEMPLATE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/setup-engineering-skills/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/setup-engineering-skills/codex/skill-manifest.txt",
       "audience": "agent-runtime"
     },
     {
@@ -245,7 +453,111 @@
       "audience": "agent-runtime"
     },
     {
+      "path": ".agents/skills/tdd/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/tdd/mocking.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/tdd/tests.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/teach/GLOSSARY-FORMAT.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/teach/LEARNING-RECORD-FORMAT.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/teach/MISSION-FORMAT.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/teach/RESOURCES-FORMAT.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/teach/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/to-questionnaire/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/to-spec/SIZING.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/to-spec/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/to-tickets/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/triage-and-score/SCORING.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/triage-and-score/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/triage-and-score/agent-roles/score-calibrator.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/triage-and-score/agent-roles/scorer.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/triage/CHECKS.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/triage/OUT-OF-SCOPE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/triage/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/triage/TICKET-BRIEF.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/unslop/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": ".agents/skills/updatefirstmate/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/wait-what/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/wayfinder/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/wizard/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/writing-for-agents/SKILL-MECHANICS.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/writing-for-agents/SKILL.md",
       "audience": "agent-runtime"
     },
     {
@@ -297,6 +609,10 @@
       "audience": "operator-current"
     },
     {
+      "path": "docs/captain-hold-lifecycle.md",
+      "audience": "maintainer-architecture"
+    },
+    {
       "path": "docs/cd-guard.md",
       "audience": "maintainer-architecture"
     },
@@ -313,15 +629,7 @@
       "audience": "operator-current"
     },
     {
-      "path": "docs/captain-hold-lifecycle.md",
-      "audience": "maintainer-architecture"
-    },
-    {
       "path": "docs/documentation-audiences.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "docs/extension-bindings.md",
       "audience": "maintainer-architecture"
     },
     {
@@ -343,6 +651,10 @@
     {
       "path": "docs/examples/wedge-alarm",
       "audience": "operator-example"
+    },
+    {
+      "path": "docs/extension-bindings.md",
+      "audience": "maintainer-architecture"
     },
     {
       "path": "docs/fm-test-isolation-proof.md",
@@ -373,12 +685,12 @@
       "audience": "operator-current"
     },
     {
-      "path": "docs/secondmate-parent-channel.md",
-      "audience": "maintainer-architecture"
-    },
-    {
       "path": "docs/scripts.md",
       "audience": "operator-current"
+    },
+    {
+      "path": "docs/secondmate-parent-channel.md",
+      "audience": "maintainer-architecture"
     },
     {
       "path": "docs/sessionstart-nudge.md",
