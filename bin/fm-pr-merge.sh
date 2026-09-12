@@ -74,6 +74,10 @@
 # The lock ends when the local forge command returns; docs/captain-hold-lifecycle.md owns
 # the accepted asynchronous-landing and merge-to-cleanup residuals.
 #
+# An optional --expected-head <commit> binds an upstream verification result to
+# this merge. The live head must equal that full commit id before the forge call,
+# while the forge pin still closes the race after the live read.
+#
 # Extra args must not include --repo or -R in any form, including a bundled
 # short-option cluster such as -yR, because the repository comes only from the
 # URL, nor --sha or --match-head-commit because the head comes only from the
@@ -86,7 +90,7 @@
 # explicit captain instruction and never skips the live green check, the
 # away-grant check, or a captain hold.
 #
-# Usage: fm-pr-merge.sh <task-id> <pr-url> [--attended-override] [--allow-red <check-name>] [-- <extra forge merge args>]
+# Usage: fm-pr-merge.sh <task-id> <pr-url> [--expected-head <commit>] [--attended-override] [--allow-red <check-name>] [-- <extra forge merge args>]
 #
 # On GitLab, this script confirms the MR is actually merged before reporting it;
 # an auto-merge-queued or unconfirmed request leaves the poll armed and records
@@ -131,8 +135,29 @@ PROJECT_URL="https://$FM_PR_HOST/$FM_PR_PATH"
 shift 2
 ATTENDED_OVERRIDE=false
 ALLOW_RED=()
+EXPECTED_HEAD=
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    --expected-head)
+      [ -n "${2:-}" ] || { echo "error: --expected-head requires a full commit id" >&2; exit 2; }
+      [ -z "$EXPECTED_HEAD" ] || { echo "error: --expected-head may be specified only once" >&2; exit 2; }
+      EXPECTED_HEAD=$2
+      if [ "${#EXPECTED_HEAD}" -ne 40 ]; then
+        echo "error: --expected-head requires a full 40-character lowercase commit id" >&2
+        exit 2
+      fi
+      case "$EXPECTED_HEAD" in
+        *[!0-9a-f]*)
+          echo "error: --expected-head requires a full 40-character lowercase commit id" >&2
+          exit 2
+          ;;
+      esac
+      shift 2
+      ;;
+    --expected-head=*)
+      echo "error: --expected-head requires a separate commit id argument" >&2
+      exit 2
+      ;;
     --attended-override)
       ATTENDED_OVERRIDE=true
       shift
@@ -812,6 +837,14 @@ require_recorded_pr_identity() {
   return 1
 }
 
+require_expected_head() {
+  [ -z "$EXPECTED_HEAD" ] || [ "$FM_PR_MERGE_HEAD" = "$EXPECTED_HEAD" ] || {
+    printf 'error: refusing to merge %s: live head %s does not match expected head %s\n' \
+      "$URL" "$FM_PR_MERGE_HEAD" "$EXPECTED_HEAD" >&2
+    return 1
+  }
+}
+
 FM_PR_GITHUB_AUTO_REQUESTED=false
 FM_PR_GITHUB_MERGE_ACCEPTED=false
 FM_PR_GITHUB_CALLER_METHOD=
@@ -955,6 +988,7 @@ case "$PROVIDER" in
     fi
     FM_PR_GITHUB_CALLER_METHOD=$(caller_merge_method "$@")
     github_verify_mergeable || exit 1
+    require_expected_head || exit 1
     # This last presence and authority read narrows the publication race to the
     # forge handoff; without a shared lock, a residual sub-second race remains.
     away_status=0
@@ -999,6 +1033,7 @@ case "$PROVIDER" in
     ;;
   gitlab)
     gitlab_verify_mergeable || exit 1
+    require_expected_head || exit 1
     # --sha binds the merge to the head this run verified, so a push that lands
     # in between is refused by GitLab instead of merged unverified. --yes only
     # skips the interactive confirmation, which no supervised run can answer;

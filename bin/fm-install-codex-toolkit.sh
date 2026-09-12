@@ -92,11 +92,10 @@ const runnerAdaptations = [
   ]
 ];
 for (const [upstream, adapted] of runnerAdaptations) {
-  if (runner.includes(upstream)) runner = runner.replace(upstream, adapted);
-  else if (!runner.includes(adapted)) throw new Error(`runner adaptation source is missing: ${upstream}`);
+  if (!runner.includes(upstream)) throw new Error(`runner adaptation source is missing: ${upstream}`);
+  runner = runner.replace(upstream, adapted);
 }
-if (!runner.includes('sanitize_log_line()')) {
-  const oldSay = `# Findings go to stderr as they happen *and* into the run log, which is the
+const oldSay = `# Findings go to stderr as they happen *and* into the run log, which is the
 # comment the run issue ends with. A headless run reports to nobody watching, so
 # a line that only ever reached a terminal did not survive the run.
 say() {
@@ -105,14 +104,14 @@ say() {
   return 0
 }
 `;
-  const newSay = `# Findings go to stderr as they happen *and* into the run log, which is the
+const newSay = `# Findings go to stderr as they happen *and* into the run log, which is the
 # comment the run issue ends with. A headless run reports to nobody watching, so
 # a line that only ever reached a terminal did not survive the run.
 # Public comments must not disclose the host that ran the loop. Keep the
 # terminal diagnostic useful while replacing absolute paths in the persisted log.
 sanitize_log_line() {
   printf '%s\\n' "$1" | sed -E \\
-    's#(^|[[:space:]=])/(Users|home|private|tmp|var|Volumes|opt)(/[A-Za-z0-9._~:@%+,-]+)*#\\1<host-path>#g'
+    's#(^|[^[:alnum:]:/])(/[-A-Za-z0-9._~@%+,=:]+)+#\\1<host-path>#g'
 }
 say() {
   local public
@@ -124,16 +123,13 @@ say() {
   return 0
 }
 `;
-  if (!runner.includes(oldSay)) throw new Error('runner say block is missing');
-  runner = runner.replace(oldSay, newSay);
-}
+if (!runner.includes(oldSay)) throw new Error('runner say block is missing');
+runner = runner.replace(oldSay, newSay);
 fs.writeFileSync(runnerPath, runner, 'utf8');
 
 function installFirstmateWrapper(relative, helper) {
   const target = path.join(root, relative);
-  let text = fs.readFileSync(target, 'utf8');
-  if (!text.includes('Firstmate adaptation')) {
-    text = `#!/usr/bin/env bash
+  const text = `#!/usr/bin/env bash
 # Firstmate adaptation of the upstream Codex toolkit entrypoint.
 set -u
 here="$(cd "$(dirname "\${BASH_SOURCE[0]}")" 2>/dev/null && pwd)" || exit 2
@@ -144,8 +140,7 @@ root="\${FM_ROOT:-$(cd "$here/../../../../" 2>/dev/null && pwd -P)}"
 }
 FM_ROOT="$root" exec "$root/bin/${helper}" "$@"
 `;
-    fs.writeFileSync(target, text, 'utf8');
-  }
+  fs.writeFileSync(target, text, 'utf8');
 }
 installFirstmateWrapper('.agents/skills/drain-ready-queue/scripts/run-codex-operative.sh', 'fm-codex-toolkit-dispatch.sh');
 installFirstmateWrapper('.agents/skills/drain-ready-queue/scripts/merge-pinned.sh', 'fm-codex-toolkit-merge.sh');
@@ -163,9 +158,7 @@ const codexDocText = [
   'It never falls back to a direct Codex process or to the parent checkout.',
   ''
 ].join('\n');
-if (!fs.readFileSync(codexDoc, 'utf8').includes('Firstmate adaptation')) {
-  fs.writeFileSync(codexDoc, codexDocText, 'utf8');
-}
+fs.writeFileSync(codexDoc, codexDocText, 'utf8');
 const skillDoc = path.join(root, '.agents/skills/drain-ready-queue/SKILL.md');
 let skill = fs.readFileSync(skillDoc, 'utf8');
 const upstreamCodex = `**Codex:** follow [CODEX-OPERATIVE.md](./CODEX-OPERATIVE.md). Run \`bash
@@ -178,10 +171,12 @@ codex\`. The adapted \`run-codex-operative.sh\` accepts the legacy arguments onl
 recorded brief and delegates through that Firstmate owner; it never launches Codex directly.
 Never use \`spawn_agent\` or bypass Firstmate dispatch after a refusal.
 `;
-if (skill.includes(upstreamCodex)) skill = skill.replace(upstreamCodex, firstmateCodex);
+if (!skill.includes(upstreamCodex)) throw new Error('Codex dispatch instructions are missing');
+skill = skill.replace(upstreamCodex, firstmateCodex);
 const upstreamMerge = '`gh pr merge` never runs bare, and never unpinned. Carry in what this cycle\n';
 const firstmateMerge = 'The toolkit never invokes a forge merge command directly; carry the Firstmate\nmerge owner\'s verified result into this cycle. Carry in what this cycle\n';
-if (skill.includes(upstreamMerge)) skill = skill.replace(upstreamMerge, firstmateMerge);
+if (!skill.includes(upstreamMerge)) throw new Error('merge instructions are missing');
+skill = skill.replace(upstreamMerge, firstmateMerge);
 fs.writeFileSync(skillDoc, skill, 'utf8');
 NODE
 

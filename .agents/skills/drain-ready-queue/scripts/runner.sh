@@ -216,7 +216,7 @@ SESSION_SECONDS=0
 # terminal diagnostic useful while replacing absolute paths in the persisted log.
 sanitize_log_line() {
   printf '%s\n' "$1" | sed -E \
-    's#(^|[[:space:]=])/(Users|home|private|tmp|var|Volumes|opt)(/[A-Za-z0-9._~:@%+,-]+)*#\1<host-path>#g'
+    's#(^|[^[:alnum:]:/])(/[-A-Za-z0-9._~@%+,=:]+)+#\1<host-path>#g'
 }
 say() {
   local public

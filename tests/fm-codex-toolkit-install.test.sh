@@ -20,6 +20,18 @@ while IFS= read -r skill; do
 done < "$MANIFEST"
 cp "$ROOT/skills-lock.json" "$fixture/skills-lock.json"
 
+UPSTREAM_INSTALL_COMMIT=d40d4c25571dfde20ae1483c389c26d46cb38c1a
+for upstream_path in \
+  .agents/skills/drain-ready-queue/CODEX-OPERATIVE.md \
+  .agents/skills/drain-ready-queue/SKILL.md \
+  .agents/skills/drain-ready-queue/scripts/merge-pinned.sh \
+  .agents/skills/drain-ready-queue/scripts/run-codex-operative.sh \
+  .agents/skills/drain-ready-queue/scripts/runner.sh; do
+  git -C "$ROOT" show "$UPSTREAM_INSTALL_COMMIT:$upstream_path" \
+    > "$fixture/$upstream_path" \
+    || fail "could not build the pinned upstream fixture from $upstream_path"
+done
+
 python3 - "$fixture" <<'PY'
 import pathlib
 import sys
@@ -29,11 +41,12 @@ for skill_file in root.glob(".agents/skills/*/SKILL.md"):
     lines = skill_file.read_text(encoding="utf-8").splitlines(keepends=True)
     close = next(i for i, line in enumerate(lines[1:], 1) if line.rstrip("\r\n") == "---")
     frontmatter = [line.rstrip("\r\n") for line in lines[1:close]]
-    metadata = frontmatter.index("metadata:")
-    internal = next(i for i, line in enumerate(frontmatter[metadata + 1:], metadata + 1)
-                    if line.strip().startswith("internal:"))
-    del lines[internal + 1]
-    del lines[metadata]
+    if "metadata:" in frontmatter:
+        metadata = frontmatter.index("metadata:")
+        internal = next(i for i, line in enumerate(frontmatter[metadata + 1:], metadata + 1)
+                        if line.strip().startswith("internal:"))
+        del lines[internal + 1]
+        del lines[metadata]
     skill_file.write_text("".join(lines), encoding="utf-8")
 
 runner = root / ".agents/skills/drain-ready-queue/scripts/runner.sh"
@@ -146,15 +159,22 @@ cat > "$project/bin/fm-pr-merge.sh" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" > "$MERGE_LOG"
 SH
+cat > "$project/bin/fm-captain-hold.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$HOLD_LOG"
+[ "${RELEASED_APPROVAL:-0}" = 1 ]
+SH
 cat > "$fakebin/gh" <<'SH'
 #!/usr/bin/env bash
-case "$1" in
-  repo) printf 'https://github.com/example/project\n' ;;
+case "${1:-} ${2:-}" in
+  "repo view") printf 'https://github.com/example/project\n' ;;
+  "pr view") printf 'build: keep examined behavior\n' ;;
   *) exit 1 ;;
 esac
 SH
-chmod +x "$project/bin/fm-spawn.sh" "$project/bin/fm-pr-merge.sh" "$fakebin/gh"
-mkdir -p "$TMP_ROOT/home/data/task-42"
+chmod +x "$project/bin/fm-spawn.sh" "$project/bin/fm-pr-merge.sh" \
+  "$project/bin/fm-captain-hold.sh" "$fakebin/gh"
+mkdir -p "$TMP_ROOT/home/data/task-42" "$TMP_ROOT/home/state"
 printf 'dispatch brief\n' > "$TMP_ROOT/brief.md"
 cp "$TMP_ROOT/brief.md" "$TMP_ROOT/home/data/task-42/brief.md"
 SPAWN_LOG="$spawn_log" FM_ROOT="$project" FM_HOME="$TMP_ROOT/home" FM_TASK_ID=task-42 \
@@ -164,19 +184,38 @@ SPAWN_LOG="$spawn_log" FM_ROOT="$project" FM_HOME="$TMP_ROOT/home" FM_TASK_ID=ta
 assert_contains "$(cat "$spawn_log")" "task-42 $project --mode direct-PR --yolo off --harness codex" \
   "Codex toolkit runner did not pass explicit Firstmate spawn policy"
 merge_log="$TMP_ROOT/merge.log"
-SPAWN_LOG="$spawn_log" MERGE_LOG="$merge_log" FM_ROOT="$project" FM_TASK_ID=task-42 PATH="$fakebin:$PATH" \
+hold_log="$TMP_ROOT/hold.log"
+printf 'yolo=off\n' > "$TMP_ROOT/home/state/task-42.meta"
+if HOLD_LOG="$hold_log" RELEASED_APPROVAL=0 MERGE_LOG="$merge_log" FM_ROOT="$project" \
+  FM_HOME="$TMP_ROOT/home" FM_TASK_ID=task-42 PATH="$fakebin:$PATH" \
+  "$project/.agents/skills/drain-ready-queue/scripts/merge-pinned.sh" \
+  7 0123456789012345678901234567890123456789 squash auto-on-verdict \
+  > "$TMP_ROOT/unauthorized.out" 2> "$TMP_ROOT/unauthorized.err"; then
+  fail "Codex toolkit merge runner accepted yolo=off without a captain release"
+fi
+assert_absent "$merge_log" "unauthorized Codex toolkit merge reached Firstmate's merge owner"
+assert_contains "$(cat "$TMP_ROOT/unauthorized.out")" "no durable captain release" \
+  "unauthorized Codex toolkit merge did not name its missing authority"
+
+HOLD_LOG="$hold_log" RELEASED_APPROVAL=1 MERGE_LOG="$merge_log" FM_ROOT="$project" \
+  FM_HOME="$TMP_ROOT/home" FM_TASK_ID=task-42 PATH="$fakebin:$PATH" \
   "$project/.agents/skills/drain-ready-queue/scripts/merge-pinned.sh" \
   7 0123456789012345678901234567890123456789 squash auto-on-verdict >/dev/null \
   || fail "Codex toolkit merge runner did not delegate through Firstmate merge authority"
-assert_contains "$(cat "$merge_log")" "task-42 https://github.com/example/project/pull/7 -- --squash" \
-  "Codex toolkit merge runner did not pass the canonical PR to Firstmate merge authority"
-pass "Codex dispatch and merge routes use Firstmate owners"
+assert_contains "$(cat "$hold_log")" "released task-42" \
+  "Codex toolkit merge runner did not verify the captain release"
+assert_contains "$(cat "$merge_log")" \
+  "task-42 https://github.com/example/project/pull/7 --expected-head 0123456789012345678901234567890123456789 -- --squash --subject build: keep examined behavior (#7)" \
+  "Codex toolkit merge runner dropped its commit pin or squash subject"
+pass "Codex dispatch and merge routes preserve Firstmate authority and examined inputs"
 
 runner_dir="$project/.agents/skills/drain-ready-queue/scripts"
 captured="$TMP_ROOT/comment.md"
 mkdir -p "$project/private"
 cat > "$runner_dir/runner-gate.sh" <<'SH'
 #!/usr/bin/env bash
+printf "RUNNER-CONTINUE: RUNNER_LOCK=/srv/private/run.lock, quoted '%s/hidden/file', URL https://github.com/example/project/pull/7\n" \
+  "$PROJECT_SECRET" >&2
 exit 0
 SH
 cat > "$runner_dir/run-issue-open.sh" <<'SH'
@@ -209,13 +248,18 @@ SH
 chmod +x "$runner_dir/runner-gate.sh" "$runner_dir/run-issue-open.sh" \
   "$runner_dir/run-issue-post.sh" "$fakebin/timeout" "$fakebin/claude" "$fakebin/gh" "$fakebin/jq"
 
-PATH="$fakebin:$PATH" CAPTURED_BODY="$captured" RUNNER_LOCK="$project/private/run.lock" \
+PATH="$fakebin:$PATH" CAPTURED_BODY="$captured" PROJECT_SECRET="$project" \
+  RUNNER_LOCK="$project/private/run.lock" \
   RUNNER_MAX_ITERATIONS=1 RUNNER_SLEEP=0 \
   bash "$runner_dir/runner.sh" >/dev/null 2>&1 \
   || fail "adapted headless runner did not finish its bounded public-log fixture"
 assert_present "$captured" "adapted headless runner did not post its stop log"
 body=$(cat "$captured")
 assert_not_contains "$body" "$project" "public run log disclosed its absolute project path"
+assert_not_contains "$body" "/srv/private/run.lock" \
+  "public run log disclosed an absolute path outside its known host roots"
+assert_contains "$body" "URL https://github.com/example/project/pull/7" \
+  "public run log path redaction damaged a host URL"
 assert_contains "$body" "three directories above this runner" \
   "public run log did not use its path-free runner description"
 assert_contains "$body" "holds the run lock for this run" \

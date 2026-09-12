@@ -848,9 +848,14 @@ EOF
   FM_CAPTAIN_HOLD_NOW=2026-06-01T12:00:00Z run_captain "$home" hold sample-widget \
     --reason "captain go needed before shipping" >/dev/null \
     || fail "could not hold the work item for the captain"
+  if run_captain "$home" released sample-widget; then
+    fail "an open captain hold was reported as released"
+  fi
   printf 'Not urgent; ship it as planned.\n' > "$home/go.txt"
   run_captain "$home" answer sample-widget --decision-file "$home/go.txt" --release >/dev/null \
     || fail "answer --release failed on the held work item"
+  run_captain "$home" released sample-widget \
+    || fail "the durable captain release was not recognized"
   show=$(tasks_in "$home" show sample-widget --full)
   assert_contains "$show" "state: queued" "a released work item did not stay queued"
   assert_contains "$show" "held: no" "a released work item kept its hold"
@@ -891,6 +896,9 @@ EOF
   FM_CAPTAIN_HOLD_NOW=2026-07-14T12:00:00Z run_captain "$home" hold sample-widget \
     --reason "captain pricing call needed" >/dev/null \
     || fail "could not re-hold the released work item"
+  if run_captain "$home" released sample-widget; then
+    fail "a new captain hold inherited an earlier release"
+  fi
   snap=$(PATH="$home/fakebin:$PATH" FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" \
     FM_DATA_OVERRIDE="$home/data" FM_CONFIG_OVERRIDE="$home/config" \
     FM_PROJECTS_OVERRIDE="$home/projects" FM_SNAPSHOT_NOW=2026-07-14T12:00:00Z \
