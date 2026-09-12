@@ -10,7 +10,7 @@ set -eu
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TOOLKIT_COMMIT=26bc6befdcfbd335a8f99cc466e664e994f647d2
-TOOLKIT_URL="https://github.com/jjtylr/agent-toolkit/tree/$TOOLKIT_COMMIT"
+TOOLKIT_REPOSITORY=https://github.com/jjtylr/agent-toolkit.git
 SKILLS_PACKAGE=skills@1.5.1
 
 fail() {
@@ -25,10 +25,35 @@ command -v npx >/dev/null 2>&1 || fail 'npx is required'
 
 git -C "$ROOT" rev-parse --show-toplevel >/dev/null 2>&1 || fail "$ROOT is not a git repository"
 
+toolkit_tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-codex-toolkit.XXXXXX") \
+  || fail 'could not create a temporary toolkit checkout'
+toolkit_source="$toolkit_tmp/source"
+lock_backup="$toolkit_tmp/skills-lock.json"
+cleanup() {
+  rm -rf "$toolkit_tmp"
+}
+trap cleanup EXIT HUP INT TERM
+
+mkdir "$toolkit_source" || fail 'could not stage the pinned toolkit snapshot'
+git -C "$toolkit_source" init -q \
+  || fail 'could not initialize the pinned toolkit checkout'
+git -C "$toolkit_source" fetch --depth 1 "$TOOLKIT_REPOSITORY" "$TOOLKIT_COMMIT" \
+  || fail 'the pinned toolkit commit could not be fetched'
+git -C "$toolkit_source" checkout -q --detach FETCH_HEAD \
+  || fail 'the pinned toolkit commit could not be checked out'
+[ "$(git -C "$toolkit_source" rev-parse HEAD 2>/dev/null)" = "$TOOLKIT_COMMIT" ] \
+  || fail 'the fetched toolkit commit did not match the pin'
+[ -f "$ROOT/skills-lock.json" ] \
+  || fail 'the canonical Firstmate skills lock is missing'
+cp "$ROOT/skills-lock.json" "$lock_backup" \
+  || fail 'the canonical Firstmate skills lock could not be staged'
+
 (
   cd "$ROOT"
-  npx --yes "$SKILLS_PACKAGE" add "$TOOLKIT_URL" --skill '*' --agent codex --copy --yes
+  npx --yes "$SKILLS_PACKAGE" add "$toolkit_source" --skill '*' --agent codex --copy --yes
 ) || fail 'the pinned toolkit snapshot could not be installed'
+cp "$lock_backup" "$ROOT/skills-lock.json" \
+  || fail 'the canonical Firstmate skills lock could not be restored'
 
 manifest="$ROOT/.agents/skills/setup-engineering-skills/codex/skill-manifest.txt"
 runner="$ROOT/.agents/skills/drain-ready-queue/scripts/runner.sh"

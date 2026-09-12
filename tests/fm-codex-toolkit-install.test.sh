@@ -10,10 +10,59 @@ MANIFEST="$ROOT/.agents/skills/setup-engineering-skills/codex/skill-manifest.txt
 UPSTREAM_FIXTURE="$ROOT/tests/fixtures/codex-toolkit-upstream"
 TMP_ROOT=$(fm_test_tmproot fm-codex-toolkit-install)
 
+if [ "${FM_CODEX_TOOLKIT_INSTALL_LIVE_E2E:-0}" = 1 ]; then
+  fm_live_gate opt-in FM_CODEX_TOOLKIT_INSTALL_LIVE_E2E git node npx codex
+  live_project="$TMP_ROOT/live-project"
+  mkdir -p "$live_project/bin" "$live_project/.agents/skills/preexisting"
+  cp "$INSTALLER" "$ROOT/bin/fm-codex-toolkit-dispatch.sh" \
+    "$ROOT/bin/fm-codex-toolkit-merge.sh" "$live_project/bin/"
+  cp "$ROOT/skills-lock.json" "$live_project/"
+  chmod +x "$live_project/bin/"*.sh
+  printf '%s\n' '# Existing Firstmate contract' > "$live_project/AGENTS.md"
+  printf '%s\n' 'preexisting internal skill' \
+    > "$live_project/.agents/skills/preexisting/SKILL.md"
+  git -C "$live_project" init -q
+
+  live_out=$(env -u GIT_CONFIG_GLOBAL -u GIT_CONFIG_NOSYSTEM \
+    "$live_project/bin/fm-install-codex-toolkit.sh") \
+    || fail "live pinned toolkit install failed"
+  assert_contains "$live_out" \
+    "FM-TOOLKIT-INSTALL-OK: agent-toolkit 26bc6befdcfbd335a8f99cc466e664e994f647d2" \
+    "live installer did not install the pinned release"
+  [ "$(cat "$live_project/.agents/skills/preexisting/SKILL.md")" = \
+    "preexisting internal skill" ] \
+    || fail "live installer changed a preexisting internal skill"
+  [ "$(cat "$live_project/AGENTS.md")" = "# Existing Firstmate contract" ] \
+    || fail "live installer changed the existing AGENTS contract"
+
+  cmp "$ROOT/skills-lock.json" "$live_project/skills-lock.json" >/dev/null \
+    || fail "live installer changed the canonical skills lock"
+  live_tree_digest() {
+    (
+      cd "$live_project"
+      find .agents .codex -type f -print0
+      printf 'AGENTS.md\0skills-lock.json\0'
+    ) | LC_ALL=C sort -z | while IFS= read -r -d '' file; do
+      printf '%s  ' "$file"
+      shasum -a 256 "$live_project/$file"
+    done | shasum -a 256 | cut -d' ' -f1
+  }
+  first_live_digest=$(live_tree_digest)
+  env -u GIT_CONFIG_GLOBAL -u GIT_CONFIG_NOSYSTEM \
+    "$live_project/bin/fm-install-codex-toolkit.sh" >/dev/null \
+    || fail "live pinned toolkit reinstall failed"
+  second_live_digest=$(live_tree_digest)
+  [ "$first_live_digest" = "$second_live_digest" ] \
+    || fail "live reinstall changed the installed file inventory"
+  pass "live pinned install and reinstall complete from GitHub"
+  exit 0
+fi
+
 fixture="$TMP_ROOT/upstream"
 project="$TMP_ROOT/project"
 fakebin="$TMP_ROOT/fakebin"
 mkdir -p "$fixture/.agents/skills" "$project/bin" "$fakebin"
+REAL_GIT=$(command -v git)
 
 while IFS= read -r skill; do
   [ -n "$skill" ] || continue
@@ -35,6 +84,7 @@ done
 cp "$INSTALLER" "$project/bin/fm-install-codex-toolkit.sh"
 cp "$ROOT/bin/fm-codex-toolkit-dispatch.sh" "$project/bin/"
 cp "$ROOT/bin/fm-codex-toolkit-merge.sh" "$project/bin/"
+cp "$ROOT/skills-lock.json" "$project/"
 chmod +x "$project/bin/fm-install-codex-toolkit.sh" "$project/bin/fm-codex-toolkit-"*.sh
 git -C "$project" init -q
 git -C "$project" add bin
@@ -43,24 +93,50 @@ git -C "$project" -c user.name=test -c user.email=test@example.invalid commit -q
 cat > "$fakebin/npx" <<'SH'
 #!/usr/bin/env bash
 set -eu
-expected="--yes skills@1.5.1 add https://github.com/jjtylr/agent-toolkit/tree/26bc6befdcfbd335a8f99cc466e664e994f647d2 --skill * --agent codex --copy --yes"
-[ "$*" = "$expected" ] || { printf 'unexpected npx arguments: %s\n' "$*" >&2; exit 1; }
+source=${4:-}
+[ "$1 $2 $3" = "--yes skills@1.5.1 add" ] \
+  || { printf 'unexpected npx command: %s\n' "$*" >&2; exit 1; }
+[ "$5 $6 $7 $8 $9 ${10}" = "--skill * --agent codex --copy --yes" ] \
+  || { printf 'unexpected npx options: %s\n' "$*" >&2; exit 1; }
+[ -f "$source/.agents/skills/setup-engineering-skills/codex/skill-manifest.txt" ] \
+  || { printf 'npx source is not the fetched toolkit checkout: %s\n' "$source" >&2; exit 1; }
 mkdir -p "$PWD/.agents/skills"
 while IFS= read -r skill; do
   [ -n "$skill" ] || continue
   rm -rf "$PWD/.agents/skills/$skill"
-  cp -R "$FAKE_TOOLKIT/.agents/skills/$skill" "$PWD/.agents/skills/$skill"
-done < "$FAKE_TOOLKIT/.agents/skills/setup-engineering-skills/codex/skill-manifest.txt"
-cp "$FAKE_TOOLKIT/skills-lock.json" "$PWD/skills-lock.json"
+  cp -R "$source/.agents/skills/$skill" "$PWD/.agents/skills/$skill"
+done < "$source/.agents/skills/setup-engineering-skills/codex/skill-manifest.txt"
+printf '%s\n' '{"source":"temporary-local-checkout"}' > "$PWD/skills-lock.json"
+SH
+cat > "$fakebin/git" <<'SH'
+#!/usr/bin/env bash
+set -eu
+if [ "${1:-}" = -C ] && [ "${3:-}" = fetch ]; then
+  [ "$4 $5 $6 $7" = "--depth 1 https://github.com/jjtylr/agent-toolkit.git 26bc6befdcfbd335a8f99cc466e664e994f647d2" ] \
+    || { printf 'unexpected git fetch: %s\n' "$*" >&2; exit 1; }
+  cp -R "$FAKE_TOOLKIT/." "$2/"
+  exit 0
+fi
+if [ "${1:-}" = -C ] && [ "${3:-}" = checkout ]; then
+  [ "$4 $5 $6" = "-q --detach FETCH_HEAD" ] \
+    || { printf 'unexpected git checkout: %s\n' "$*" >&2; exit 1; }
+  exit 0
+fi
+if [ "${1:-}" = -C ] && [ "${3:-}" = rev-parse ] && [ "${4:-}" = HEAD ]; then
+  printf '%s\n' 26bc6befdcfbd335a8f99cc466e664e994f647d2
+  exit 0
+fi
+exec "$REAL_GIT" "$@"
 SH
 cat > "$fakebin/codex" <<'SH'
 #!/usr/bin/env bash
 exit 0
 SH
-chmod +x "$fakebin/npx" "$fakebin/codex"
+chmod +x "$fakebin/npx" "$fakebin/git" "$fakebin/codex"
 
 install_fixture() {
-  PATH="$fakebin:$PATH" FAKE_TOOLKIT="$fixture" "$project/bin/fm-install-codex-toolkit.sh"
+  PATH="$fakebin:$PATH" FAKE_TOOLKIT="$fixture" REAL_GIT="$REAL_GIT" \
+    "$project/bin/fm-install-codex-toolkit.sh"
 }
 
 tree_digest() {
@@ -242,7 +318,8 @@ SH
 chmod +x "$runner_dir/runner-gate.sh" "$runner_dir/run-issue-open.sh" \
   "$runner_dir/run-issue-post.sh" "$fakebin/timeout" "$fakebin/claude" "$fakebin/gh" "$fakebin/jq"
 
-PATH="$fakebin:$PATH" CAPTURED_BODY="$captured" PROJECT_SECRET="$project" \
+PATH="$fakebin:$PATH" REAL_GIT="$REAL_GIT" FAKE_TOOLKIT="$fixture" \
+  CAPTURED_BODY="$captured" PROJECT_SECRET="$project" \
   RUNNER_LOCK="$project/private/run.lock" \
   RUNNER_MAX_ITERATIONS=1 RUNNER_SLEEP=0 \
   bash "$runner_dir/runner.sh" >/dev/null 2>&1 \
