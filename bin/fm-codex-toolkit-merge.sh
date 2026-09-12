@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Firstmate merge adapter for the installed Codex toolkit.
+# Usage: bin/fm-codex-toolkit-merge.sh <pr-number> <examined-commit> <merge-method> <merge-policy>
 set -u
 
 failed() { echo "MERGE-FAILED:$1"; exit 1; }

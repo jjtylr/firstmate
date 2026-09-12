@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Firstmate dispatch adapter for the installed Codex toolkit operative role.
+# Usage: bin/fm-codex-toolkit-dispatch.sh <ticket> <slug> <brief-file>
 set -u
 
 fail() {
