@@ -7,8 +7,7 @@ set -eu
 
 INSTALLER="$ROOT/bin/fm-install-codex-toolkit.sh"
 MANIFEST="$ROOT/.agents/skills/setup-engineering-skills/codex/skill-manifest.txt"
-TMP_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/fm-codex-toolkit.XXXXXX")
-trap 'rm -rf "$TMP_ROOT"' EXIT
+TMP_ROOT=$(fm_test_tmproot fm-codex-toolkit-install)
 
 fixture="$TMP_ROOT/upstream"
 project="$TMP_ROOT/project"
@@ -31,8 +30,9 @@ for skill_file in root.glob(".agents/skills/*/SKILL.md"):
     close = next(i for i, line in enumerate(lines[1:], 1) if line.rstrip("\r\n") == "---")
     frontmatter = [line.rstrip("\r\n") for line in lines[1:close]]
     metadata = frontmatter.index("metadata:")
-    assert frontmatter[metadata + 1] == "  internal: true"
-    del lines[metadata + 1]
+    internal = next(i for i, line in enumerate(frontmatter[metadata + 1:], metadata + 1)
+                    if line.strip().startswith("internal:"))
+    del lines[internal + 1]
     del lines[metadata]
     skill_file.write_text("".join(lines), encoding="utf-8")
 
@@ -54,7 +54,9 @@ runner.write_text(text, encoding="utf-8")
 PY
 
 cp "$INSTALLER" "$project/bin/fm-install-codex-toolkit.sh"
-chmod +x "$project/bin/fm-install-codex-toolkit.sh"
+cp "$ROOT/bin/fm-codex-toolkit-dispatch.sh" "$project/bin/"
+cp "$ROOT/bin/fm-codex-toolkit-merge.sh" "$project/bin/"
+chmod +x "$project/bin/fm-install-codex-toolkit.sh" "$project/bin/fm-codex-toolkit-"*.sh
 git -C "$project" init -q
 git -C "$project" add bin
 git -C "$project" -c user.name=test -c user.email=test@example.invalid commit -qm baseline
@@ -134,6 +136,41 @@ install_fixture >/dev/null || fail "pinned toolkit reinstall failed"
 second=$(tree_digest)
 [ "$first" = "$second" ] || fail "reinstall changed the adapted toolkit bytes"
 pass "pinned reinstall is byte-stable and retains 30 internal skills and four Codex roles"
+
+spawn_log="$TMP_ROOT/spawn.log"
+cat > "$project/bin/fm-spawn.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" > "$SPAWN_LOG"
+SH
+cat > "$project/bin/fm-pr-merge.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" > "$MERGE_LOG"
+SH
+cat > "$fakebin/gh" <<'SH'
+#!/usr/bin/env bash
+case "$1" in
+  repo) printf 'https://github.com/example/project\n' ;;
+  *) exit 1 ;;
+esac
+SH
+chmod +x "$project/bin/fm-spawn.sh" "$project/bin/fm-pr-merge.sh" "$fakebin/gh"
+mkdir -p "$TMP_ROOT/home/data/task-42"
+printf 'dispatch brief\n' > "$TMP_ROOT/brief.md"
+cp "$TMP_ROOT/brief.md" "$TMP_ROOT/home/data/task-42/brief.md"
+SPAWN_LOG="$spawn_log" FM_ROOT="$project" FM_HOME="$TMP_ROOT/home" FM_TASK_ID=task-42 \
+  "$project/.agents/skills/drain-ready-queue/scripts/run-codex-operative.sh" \
+  42 example "$TMP_ROOT/brief.md" >/dev/null \
+  || fail "Codex toolkit runner did not delegate through Firstmate spawn"
+assert_contains "$(cat "$spawn_log")" "task-42 $project --mode direct-PR --yolo off --harness codex" \
+  "Codex toolkit runner did not pass explicit Firstmate spawn policy"
+merge_log="$TMP_ROOT/merge.log"
+SPAWN_LOG="$spawn_log" MERGE_LOG="$merge_log" FM_ROOT="$project" FM_TASK_ID=task-42 PATH="$fakebin:$PATH" \
+  "$project/.agents/skills/drain-ready-queue/scripts/merge-pinned.sh" \
+  7 0123456789012345678901234567890123456789 squash auto-on-verdict >/dev/null \
+  || fail "Codex toolkit merge runner did not delegate through Firstmate merge authority"
+assert_contains "$(cat "$merge_log")" "task-42 https://github.com/example/project/pull/7 -- --squash" \
+  "Codex toolkit merge runner did not pass the canonical PR to Firstmate merge authority"
+pass "Codex dispatch and merge routes use Firstmate owners"
 
 runner_dir="$project/.agents/skills/drain-ready-queue/scripts"
 captured="$TMP_ROOT/comment.md"

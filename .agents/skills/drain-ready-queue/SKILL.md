@@ -209,9 +209,11 @@ diff, gates and merge. **This loop never writes to `docs/atlas/` itself** (RATIO
 If unresolved, spawn a generic worktree-isolated subagent with [the operative role](./agent-roles/operative.md)
 ahead of it. No isolation or readable role means stop. Never dispatch into the parent checkout.
 
-**Codex:** follow [CODEX-OPERATIVE.md](./CODEX-OPERATIVE.md). Run `bash
-"$SKILL/scripts/run-codex-operative.sh" <N> <SLUG> <absolute-brief-file>` from the repo root, one
-parallel call per lane. Never use `spawn_agent` or replace a refusal with direct `codex exec`.
+**Codex:** Firstmate owns Codex dispatch. Create and record the task brief with Firstmate's
+`bin/fm-brief.sh`, then invoke `bin/fm-spawn.sh` with explicit mode, yolo posture, and `--harness
+codex`. The adapted `run-codex-operative.sh` accepts the legacy arguments only to verify the
+recorded brief and delegates through that Firstmate owner; it never launches Codex directly.
+Never use `spawn_agent` or bypass Firstmate dispatch after a refusal.
 
 **One ticket takes one slot, and a slot is free only until it is filled.** A second ticket starts
 only when the lane count leaves a slot free and step 3 cleared it against everything in flight
@@ -291,8 +293,8 @@ issue, and step 6's STOPPED relabel is yours to run, not to hand over.
 **Under an auto policy** (the catalog's `auto-on-verdict*` entries) the decision script holds the
 merge button ([MERGE-POLICY.md](./MERGE-POLICY.md)), and what runs here is pipeline steps 4 and 5 —
 run them from [MERGE-PIPELINE.md](./MERGE-PIPELINE.md), which owns the chain, its exit codes and
-the park conditions; `gh pr merge` never runs bare, and never unpinned. Carry in what this cycle
-established: the verdict word your own step-5 dispatch returned, the `pr-checks.sh` line, the
+the park conditions. The toolkit never invokes a forge merge command directly; carry the Firstmate
+merge owner's verified result into this cycle. Carry in what this cycle established: the verdict word your own step-5 dispatch returned, the `pr-checks.sh` line, the
 config's `merge_policy` and `merge_method`, the verdict block's `MARKER` line, and the examined
 commit. A missing or superseded marker reads as **no verdict** and the decision script refuses:
 re-verify such a PR, never re-label it by hand.

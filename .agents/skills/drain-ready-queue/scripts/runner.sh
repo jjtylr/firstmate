@@ -212,9 +212,19 @@ SESSION_SECONDS=0
 # Findings go to stderr as they happen *and* into the run log, which is the
 # comment the run issue ends with. A headless run reports to nobody watching, so
 # a line that only ever reached a terminal did not survive the run.
+# Public comments must not disclose the host that ran the loop. Keep the
+# terminal diagnostic useful while replacing absolute paths in the persisted log.
+sanitize_log_line() {
+  printf '%s\n' "$1" | sed -E \
+    's#(^|[[:space:]=])/(Users|home|private|tmp|var|Volumes|opt)(/[A-Za-z0-9._~:@%+,-]+)*#\1<host-path>#g'
+}
 say() {
+  local public
   printf '%s\n' "$1" >&2
-  [ -n "$LOGFILE" ] && printf '%s\n' "$1" >> "$LOGFILE"
+  if [ -n "$LOGFILE" ]; then
+    public="$(sanitize_log_line "$1")"
+    printf '%s\n' "$public" >> "$LOGFILE"
+  fi
   return 0
 }
 # Never into the log: used when the log itself is what failed.
