@@ -1,0 +1,4 @@
+ok - Pi actionable close starts one successor before wake delivery settles
+ok - Pi joins the latest overlapping restoration and delivers three wakes exactly once
+ok - Pi manual repair supersedes failed actionable restoration evidence
+ok - Pi unretired successor falls back without an overlapping retry

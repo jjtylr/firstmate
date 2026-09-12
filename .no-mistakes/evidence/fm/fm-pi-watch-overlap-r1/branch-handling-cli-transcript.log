@@ -1,0 +1,4 @@
+watcher_pid=46225 alive=yes
+case=branch-handling-delivered exit=0
+output=
+marker=announced:handling:live-confirm-generation

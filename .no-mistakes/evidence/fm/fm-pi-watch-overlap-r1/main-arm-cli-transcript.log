@@ -1,0 +1,4 @@
+case=bare-arm arm_pid=50403 watcher_pid=50438 watcher_alive=yes
+watcher: started pid=50438 (beacon fresh)
+case=explicit-restart arm_pid=51109 watcher_pid=51126 watcher_alive=yes
+watcher: started pid=51126 (beacon fresh)

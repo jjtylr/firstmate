@@ -1,0 +1,6 @@
+case=bare-arm arm_pid=63437 watcher_pid=63456
+watcher: started pid=63456 (beacon fresh)
+signal: /var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/tmp.sBrBqzX5RC/home/state/bare-arm.status
+case=explicit-restart arm_pid=66226 watcher_pid=66277
+watcher: started pid=66277 (beacon fresh)
+signal: /var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/tmp.5kxZSf3j5t/home/state/explicit-restart.status

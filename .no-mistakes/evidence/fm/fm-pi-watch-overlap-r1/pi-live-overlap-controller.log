@@ -1,0 +1,8 @@
+start cycle_count=1 epoch=1789178488
+appended=A epoch=1789178488
+arm_pid=67033	watcher_pid=67053	origin=started	started_at=1789178447	ended_at=1789178490	exit_code=0	signal=none	reason=actionable-signal	beacon_age=2	lock_before=pid:67053|identity:Fri Sep 11 20:00:47 2026     bash /Users/josh/.no-mistakes/worktrees/4ecf35ccebba/01M29HMG2WSRMAEHFTN9E9ZWPB/bin/fm-watch.sh	lock_after=pid:none|identity:none	successor=none
+appended=B epoch=1789178490
+arm_pid=81453	watcher_pid=81544	origin=started	started_at=1789178490	ended_at=1789178493	exit_code=0	signal=none	reason=actionable-signal	beacon_age=2	lock_before=pid:81544|identity:Fri Sep 11 20:01:30 2026     bash /Users/josh/.no-mistakes/worktrees/4ecf35ccebba/01M29HMG2WSRMAEHFTN9E9ZWPB/bin/fm-watch.sh	lock_after=pid:none|identity:none	successor=none
+appended=C epoch=1789178494
+arm_pid=83537	watcher_pid=83646	origin=started	started_at=1789178495	ended_at=1789178515	exit_code=0	signal=none	reason=actionable-signal	beacon_age=15	lock_before=pid:83646|identity:Fri Sep 11 20:01:35 2026     bash /Users/josh/.no-mistakes/worktrees/4ecf35ccebba/01M29HMG2WSRMAEHFTN9E9ZWPB/bin/fm-watch.sh	lock_after=pid:none|identity:none	successor=none
+after_three cycle_count=4 epoch=1789178516

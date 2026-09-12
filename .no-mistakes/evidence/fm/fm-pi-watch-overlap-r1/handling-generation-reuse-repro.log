@@ -1,0 +1,4 @@
+first-confirm exit=0 marker=announced:handling:reuse-generation output=
+repeat-before-ack exit=0 marker=announced:handling:reuse-generation output=
+after-ack marker=acked:handling:reuse-generation
+repeat-after-ack exit=1 marker=acked:handling:reuse-generation output=

@@ -1,0 +1,2 @@
+ok - watch-arm: branch actor cannot arm or restart the main-owned watcher
+ok - watch-arm: interrupted handling leaves its wake durable for successor re-drain
