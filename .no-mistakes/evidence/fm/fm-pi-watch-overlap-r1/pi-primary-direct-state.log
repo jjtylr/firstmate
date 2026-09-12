@@ -1,0 +1,7 @@
+cycle-ledger:
+arm_pid=67895	watcher_pid=67920	origin=started	started_at=1789185988	ended_at=1789186066	exit_code=0	signal=none	reason=actionable-signal	beacon_age=31	lock_before=pid:67920|identity:Fri Sep 11 22:06:28 2026     bash /Users/josh/.no-mistakes/worktrees/4ecf35ccebba/01M29RV4YQ2732124KKPWAPB0P/bin/fm-watch.sh	lock_after=pid:none|identity:none	successor=started:75737
+health-check:
+verified watcher pid=75737
+home-scoped live watcher processes=1 pid=75737
+lock-owner-target=/Users/josh/.no-mistakes/worktrees/4ecf35ccebba/01M29RV4YQ2732124KKPWAPB0P/.test-pi-live-manual/home/state/.watch.lock.owner.QOhNII
+queued rows after handling=0

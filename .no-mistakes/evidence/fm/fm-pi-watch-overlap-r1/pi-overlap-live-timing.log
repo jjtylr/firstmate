@@ -1,0 +1,6 @@
+triggered=B prior_cycles=1 settled_outcomes=1 epoch=1789186448
+restored_after=B successor_pid=96533 cycles=2 settled_outcomes=1 epoch=1789186450
+triggered=C prior_cycles=2 settled_outcomes=1 epoch=1789186450
+restored_after=C successor_pid=99687 cycles=3 settled_outcomes=1 epoch=1789186454
+triggered=D prior_cycles=3 settled_outcomes=1 epoch=1789186454
+restored_after=D successor_pid=4492 cycles=4 settled_outcomes=1 epoch=1789186458

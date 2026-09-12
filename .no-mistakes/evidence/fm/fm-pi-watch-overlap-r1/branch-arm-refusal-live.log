@@ -1,0 +1,6 @@
+case=bare exit=6 output=error: watcher arm refused - the supervision branch never performs this action; report the outcome and leave it to main (role partition: docs/pi-supervision-branch.md)
+case=explicit-arm exit=6 output=error: watcher arm refused - the supervision branch never performs this action; report the outcome and leave it to main (role partition: docs/pi-supervision-branch.md)
+case=dash-arm exit=6 output=error: watcher arm refused - the supervision branch never performs this action; report the outcome and leave it to main (role partition: docs/pi-supervision-branch.md)
+case=explicit-restart exit=6 output=error: watcher restart refused - the supervision branch never performs this action; report the outcome and leave it to main (role partition: docs/pi-supervision-branch.md)
+case=expanded-restart exit=6 output=error: watcher restart refused - the supervision branch never performs this action; report the outcome and leave it to main (role partition: docs/pi-supervision-branch.md)
+watch_lock_created=no

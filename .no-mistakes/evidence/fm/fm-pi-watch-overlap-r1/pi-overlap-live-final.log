@@ -1,0 +1,13 @@
+verified_singleton_lock_owner=4492
+actionable_cycle_count=4
+settled_branch_outcomes=4
+outcome task=overlap-a count=1 seq=1
+outcome task=overlap-b count=1 seq=2
+outcome task=overlap-c count=1 seq=3
+outcome task=overlap-d count=1 seq=4
+queued_rows=0
+cycle_successors:
+successor=72258
+successor=96533
+successor=99687
+successor=4492
