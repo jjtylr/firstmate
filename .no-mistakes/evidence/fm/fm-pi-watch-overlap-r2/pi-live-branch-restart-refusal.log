@@ -1,0 +1,5 @@
+branch_restart_exit=6
+branch_restart_output=error: watcher restart refused - the supervision branch never performs this action; report the outcome and leave it to main (role partition: docs/pi-supervision-branch.md)
+watcher_pid_before=77665
+watcher_pid_after=77665
+canonical_health_exit=0

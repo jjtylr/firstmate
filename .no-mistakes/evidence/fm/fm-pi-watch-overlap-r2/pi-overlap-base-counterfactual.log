@@ -1,0 +1,9 @@
+not ok - Pi overlapping actionable closes must preserve successor D (a-first): file:///Users/josh/.no-mistakes/worktrees/4ecf35ccebba/01M29YTFHX8J6CBTH0W2PCMJP1/[eval1]:97
+if (offers.join("") !== "A") throw new Error(`wake B escaped before successor B closed: ${offers.join(",")}`);
+                                   ^
+
+Error: wake B escaped before successor B closed: A,B
+    at file:///Users/josh/.no-mistakes/worktrees/4ecf35ccebba/01M29YTFHX8J6CBTH0W2PCMJP1/[eval1]:97:36
+
+Node.js v26.8.2: expected exit 0, got 1
+base_counterfactual_exit=1

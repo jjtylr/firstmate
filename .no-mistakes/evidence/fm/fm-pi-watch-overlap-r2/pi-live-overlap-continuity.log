@@ -1,0 +1,20 @@
+pi_version=0.85.1
+actionable_cycle_count=2
+arm_pid=64296	watcher_pid=64316	origin=started	started_at=1789188873	ended_at=1789188892	exit_code=0	signal=none	reason=actionable-signal	beacon_age=2	lock_before=pid:64316|identity:Fri Sep 11 22:54:33 2026     bash /Users/josh/.no-mistakes/worktrees/4ecf35ccebba/01M29YTFHX8J6CBTH0W2PCMJP1/bin/fm-watch.sh	lock_after=pid:none|identity:none	successor=started:71151
+arm_pid=71113	watcher_pid=71151	origin=started	started_at=1789188892	ended_at=1789188905	exit_code=0	signal=none	reason=actionable-signal	beacon_age=1	lock_before=pid:71151|identity:Fri Sep 11 22:54:52 2026     bash /Users/josh/.no-mistakes/worktrees/4ecf35ccebba/01M29YTFHX8J6CBTH0W2PCMJP1/bin/fm-watch.sh	lock_after=pid:none|identity:none	successor=started:77665
+successor_B_close_ms=1789188905000
+wake_A_branch_settlement_ms=1789188906300
+B_closed_while_A_settlement_pending=true
+branch_wake_count=2
+branch_outcome_count=2
+{"seq":1,"epoch":1789188903,"task":"live-overlap","wake":"","verdict":"routine","summary":"live-overlap has no active worker state and its working copy is already gone; no recovery action was available.","silent":false,"statusEndpoint":72,"statusIdent":"strong:16777234:246915104:1789188891.043203739"}
+{"seq":2,"epoch":1789188917,"task":"live-overlap","wake":"","verdict":"routine","summary":"live-overlap still has no active worker state and its working copy is gone; there was nothing safe to recover.","silent":false,"statusEndpoint":144,"statusIdent":"strong:16777234:246915104:1789188891.043203739"}
+pending_wake_queue_bytes=0
+current_successor_pid=77665
+live_arm_wrapper_count=1
+live_watcher_count=1
+canonical_health_exit=0
+watch_delivery_count=2
+64316	Fri Sep 11 22:54:33 2026     bash /Users/josh/.no-mistakes/worktrees/4ecf35ccebba/01M29YTFHX8J6CBTH0W2PCMJP1/bin/fm-watch.sh	signal: /Users/josh/.no-mistakes/worktrees/4ecf35ccebba/01M29YTFHX8J6CBTH0W2PCMJP1/.pi-manual-e2e.jO2KLK/state/live-overlap.status
+71151	Fri Sep 11 22:54:52 2026     bash /Users/josh/.no-mistakes/worktrees/4ecf35ccebba/01M29YTFHX8J6CBTH0W2PCMJP1/bin/fm-watch.sh	signal: /Users/josh/.no-mistakes/worktrees/4ecf35ccebba/01M29YTFHX8J6CBTH0W2PCMJP1/.pi-manual-e2e.jO2KLK/state/live-overlap.status
+recovery_marker=acked:handling:70620.1789188891.vw62Fx
