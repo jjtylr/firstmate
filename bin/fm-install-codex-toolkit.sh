@@ -108,10 +108,12 @@ const newSay = `# Findings go to stderr as they happen *and* into the run log, w
 # comment the run issue ends with. A headless run reports to nobody watching, so
 # a line that only ever reached a terminal did not survive the run.
 # Public comments must not disclose the host that ran the loop. Keep the
-# terminal diagnostic useful while replacing absolute paths in the persisted log.
+# terminal diagnostic useful while suppressing path-bearing persisted lines.
 sanitize_log_line() {
-  printf '%s\\n' "$1" | sed -E \\
-    "s#(^|[^[:alnum:]:/])(/[^,;'\\\"\\\`<>]+)#\\\\1<host-path>#g"
+  case "$1" in
+    */*) printf '%s\\n' '<host-path>' ;;
+    *) printf '%s\\n' "$1" ;;
+  esac
 }
 say() {
   local public

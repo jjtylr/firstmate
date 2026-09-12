@@ -207,7 +207,7 @@ captured="$TMP_ROOT/comment.md"
 mkdir -p "$project/private"
 cat > "$runner_dir/runner-gate.sh" <<'SH'
 #!/usr/bin/env bash
-printf "RUNNER-CONTINUE: RUNNER_LOCK=/srv/private/run.lock, spaced %s/Private Project/missing.git, quoted '%s/hidden/file', URL https://github.com/example/project/pull/7\n" \
+printf "RUNNER-CONTINUE: RUNNER_LOCK=/srv/private/Client,Alpha/run.lock, spaced %s/Private Project/missing.git, quoted '%s/hidden/file', URL https://github.com/example/project/pull/7\n" \
   "$PROJECT_SECRET" \
   "$PROJECT_SECRET" >&2
 exit 0
@@ -250,14 +250,12 @@ PATH="$fakebin:$PATH" CAPTURED_BODY="$captured" PROJECT_SECRET="$project" \
 assert_present "$captured" "adapted headless runner did not post its stop log"
 body=$(cat "$captured")
 assert_not_contains "$body" "$project" "public run log disclosed its absolute project path"
-assert_not_contains "$body" "/srv/private/run.lock" \
-  "public run log disclosed an absolute path outside its known host roots"
+assert_not_contains "$body" "Client,Alpha/run.lock" \
+  "public run log disclosed punctuation from an absolute path"
 assert_not_contains "$body" "Private Project/missing.git" \
   "public run log disclosed a suffix from an absolute path containing spaces"
-assert_contains "$body" "URL https://github.com/example/project/pull/7" \
-  "public run log path redaction damaged a host URL"
-assert_contains "$body" "three directories above this runner" \
-  "public run log did not use its path-free runner description"
+assert_contains "$body" "<host-path>" \
+  "public run log did not replace its path-bearing diagnostic"
 assert_contains "$body" "holds the run lock for this run" \
   "public run log did not use its path-free lock description"
 pass "public headless-run logs omit absolute host paths"
