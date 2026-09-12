@@ -37,6 +37,13 @@ if [ "${FM_CODEX_TOOLKIT_INSTALL_LIVE_E2E:-0}" = 1 ]; then
 
   cmp "$ROOT/skills-lock.json" "$live_project/skills-lock.json" >/dev/null \
     || fail "live installer changed the canonical skills lock"
+  for adapted_path in \
+    .agents/skills/setup-engineering-skills/scripts/configure-codex-project.sh \
+    .agents/skills/drain-ready-queue/SKILL.md \
+    .agents/skills/drain-ready-queue/scripts/runner.sh; do
+    cmp "$ROOT/$adapted_path" "$live_project/$adapted_path" >/dev/null \
+      || fail "live installer output differs from the tracked $adapted_path contract"
+  done
   live_tree_digest() {
     (
       cd "$live_project"
@@ -80,6 +87,8 @@ cp "$upstream_drain/SKILL.md.fixture" "$fixture_drain/SKILL.md"
 for upstream_script in merge-pinned.sh run-codex-operative.sh runner.sh; do
   cp "$upstream_drain/scripts/$upstream_script" "$fixture_drain/scripts/$upstream_script"
 done
+cp "$UPSTREAM_FIXTURE/.agents/skills/setup-engineering-skills/scripts/configure-codex-project.sh.fixture" \
+  "$fixture/.agents/skills/setup-engineering-skills/scripts/configure-codex-project.sh"
 
 cp "$INSTALLER" "$project/bin/fm-install-codex-toolkit.sh"
 cp "$ROOT/bin/fm-codex-toolkit-dispatch.sh" "$project/bin/"
@@ -190,9 +199,12 @@ assert hooks["SessionStart"][0]["matcher"] == "startup|resume"
 PY
 
 for adapted_path in \
+  .agents/skills/setup-engineering-skills/scripts/configure-codex-project.sh \
+  .agents/skills/drain-ready-queue/SKILL.md \
   .agents/skills/drain-ready-queue/CODEX-OPERATIVE.md \
   .agents/skills/drain-ready-queue/scripts/merge-pinned.sh \
-  .agents/skills/drain-ready-queue/scripts/run-codex-operative.sh; do
+  .agents/skills/drain-ready-queue/scripts/run-codex-operative.sh \
+  .agents/skills/drain-ready-queue/scripts/runner.sh; do
   cmp "$ROOT/$adapted_path" "$project/$adapted_path" >/dev/null \
     || fail "installer output differs from the tracked $adapted_path contract"
 done

@@ -84,7 +84,9 @@ for (const skill of skills) {
   if (close < 0) throw new Error(`${skillPath} has unterminated YAML frontmatter`);
   const metadata = lines.slice(1, close).findIndex(line => line === 'metadata:');
   if (metadata < 0) {
-    lines.splice(close, 0, 'metadata:', '  internal: true');
+    const name = lines.slice(1, close).findIndex(line => /^name\s*:/.test(line));
+    if (name < 0) throw new Error(`${skillPath} has no frontmatter name`);
+    lines.splice(name + 2, 0, 'metadata:', '  internal: true');
   } else {
     const metadataLine = metadata + 1;
     let end = metadataLine + 1;
@@ -118,7 +120,7 @@ const runnerAdaptations = [
 ];
 for (const [upstream, adapted] of runnerAdaptations) {
   if (!runner.includes(upstream)) throw new Error(`runner adaptation source is missing: ${upstream}`);
-  runner = runner.replace(upstream, adapted);
+  runner = runner.replace(upstream, () => adapted);
 }
 const oldSay = `# Findings go to stderr as they happen *and* into the run log, which is the
 # comment the run issue ends with. A headless run reports to nobody watching, so
@@ -151,7 +153,7 @@ say() {
 }
 `;
 if (!runner.includes(oldSay)) throw new Error('runner say block is missing');
-runner = runner.replace(oldSay, newSay);
+runner = runner.replace(oldSay, () => newSay);
 fs.writeFileSync(runnerPath, runner, 'utf8');
 
 const dispatchWrapper = `#!/usr/bin/env bash
@@ -228,11 +230,37 @@ Never use \`spawn_agent\` or bypass Firstmate dispatch after a refusal.
 `;
 if (!skill.includes(upstreamCodex)) throw new Error('Codex dispatch instructions are missing');
 skill = skill.replace(upstreamCodex, firstmateCodex);
-const upstreamMerge = '`gh pr merge` never runs bare, and never unpinned. Carry in what this cycle\n';
-const firstmateMerge = 'The toolkit never invokes a forge merge command directly; carry the Firstmate\nmerge owner\'s verified result into this cycle. Carry in what this cycle\n';
+const upstreamMerge = 'the park conditions; `gh pr merge` never runs bare, and never unpinned. Carry in what this cycle\nestablished:';
+const firstmateMerge = 'the park conditions. The toolkit never invokes a forge merge command directly; carry the Firstmate\nmerge owner\'s verified result into this cycle. Carry in what this cycle established:';
 if (!skill.includes(upstreamMerge)) throw new Error('merge instructions are missing');
-skill = skill.replace(upstreamMerge, firstmateMerge);
+skill = skill.replace(upstreamMerge, () => firstmateMerge);
 fs.writeFileSync(skillDoc, skill, 'utf8');
+
+const configurerPath = path.join(
+  root,
+  '.agents/skills/setup-engineering-skills/scripts/configure-codex-project.sh'
+);
+let configurer = fs.readFileSync(configurerPath, 'utf8');
+const configurerAdaptations = [
+  [
+    "matcher: 'startup|resume|clear|compact'",
+    "matcher: 'startup|resume'"
+  ],
+  [
+    `printf 'CODEX-PROJECT-OK: installed %s skills, 4 agent roles, and 2 hook handlers in %s\\n' "$skill_count" "$project"
+printf '%s\\n' 'Restart Codex in this repository. Approve project trust, then review and trust the project hooks.'`,
+    `printf 'CODEX-PROJECT-OK: installed %s skills, 4 agent roles, and 2 codex-exec hook handlers in %s\\n' "$skill_count" "$project"
+printf '%s\\n' 'Toolkit project hooks support codex exec only. Interactive Codex is unsupported.'
+printf '%s\\n' 'Approve project trust, then review and trust the project hooks before using codex exec.'`
+  ]
+];
+for (const [upstream, adapted] of configurerAdaptations) {
+  if (!configurer.includes(upstream)) {
+    throw new Error(`Codex configurer adaptation source is missing: ${upstream}`);
+  }
+  configurer = configurer.replace(upstream, () => adapted);
+}
+fs.writeFileSync(configurerPath, configurer, 'utf8');
 NODE
 
 configurer="$ROOT/.agents/skills/setup-engineering-skills/scripts/configure-codex-project.sh"
