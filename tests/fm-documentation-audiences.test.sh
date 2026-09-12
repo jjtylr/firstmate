@@ -125,6 +125,7 @@ Observed version 1.2.3 on branch `fm/example`.
 The [runtime role](${CLAUDE_PLUGIN_ROOT}/role.md) resolves only after the tool exports its root.
 
 ```markdown
+```not-a-close
 [Illustrative link](missing-example.md)
 ```
 

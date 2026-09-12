@@ -20,6 +20,16 @@ case "$method" in squash|merge|rebase) ;; *) failed "merge_method '$method' is n
 [ -n "${FM_ROOT:-}" ] || failed 'FM_ROOT must identify the Firstmate repository; nothing was attempted'
 [ -x "$FM_ROOT/bin/fm-pr-merge.sh" ] ||
   failed "Firstmate merge owner is missing: $FM_ROOT/bin/fm-pr-merge.sh; nothing was attempted"
+policy_owner="$FM_ROOT/.agents/skills/drain-ready-queue/scripts/merge-decision.sh"
+[ -f "$policy_owner" ] ||
+  failed "Firstmate merge policy owner is missing: $policy_owner; nothing was attempted"
+case "$(bash "$policy_owner" pass CHECKS-PASS "$policy" 2>/dev/null)" in
+  *'is not an auto policy the catalog carries'*)
+    failed "merge_policy '$policy' is not an auto policy the catalog carries — under it the loop never merges; nothing was attempted" ;;
+  MERGE-ALLOWED*|MERGE-REFUSED:*) ;;
+  *)
+    failed "the merge policy owner did not answer whether '$policy' is an auto policy — an unread policy is never an auto one; nothing was attempted" ;;
+esac
 task_id="${FM_TASK_ID:-}"
 [ -n "$task_id" ] || failed 'Firstmate merge authority requires FM_TASK_ID; nothing was attempted'
 [ -n "${FM_HOME:-}" ] || failed 'Firstmate merge authority requires FM_HOME; nothing was attempted'

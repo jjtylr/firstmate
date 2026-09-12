@@ -113,7 +113,11 @@ def without_fenced_code_blocks(text: str) -> str:
             else:
                 kept.append(line)
             continue
-        if match and match.group(1)[0] == fence_char and len(match.group(1)) >= fence_length:
+        closing = re.match(
+            rf"^ {{0,3}}{re.escape(fence_char)}{{{fence_length},}}[ \t]*(?:\r?\n)?$",
+            line,
+        )
+        if closing:
             fence_char = ""
             fence_length = 0
         kept.append("\n" if line.endswith("\n") else "")

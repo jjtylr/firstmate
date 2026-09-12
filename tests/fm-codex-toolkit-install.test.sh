@@ -20,18 +20,6 @@ while IFS= read -r skill; do
 done < "$MANIFEST"
 cp "$ROOT/skills-lock.json" "$fixture/skills-lock.json"
 
-UPSTREAM_INSTALL_COMMIT=d40d4c25571dfde20ae1483c389c26d46cb38c1a
-for upstream_path in \
-  .agents/skills/drain-ready-queue/CODEX-OPERATIVE.md \
-  .agents/skills/drain-ready-queue/SKILL.md \
-  .agents/skills/drain-ready-queue/scripts/merge-pinned.sh \
-  .agents/skills/drain-ready-queue/scripts/run-codex-operative.sh \
-  .agents/skills/drain-ready-queue/scripts/runner.sh; do
-  git -C "$ROOT" show "$UPSTREAM_INSTALL_COMMIT:$upstream_path" \
-    > "$fixture/$upstream_path" \
-    || fail "could not build the pinned upstream fixture from $upstream_path"
-done
-
 python3 - "$fixture" <<'PY'
 import pathlib
 import sys
@@ -63,7 +51,60 @@ text = text.replace(
     "RUNNER-LOCK: pid $$ holds the run lock for this run",
     "RUNNER-LOCK: pid $$ holds $LOCK for this run",
 )
-runner.write_text(text, encoding="utf-8")
+adapted_say = """# Findings go to stderr as they happen *and* into the run log, which is the
+# comment the run issue ends with. A headless run reports to nobody watching, so
+# a line that only ever reached a terminal did not survive the run.
+# Public comments must not disclose the host that ran the loop. Keep the
+# terminal diagnostic useful while replacing absolute paths in the persisted log.
+sanitize_log_line() {
+  printf '%s\\n' "$1" | sed -E \\
+    's#(^|[^[:alnum:]:/])(/[-A-Za-z0-9._~@%+,=:]+)+#\\1<host-path>#g'
+}
+say() {
+  local public
+  printf '%s\\n' "$1" >&2
+  if [ -n "$LOGFILE" ]; then
+    public="$(sanitize_log_line "$1")"
+    printf '%s\\n' "$public" >> "$LOGFILE"
+  fi
+  return 0
+}
+"""
+upstream_say = """# Findings go to stderr as they happen *and* into the run log, which is the
+# comment the run issue ends with. A headless run reports to nobody watching, so
+# a line that only ever reached a terminal did not survive the run.
+say() {
+  printf '%s\\n' "$1" >&2
+  [ -n "$LOGFILE" ] && printf '%s\\n' "$1" >> "$LOGFILE"
+  return 0
+}
+"""
+if adapted_say not in text:
+    raise SystemExit("checked-out runner is missing its Firstmate log adaptation")
+runner.write_text(text.replace(adapted_say, upstream_say), encoding="utf-8")
+
+skill = root / ".agents/skills/drain-ready-queue/SKILL.md"
+text = skill.read_text(encoding="utf-8")
+adapted_dispatch = """**Codex:** Firstmate owns Codex dispatch. Create and record the task brief with Firstmate's
+`bin/fm-brief.sh`, then invoke `bin/fm-spawn.sh` with explicit mode, yolo posture, and `--harness
+codex`. The adapted `run-codex-operative.sh` accepts the legacy arguments only to verify the
+recorded brief and delegates through that Firstmate owner; it never launches Codex directly.
+Never use `spawn_agent` or bypass Firstmate dispatch after a refusal.
+"""
+upstream_dispatch = """**Codex:** follow [CODEX-OPERATIVE.md](./CODEX-OPERATIVE.md). Run `bash
+"$SKILL/scripts/run-codex-operative.sh" <N> <SLUG> <absolute-brief-file>` from the repo root, one
+parallel call per lane. Never use `spawn_agent` or replace a refusal with direct `codex exec`.
+"""
+adapted_merge = """The toolkit never invokes a forge merge command directly; carry the Firstmate
+merge owner's verified result into this cycle. Carry in what this cycle established: the verdict word your own step-5 dispatch returned, the `pr-checks.sh` line, the
+"""
+upstream_merge = """`gh pr merge` never runs bare, and never unpinned. Carry in what this cycle
+established: the verdict word your own step-5 dispatch returned, the `pr-checks.sh` line, the
+"""
+if adapted_dispatch not in text or adapted_merge not in text:
+    raise SystemExit("checked-out skill is missing its Firstmate toolkit adaptations")
+text = text.replace(adapted_dispatch, upstream_dispatch)
+skill.write_text(text.replace(adapted_merge, upstream_merge), encoding="utf-8")
 PY
 
 cp "$INSTALLER" "$project/bin/fm-install-codex-toolkit.sh"
@@ -185,6 +226,22 @@ assert_contains "$(cat "$spawn_log")" "task-42 $project --mode direct-PR --yolo 
   "Codex toolkit runner did not pass explicit Firstmate spawn policy"
 merge_log="$TMP_ROOT/merge.log"
 hold_log="$TMP_ROOT/hold.log"
+printf 'yolo=on\n' > "$TMP_ROOT/home/state/task-42.meta"
+for rejected_policy in pm-merge unknown-policy; do
+  rm -f "$merge_log" "$hold_log"
+  if HOLD_LOG="$hold_log" RELEASED_APPROVAL=1 MERGE_LOG="$merge_log" FM_ROOT="$project" \
+    FM_HOME="$TMP_ROOT/home" FM_TASK_ID=task-42 PATH="$fakebin:$PATH" \
+    "$project/.agents/skills/drain-ready-queue/scripts/merge-pinned.sh" \
+    7 0123456789012345678901234567890123456789 squash "$rejected_policy" \
+    > "$TMP_ROOT/policy.out" 2> "$TMP_ROOT/policy.err"; then
+    fail "Codex toolkit merge runner accepted non-auto policy $rejected_policy"
+  fi
+  assert_absent "$merge_log" "non-auto policy $rejected_policy reached Firstmate's merge owner"
+  assert_absent "$hold_log" "non-auto policy $rejected_policy reached captain-release authority"
+  assert_contains "$(cat "$TMP_ROOT/policy.out")" "is not an auto policy" \
+    "non-auto policy $rejected_policy did not explain its refusal"
+done
+
 printf 'yolo=off\n' > "$TMP_ROOT/home/state/task-42.meta"
 if HOLD_LOG="$hold_log" RELEASED_APPROVAL=0 MERGE_LOG="$merge_log" FM_ROOT="$project" \
   FM_HOME="$TMP_ROOT/home" FM_TASK_ID=task-42 PATH="$fakebin:$PATH" \
