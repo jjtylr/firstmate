@@ -338,7 +338,7 @@ family_for_basename() {
     fm-claude-stop-autoarm-live-e2e.test.sh|\
     fm-cmux-claude-composer-live-e2e.test.sh|\
     fm-composer-matrix-live-e2e.test.sh|\
-    fm-codex-continuity-live-e2e.test.sh|fm-grok-continuity-live-e2e.test.sh|\
+    fm-codex-continuity-live-e2e.test.sh|fm-codex-toolkit-hooks-live-e2e.test.sh|fm-grok-continuity-live-e2e.test.sh|\
     fm-cursor-primary-live-e2e.test.sh|\
     fm-grok-stop-live-e2e.test.sh|fm-harness-adapter-instructions-live-e2e.test.sh|\
     fm-harness-liveness-drift-live-e2e.test.sh|\
@@ -761,6 +761,7 @@ tests/fm-send-secondmate-marker.test.sh 6252
 tests/fm-session-lock-ancestry.test.sh 1414
 tests/fm-session-start.test.sh 156952
 tests/fm-sessionstart-hook-live-e2e.test.sh 20
+tests/fm-codex-toolkit-hooks-live-e2e.test.sh 5
 tests/fm-sessionstart-instruction-refresh-live-e2e.test.sh 22
 tests/fm-sessionstart-nudge.test.sh 66194
 tests/fm-shared-captain-inheritance.test.sh 6108

@@ -111,7 +111,7 @@ const newSay = `# Findings go to stderr as they happen *and* into the run log, w
 # terminal diagnostic useful while replacing absolute paths in the persisted log.
 sanitize_log_line() {
   printf '%s\\n' "$1" | sed -E \\
-    's#(^|[^[:alnum:]:/])(/[-A-Za-z0-9._~@%+,=:]+)+#\\1<host-path>#g'
+    "s#(^|[^[:alnum:]:/])(/[^,;'\\\"\\\`<>]+)#\\\\1<host-path>#g"
 }
 say() {
   local public
@@ -127,34 +127,62 @@ if (!runner.includes(oldSay)) throw new Error('runner say block is missing');
 runner = runner.replace(oldSay, newSay);
 fs.writeFileSync(runnerPath, runner, 'utf8');
 
-function installFirstmateWrapper(relative, helper) {
-  const target = path.join(root, relative);
-  const text = `#!/usr/bin/env bash
-# Firstmate adaptation of the upstream Codex toolkit entrypoint.
+const dispatchWrapper = `#!/usr/bin/env bash
+# Firstmate adaptation of the upstream Codex operative runner.
 set -u
 here="$(cd "$(dirname "\${BASH_SOURCE[0]}")" 2>/dev/null && pwd)" || exit 2
 root="\${FM_ROOT:-$(cd "$here/../../../../" 2>/dev/null && pwd -P)}"
-[ -x "$root/bin/${helper}" ] || {
-  printf 'Firstmate adapter is missing: %s\\n' "$root/bin/${helper}" >&2
+[ -x "$root/bin/fm-codex-toolkit-dispatch.sh" ] || {
+  printf 'CODEX-OPERATIVE-REFUSED: Firstmate dispatch adapter is missing\\n' >&2
   exit 2
 }
-FM_ROOT="$root" exec "$root/bin/${helper}" "$@"
+FM_ROOT="$root" exec "$root/bin/fm-codex-toolkit-dispatch.sh" "$@"
 `;
-  fs.writeFileSync(target, text, 'utf8');
+const mergeWrapper = `#!/usr/bin/env bash
+# Firstmate adaptation of the upstream merge-pinned runner.
+set -u
+here="$(cd "$(dirname "\${BASH_SOURCE[0]}")" 2>/dev/null && pwd)" || exit 1
+root="\${FM_ROOT:-$(cd "$here/../../../../" 2>/dev/null && pwd -P)}"
+[ -x "$root/bin/fm-codex-toolkit-merge.sh" ] || {
+  printf 'MERGE-FAILED:Firstmate merge adapter is missing; nothing was attempted\\n'
+  exit 1
 }
-installFirstmateWrapper('.agents/skills/drain-ready-queue/scripts/run-codex-operative.sh', 'fm-codex-toolkit-dispatch.sh');
-installFirstmateWrapper('.agents/skills/drain-ready-queue/scripts/merge-pinned.sh', 'fm-codex-toolkit-merge.sh');
+FM_ROOT="$root" exec "$root/bin/fm-codex-toolkit-merge.sh" "$@"
+`;
+fs.writeFileSync(
+  path.join(root, '.agents/skills/drain-ready-queue/scripts/run-codex-operative.sh'),
+  dispatchWrapper,
+  'utf8'
+);
+fs.writeFileSync(
+  path.join(root, '.agents/skills/drain-ready-queue/scripts/merge-pinned.sh'),
+  mergeWrapper,
+  'utf8'
+);
+fs.chmodSync(
+  path.join(root, '.agents/skills/drain-ready-queue/scripts/run-codex-operative.sh'),
+  0o755
+);
+fs.chmodSync(
+  path.join(root, '.agents/skills/drain-ready-queue/scripts/merge-pinned.sh'),
+  0o755
+);
 
 const codexDoc = path.join(root, '.agents/skills/drain-ready-queue/CODEX-OPERATIVE.md');
 const codexDocText = [
   '# Codex operative runner (Firstmate adaptation)',
   '',
   'Firstmate owns worker dispatch, isolation, harness selection, trust handling, and merge authority.',
-  'The upstream toolkit runner path is not used after installation here.',
+  "The upstream toolkit runner's private `codex exec` path is not used after installation here.",
   '',
-  'Create the task brief with `bin/fm-brief.sh`, then spawn it with `bin/fm-spawn.sh` using',
-  'explicit mode, yolo posture, and `--harness codex`. The adapted three-argument runner verifies',
-  '`FM_HOME`, `FM_TASK_ID`, and the recorded brief before delegating to that owner.',
+  "1. Create the task brief with Firstmate's `bin/fm-brief.sh`.",
+  '2. Spawn it with `bin/fm-spawn.sh <task-id> <project-dir> --mode <mode> --yolo <on|off> --harness codex`.',
+  "3. Supervise the task through Firstmate's normal durable records and merge owner.",
+  '',
+  'For callers that still use the upstream three-argument interface, the adapted',
+  '`run-codex-operative.sh` verifies `FM_HOME`, `FM_TASK_ID`, and that the supplied brief matches',
+  '`$FM_HOME/data/$FM_TASK_ID/brief.md`, then delegates to `bin/fm-spawn.sh`. It prints',
+  '`CODEX-OPERATIVE-DISPATCHED` when that handoff succeeds and `CODEX-OPERATIVE-REFUSED` otherwise.',
   'It never falls back to a direct Codex process or to the parent checkout.',
   ''
 ].join('\n');

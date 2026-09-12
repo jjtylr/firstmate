@@ -212,19 +212,9 @@ SESSION_SECONDS=0
 # Findings go to stderr as they happen *and* into the run log, which is the
 # comment the run issue ends with. A headless run reports to nobody watching, so
 # a line that only ever reached a terminal did not survive the run.
-# Public comments must not disclose the host that ran the loop. Keep the
-# terminal diagnostic useful while replacing absolute paths in the persisted log.
-sanitize_log_line() {
-  printf '%s\n' "$1" | sed -E \
-    "s#(^|[^[:alnum:]:/])(/[^,;'\"\`<>]+)#\\1<host-path>#g"
-}
 say() {
-  local public
   printf '%s\n' "$1" >&2
-  if [ -n "$LOGFILE" ]; then
-    public="$(sanitize_log_line "$1")"
-    printf '%s\n' "$public" >> "$LOGFILE"
-  fi
+  [ -n "$LOGFILE" ] && printf '%s\n' "$1" >> "$LOGFILE"
   return 0
 }
 # Never into the log: used when the log itself is what failed.
@@ -444,7 +434,7 @@ else
   PLUGIN_ROOT="$(cd "$here/../../.." 2>/dev/null && pwd)" || PLUGIN_ROOT=""
   [ -n "$PLUGIN_ROOT" ] && [ -f "$PLUGIN_ROOT/.claude-plugin/plugin.json" ] || PLUGIN_ROOT=""
 fi
-[ -n "$PLUGIN_ROOT" ] || say "RUNNER-NO-PLUGIN-ROOT: no plugin root three directories above this runner carries .claude-plugin/plugin.json, so no --add-dir is passed and Bash reads of the plugin tree will be denied. The Read tool still reaches it. Set RUNNER_PLUGIN_DIR to name the snapshot"
+[ -n "$PLUGIN_ROOT" ] || say "RUNNER-NO-PLUGIN-ROOT: no plugin root three directories above $here carries .claude-plugin/plugin.json, so no --add-dir is passed and Bash reads of the plugin tree will be denied. The Read tool still reaches it. Set RUNNER_PLUGIN_DIR to name the snapshot"
 
 # --- the lock -----------------------------------------------------------------
 LOCK="$(lock_path)" || refuse "this repo's git directory could not be resolved, so the run lock has no home"
@@ -458,12 +448,12 @@ else
   elif pid_alive "$holder"; then
     refuse "the run lock $LOCK is held by live pid $holder (since $(lock_started)) — a headless run is already draining this repo"
   fi
-  say "RUNNER-LOCK-STALE: the run lock recorded pid $holder, which is gone — claiming it"
+  say "RUNNER-LOCK-STALE: $LOCK recorded pid $holder, which is gone — claiming it"
   rm -f "$LOCK"
   lock_claim || refuse "the run lock $LOCK was taken by another runner while this one cleared the stale claim"
   LOCK_HELD=1
 fi
-say "RUNNER-LOCK: pid $$ holds the run lock for this run"
+say "RUNNER-LOCK: pid $$ holds $LOCK for this run"
 
 # --- the gate, before anything is opened --------------------------------------
 GATE_ERR=""

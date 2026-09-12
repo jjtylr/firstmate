@@ -136,7 +136,7 @@ function withoutToolkit(groups) {
 doc.hooks.SessionStart = withoutToolkit(doc.hooks.SessionStart);
 doc.hooks.UserPromptSubmit = withoutToolkit(doc.hooks.UserPromptSubmit);
 doc.hooks.SessionStart.push({
-  matcher: 'startup|resume|clear|compact',
+  matcher: 'startup|resume',
   hooks: [{
     type: 'command',
     command: '/bin/bash "$(git rev-parse --show-toplevel)/.agents/skills/unslop/scripts/reminder.sh" codex-session'
@@ -181,6 +181,7 @@ mv "$config_tmp" "$codex_dir/config.toml" || fail 'cannot install .codex/config.
 mv "$hooks_tmp" "$codex_dir/hooks.json" || fail 'cannot install .codex/hooks.json'
 chmod +x "$project/.agents/skills/unslop/scripts/reminder.sh" 2>/dev/null || true
 
-printf 'CODEX-PROJECT-OK: installed %s skills, 4 agent roles, and 2 hook handlers in %s\n' "$skill_count" "$project"
-printf '%s\n' 'Restart Codex in this repository. Approve project trust, then review and trust the project hooks.'
+printf 'CODEX-PROJECT-OK: installed %s skills, 4 agent roles, and 2 codex-exec hook handlers in %s\n' "$skill_count" "$project"
+printf '%s\n' 'Toolkit project hooks support codex exec only. Interactive Codex is unsupported.'
+printf '%s\n' 'Approve project trust, then review and trust the project hooks before using codex exec.'
 exit 0

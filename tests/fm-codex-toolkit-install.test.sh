@@ -7,6 +7,7 @@ set -eu
 
 INSTALLER="$ROOT/bin/fm-install-codex-toolkit.sh"
 MANIFEST="$ROOT/.agents/skills/setup-engineering-skills/codex/skill-manifest.txt"
+UPSTREAM_FIXTURE="$ROOT/tests/fixtures/codex-toolkit-upstream"
 TMP_ROOT=$(fm_test_tmproot fm-codex-toolkit-install)
 
 fixture="$TMP_ROOT/upstream"
@@ -17,95 +18,19 @@ mkdir -p "$fixture/.agents/skills" "$project/bin" "$fakebin"
 while IFS= read -r skill; do
   [ -n "$skill" ] || continue
   cp -R "$ROOT/.agents/skills/$skill" "$fixture/.agents/skills/$skill"
+  if [ "$skill" != drain-ready-queue ]; then
+    printf '%s\n' '---' "name: $skill" "description: Upstream fixture for $skill." '---' \
+      > "$fixture/.agents/skills/$skill/SKILL.md"
+  fi
 done < "$MANIFEST"
 cp "$ROOT/skills-lock.json" "$fixture/skills-lock.json"
-
-python3 - "$fixture" <<'PY'
-import pathlib
-import sys
-
-root = pathlib.Path(sys.argv[1])
-for skill_file in root.glob(".agents/skills/*/SKILL.md"):
-    lines = skill_file.read_text(encoding="utf-8").splitlines(keepends=True)
-    close = next(i for i, line in enumerate(lines[1:], 1) if line.rstrip("\r\n") == "---")
-    frontmatter = [line.rstrip("\r\n") for line in lines[1:close]]
-    if "metadata:" in frontmatter:
-        metadata = frontmatter.index("metadata:")
-        internal = next(i for i, line in enumerate(frontmatter[metadata + 1:], metadata + 1)
-                        if line.strip().startswith("internal:"))
-        del lines[internal + 1]
-        del lines[metadata]
-    skill_file.write_text("".join(lines), encoding="utf-8")
-
-runner = root / ".agents/skills/drain-ready-queue/scripts/runner.sh"
-text = runner.read_text(encoding="utf-8")
-text = text.replace(
-    "no plugin root three directories above this runner carries .claude-plugin/plugin.json",
-    "no plugin root three directories above $here carries .claude-plugin/plugin.json",
-)
-text = text.replace(
-    "RUNNER-LOCK-STALE: the run lock recorded pid $holder, which is gone — claiming it",
-    "RUNNER-LOCK-STALE: $LOCK recorded pid $holder, which is gone — claiming it",
-)
-text = text.replace(
-    "RUNNER-LOCK: pid $$ holds the run lock for this run",
-    "RUNNER-LOCK: pid $$ holds $LOCK for this run",
-)
-adapted_say = """# Findings go to stderr as they happen *and* into the run log, which is the
-# comment the run issue ends with. A headless run reports to nobody watching, so
-# a line that only ever reached a terminal did not survive the run.
-# Public comments must not disclose the host that ran the loop. Keep the
-# terminal diagnostic useful while replacing absolute paths in the persisted log.
-sanitize_log_line() {
-  printf '%s\\n' "$1" | sed -E \\
-    's#(^|[^[:alnum:]:/])(/[-A-Za-z0-9._~@%+,=:]+)+#\\1<host-path>#g'
-}
-say() {
-  local public
-  printf '%s\\n' "$1" >&2
-  if [ -n "$LOGFILE" ]; then
-    public="$(sanitize_log_line "$1")"
-    printf '%s\\n' "$public" >> "$LOGFILE"
-  fi
-  return 0
-}
-"""
-upstream_say = """# Findings go to stderr as they happen *and* into the run log, which is the
-# comment the run issue ends with. A headless run reports to nobody watching, so
-# a line that only ever reached a terminal did not survive the run.
-say() {
-  printf '%s\\n' "$1" >&2
-  [ -n "$LOGFILE" ] && printf '%s\\n' "$1" >> "$LOGFILE"
-  return 0
-}
-"""
-if adapted_say not in text:
-    raise SystemExit("checked-out runner is missing its Firstmate log adaptation")
-runner.write_text(text.replace(adapted_say, upstream_say), encoding="utf-8")
-
-skill = root / ".agents/skills/drain-ready-queue/SKILL.md"
-text = skill.read_text(encoding="utf-8")
-adapted_dispatch = """**Codex:** Firstmate owns Codex dispatch. Create and record the task brief with Firstmate's
-`bin/fm-brief.sh`, then invoke `bin/fm-spawn.sh` with explicit mode, yolo posture, and `--harness
-codex`. The adapted `run-codex-operative.sh` accepts the legacy arguments only to verify the
-recorded brief and delegates through that Firstmate owner; it never launches Codex directly.
-Never use `spawn_agent` or bypass Firstmate dispatch after a refusal.
-"""
-upstream_dispatch = """**Codex:** follow [CODEX-OPERATIVE.md](./CODEX-OPERATIVE.md). Run `bash
-"$SKILL/scripts/run-codex-operative.sh" <N> <SLUG> <absolute-brief-file>` from the repo root, one
-parallel call per lane. Never use `spawn_agent` or replace a refusal with direct `codex exec`.
-"""
-adapted_merge = """The toolkit never invokes a forge merge command directly; carry the Firstmate
-merge owner's verified result into this cycle. Carry in what this cycle established: the verdict word your own step-5 dispatch returned, the `pr-checks.sh` line, the
-"""
-upstream_merge = """`gh pr merge` never runs bare, and never unpinned. Carry in what this cycle
-established: the verdict word your own step-5 dispatch returned, the `pr-checks.sh` line, the
-"""
-if adapted_dispatch not in text or adapted_merge not in text:
-    raise SystemExit("checked-out skill is missing its Firstmate toolkit adaptations")
-text = text.replace(adapted_dispatch, upstream_dispatch)
-skill.write_text(text.replace(adapted_merge, upstream_merge), encoding="utf-8")
-PY
+upstream_drain="$UPSTREAM_FIXTURE/.agents/skills/drain-ready-queue"
+fixture_drain="$fixture/.agents/skills/drain-ready-queue"
+cp "$upstream_drain/CODEX-OPERATIVE.md.fixture" "$fixture_drain/CODEX-OPERATIVE.md"
+cp "$upstream_drain/SKILL.md.fixture" "$fixture_drain/SKILL.md"
+for upstream_script in merge-pinned.sh run-codex-operative.sh runner.sh; do
+  cp "$upstream_drain/scripts/$upstream_script" "$fixture_drain/scripts/$upstream_script"
+done
 
 cp "$INSTALLER" "$project/bin/fm-install-codex-toolkit.sh"
 cp "$ROOT/bin/fm-codex-toolkit-dispatch.sh" "$project/bin/"
@@ -152,6 +77,8 @@ tree_digest() {
 out=$(install_fixture) || fail "pinned toolkit installer failed on a released snapshot"
 assert_contains "$out" "FM-TOOLKIT-INSTALL-OK: agent-toolkit 26bc6befdcfbd335a8f99cc466e664e994f647d2" \
   "installer did not report the pinned release"
+assert_contains "$out" "Toolkit project hooks support codex exec only" \
+  "installer did not state the supported toolkit hook path"
 
 python3 - "$project" <<'PY'
 import json
@@ -183,7 +110,16 @@ for role, entry in config["agents"].items():
 hooks = json.loads((root / ".codex/hooks.json").read_text(encoding="utf-8"))["hooks"]
 assert len(hooks["SessionStart"]) == 1
 assert len(hooks["UserPromptSubmit"]) == 1
+assert hooks["SessionStart"][0]["matcher"] == "startup|resume"
 PY
+
+for adapted_path in \
+  .agents/skills/drain-ready-queue/CODEX-OPERATIVE.md \
+  .agents/skills/drain-ready-queue/scripts/merge-pinned.sh \
+  .agents/skills/drain-ready-queue/scripts/run-codex-operative.sh; do
+  cmp "$ROOT/$adapted_path" "$project/$adapted_path" >/dev/null \
+    || fail "installer output differs from the tracked $adapted_path contract"
+done
 
 first=$(tree_digest)
 install_fixture >/dev/null || fail "pinned toolkit reinstall failed"
@@ -271,7 +207,8 @@ captured="$TMP_ROOT/comment.md"
 mkdir -p "$project/private"
 cat > "$runner_dir/runner-gate.sh" <<'SH'
 #!/usr/bin/env bash
-printf "RUNNER-CONTINUE: RUNNER_LOCK=/srv/private/run.lock, quoted '%s/hidden/file', URL https://github.com/example/project/pull/7\n" \
+printf "RUNNER-CONTINUE: RUNNER_LOCK=/srv/private/run.lock, spaced %s/Private Project/missing.git, quoted '%s/hidden/file', URL https://github.com/example/project/pull/7\n" \
+  "$PROJECT_SECRET" \
   "$PROJECT_SECRET" >&2
 exit 0
 SH
@@ -315,6 +252,8 @@ body=$(cat "$captured")
 assert_not_contains "$body" "$project" "public run log disclosed its absolute project path"
 assert_not_contains "$body" "/srv/private/run.lock" \
   "public run log disclosed an absolute path outside its known host roots"
+assert_not_contains "$body" "Private Project/missing.git" \
+  "public run log disclosed a suffix from an absolute path containing spaces"
 assert_contains "$body" "URL https://github.com/example/project/pull/7" \
   "public run log path redaction damaged a host URL"
 assert_contains "$body" "three directories above this runner" \
