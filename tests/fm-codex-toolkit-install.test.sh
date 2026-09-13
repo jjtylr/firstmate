@@ -233,7 +233,17 @@ cat > "$fakebin/gh" <<'SH'
 #!/usr/bin/env bash
 case "${1:-} ${2:-}" in
   "repo view") printf 'https://github.com/example/project\n' ;;
-  "pr view") printf 'build: keep examined behavior\n' ;;
+  "pr view")
+    case " $* " in
+      *" --json commits "*) printf 'build: keep examined behavior\n' ;;
+      *" --json state,headRefOid "*)
+        printf '{"state":"%s","headRefOid":"%s"}\n' \
+          "${GH_PR_STATE:-MERGED}" \
+          "${GH_PR_HEAD:-0123456789012345678901234567890123456789}"
+        ;;
+      *) exit 1 ;;
+    esac
+    ;;
   *) exit 1 ;;
 esac
 SH
@@ -288,6 +298,18 @@ assert_contains "$(cat "$hold_log")" "released task-42" \
 assert_contains "$(cat "$merge_log")" \
   "task-42 https://github.com/example/project/pull/7 --expected-head 0123456789012345678901234567890123456789 -- --squash --subject build: keep examined behavior (#7)" \
   "Codex toolkit merge runner dropped its commit pin or squash subject"
+
+if HOLD_LOG="$hold_log" RELEASED_APPROVAL=1 MERGE_LOG="$merge_log" FM_ROOT="$project" \
+  FM_HOME="$TMP_ROOT/home" FM_TASK_ID=task-42 GH_PR_STATE=OPEN PATH="$fakebin:$PATH" \
+  "$project/.agents/skills/drain-ready-queue/scripts/merge-pinned.sh" \
+  7 0123456789012345678901234567890123456789 squash auto-on-verdict \
+  > "$TMP_ROOT/queued.out" 2> "$TMP_ROOT/queued.err"; then
+  fail "Codex toolkit merge runner reported a queued PR as landed"
+fi
+assert_not_contains "$(cat "$TMP_ROOT/queued.out")" "MERGE-PINNED" \
+  "Codex toolkit merge runner emitted landed success for a queued PR"
+assert_contains "$(cat "$TMP_ROOT/queued.out")" "has not landed" \
+  "Codex toolkit merge runner did not explain the queued PR outcome"
 pass "Codex dispatch and merge routes preserve Firstmate authority and examined inputs"
 
 runner_dir="$project/.agents/skills/drain-ready-queue/scripts"

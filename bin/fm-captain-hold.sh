@@ -1793,6 +1793,40 @@ EOF
   done
 }
 
+captain_task_probe() {  # <task-id>
+  local id=$1 data root file backend
+  case "$id" in
+    ''|*[!A-Za-z0-9._-]*)
+      printf 'fm-captain-hold: task id must be a non-empty privacy-safe slug: %s\n' "$id" >&2
+      return 2
+      ;;
+  esac
+  data=$(fm_backlog_data_absolute "$DATA") \
+    || { printf 'fm-captain-hold: data directory cannot be resolved: %s\n' "$DATA" >&2; return 2; }
+  root=$(fm_backlog_root "$data") \
+    || { printf 'fm-captain-hold: %s\n' "$FM_BACKLOG_TRANSITION_ERROR" >&2; return 2; }
+  if ! backend=$(fm_tasks_axi_backend_resolve "$root"); then
+    return 2
+  fi
+  if [ "$backend" = markdown ]; then
+    file=$(fm_backlog_file "$data") \
+      || { printf 'fm-captain-hold: %s\n' "$FM_BACKLOG_TRANSITION_ERROR" >&2; return 2; }
+    if [ ! -e "$file" ] && [ ! -L "$file" ]; then
+      return 1
+    fi
+  fi
+  fm_tasks_axi_compatible || {
+    printf 'fm-captain-hold: compatible tasks-axi is required\n' >&2
+    return 2
+  }
+  fm_backlog_row_probe "$data" "$id" && return 0
+  if [ "$FM_BACKLOG_ROW_RESULT" = not_found ]; then
+    return 1
+  fi
+  printf 'fm-captain-hold: %s\n' "$FM_BACKLOG_ROW_ERROR" >&2
+  return 2
+}
+
 # Still an open captain call? Exit 0 yes, 1 no, 2 cannot tell (see the header).
 # A row this home does not carry is 3 when the caller requests the distinction,
 # and so is a home with no backlog file at all, because a backlog that does not
@@ -1800,7 +1834,7 @@ EOF
 # printed to stderr, because a mechanical closer must never read "cannot tell"
 # as permission to close.
 command_open() {  # <task-id> [--identity] [--distinguish-absent]
-  local id='' identity=0 distinguish_absent=0 data state root file backend show shown_body
+  local id='' identity=0 distinguish_absent=0 state show shown_body probe_status
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --identity) identity=1 ;;
@@ -1813,86 +1847,40 @@ command_open() {  # <task-id> [--identity] [--distinguish-absent]
     esac
     shift
   done
-  case "$id" in
-    ''|*[!A-Za-z0-9._-]*)
-      printf 'fm-captain-hold: task id must be a non-empty privacy-safe slug: %s\n' "$id" >&2
-      exit 2
+  captain_task_probe "$id"
+  probe_status=$?
+  case "$probe_status" in
+    0)
+      state=${FM_BACKLOG_ROW_STATE%% *}
+      if [ "$state" != "done" ] && [ "$FM_BACKLOG_ROW_HOLD_KIND" = captain ]; then
+        if [ "$identity" -eq 1 ]; then
+          show=$(task_show "$id") || {
+            printf 'fm-captain-hold: captain call %s is open but its record could not be read\n' "$id" >&2
+            exit 2
+          }
+          shown_body=$(show_field "$show" body)
+          printf '%s#%s\n' \
+            "$(body_hold_set_timestamp "$(decode_shown_value "$shown_body")")" \
+            "$(resolution_record_count "$shown_body")"
+        fi
+        return 0
+      fi
+      return 1
       ;;
-  esac
-  data=$(fm_backlog_data_absolute "$DATA") \
-    || { printf 'fm-captain-hold: data directory cannot be resolved: %s\n' "$DATA" >&2; exit 2; }
-  root=$(fm_backlog_root "$data") \
-    || { printf 'fm-captain-hold: %s\n' "$FM_BACKLOG_TRANSITION_ERROR" >&2; exit 2; }
-  if ! backend=$(fm_tasks_axi_backend_resolve "$root"); then
-    exit 2
-  fi
-  if [ "$backend" = markdown ]; then
-    file=$(fm_backlog_file "$data") \
-      || { printf 'fm-captain-hold: %s\n' "$FM_BACKLOG_TRANSITION_ERROR" >&2; exit 2; }
-    if [ ! -e "$file" ] && [ ! -L "$file" ]; then
-      # No backlog file at all: this home records no captain calls, so the task
-      # is absent from it rather than held. A record that EXISTS but cannot be
-      # read is a different state and still leaves by the exit 2 paths below,
-      # because that one may hide a live hold.
+    1)
       [ "$distinguish_absent" = 0 ] || return 3
       return 1
-    fi
-  fi
-  fm_tasks_axi_compatible || { printf 'fm-captain-hold: compatible tasks-axi is required\n' >&2; exit 2; }
-  if fm_backlog_row_probe "$data" "$id"; then
-    state=${FM_BACKLOG_ROW_STATE%% *}
-    if [ "$state" != "done" ] && [ "$FM_BACKLOG_ROW_HOLD_KIND" = captain ]; then
-      if [ "$identity" -eq 1 ]; then
-        show=$(task_show "$id") || {
-          printf 'fm-captain-hold: captain call %s is open but its record could not be read\n' "$id" >&2
-          exit 2
-        }
-        shown_body=$(show_field "$show" body)
-        printf '%s#%s\n' \
-          "$(body_hold_set_timestamp "$(decode_shown_value "$shown_body")")" \
-          "$(resolution_record_count "$shown_body")"
-      fi
-      return 0
-    fi
-    return 1
-  fi
-  if [ "$FM_BACKLOG_ROW_RESULT" = not_found ]; then
-    [ "$distinguish_absent" = 0 ] || return 3
-    return 1
-  fi
-  printf 'fm-captain-hold: %s\n' "$FM_BACKLOG_ROW_ERROR" >&2
-  exit 2
+      ;;
+    *) exit 2 ;;
+  esac
 }
 
 command_released() {  # <task-id>
-  local id=${1:-} data root file backend show state hold_kind body
+  local id=${1:-} show state hold_kind body probe_status
   [ "$#" -eq 1 ] || { usage >&2; exit 2; }
-  case "$id" in
-    ''|*[!A-Za-z0-9._-]*)
-      printf 'fm-captain-hold: task id must be a non-empty privacy-safe slug: %s\n' "$id" >&2
-      exit 2
-      ;;
-  esac
-  data=$(fm_backlog_data_absolute "$DATA") \
-    || { printf 'fm-captain-hold: data directory cannot be resolved: %s\n' "$DATA" >&2; exit 2; }
-  root=$(fm_backlog_root "$data") \
-    || { printf 'fm-captain-hold: %s\n' "$FM_BACKLOG_TRANSITION_ERROR" >&2; exit 2; }
-  if ! backend=$(fm_tasks_axi_backend_resolve "$root"); then
-    exit 2
-  fi
-  if [ "$backend" = markdown ]; then
-    file=$(fm_backlog_file "$data") \
-      || { printf 'fm-captain-hold: %s\n' "$FM_BACKLOG_TRANSITION_ERROR" >&2; exit 2; }
-    if [ ! -e "$file" ] && [ ! -L "$file" ]; then
-      return 1
-    fi
-  fi
-  fm_tasks_axi_compatible || { printf 'fm-captain-hold: compatible tasks-axi is required\n' >&2; exit 2; }
-  if ! fm_backlog_row_probe "$data" "$id"; then
-    [ "$FM_BACKLOG_ROW_RESULT" = not_found ] && return 1
-    printf 'fm-captain-hold: %s\n' "$FM_BACKLOG_ROW_ERROR" >&2
-    exit 2
-  fi
+  captain_task_probe "$id"
+  probe_status=$?
+  [ "$probe_status" -eq 0 ] || return "$probe_status"
   state=${FM_BACKLOG_ROW_STATE%% *}
   hold_kind=$FM_BACKLOG_ROW_HOLD_KIND
   if [ "$state" != done ] && [ "$hold_kind" = captain ]; then

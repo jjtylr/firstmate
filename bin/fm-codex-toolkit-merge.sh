@@ -73,6 +73,12 @@ out="$(FM_ROOT="$FM_ROOT" FM_TASK_ID="$task_id" \
   --expected-head "$commit" -- "${merge_arg[@]}" 2>&1)"
 code=$?
 if [ "$code" -eq 0 ]; then
+  after="$(gh pr view "$pr" --json state,headRefOid 2>&1)"
+  [ $? -eq 0 ] || failed "Firstmate accepted PR #$pr, but its outcome could not be read from the host — $after"
+  state="$(printf '%s' "$after" | jq -r '.state // empty' 2>/dev/null)"
+  head="$(printf '%s' "$after" | jq -r '.headRefOid // empty' 2>/dev/null)"
+  [ "$state" = MERGED ] ||
+    failed "Firstmate accepted PR #$pr, but it has not landed (state=$state, head=$head)"
   echo "MERGE-PINNED:#$pr merged after Firstmate verified the live PR (examined $commit)"
   exit 0
 fi
