@@ -1,0 +1,18 @@
+CODEX-PROJECT-OK: installed 30 skills, 4 agent roles, and 2 codex-exec hook handlers in /private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-toolkit-config-live.X9ryAB
+Toolkit project hooks support codex exec only. Interactive Codex is unsupported.
+Approve project trust, then review and trust the project hooks before using codex exec.
+{
+  "custom_clear_session_hook_preserved": true,
+  "custom_prompt_wrapper_preserved": true,
+  "existing_codex_sidecar_preserved": true,
+  "existing_config_preserved": true,
+  "existing_contract_preserved": true,
+  "managed_prompt_hook_count": 1,
+  "managed_startup_session_hook_count": 1,
+  "roles": [
+    "operative",
+    "score-calibrator",
+    "scorer",
+    "verifier"
+  ]
+}

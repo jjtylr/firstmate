@@ -1,0 +1,2 @@
+CODEX_TOOLKIT_HOOKS session=1 prompt=1
+ok - codex-cli 0.154.0 delivered both toolkit hooks under codex exec

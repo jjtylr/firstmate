@@ -1,0 +1,9 @@
+USER ACTION: request a Codex drain without an explicit project route
+CODEX-OPERATIVE-REFUSED: set FM_TOOLKIT_PROJECT to the task project passed to fm-brief.sh
+OBSERVED EXIT: 2
+USER ACTION: request local-only routing for a PR-producing Codex drain
+CODEX-OPERATIVE-REFUSED: invalid FM_TOOLKIT_MODE: local-only
+OBSERVED EXIT: 2
+USER ACTION: request a merge under a non-auto toolkit policy
+MERGE-FAILED:merge_policy 'pm-merge' is not an auto policy the catalog carries — under it the loop never merges; nothing was attempted
+OBSERVED EXIT: 1
