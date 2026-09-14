@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Firstmate dispatch adapter for the installed Codex toolkit operative role.
-# Usage: FM_TOOLKIT_PROJECT=<project> FM_TOOLKIT_MODE=<mode> FM_TOOLKIT_YOLO=<on|off> bin/fm-codex-toolkit-dispatch.sh <ticket> <slug> <brief-file>
+# Usage: FM_HOME=<firstmate-home> FM_ROOT=<firstmate-repository> FM_TASK_ID=<task-id> \
+#        FM_TOOLKIT_PROJECT=<project> FM_TOOLKIT_MODE=<mode> FM_TOOLKIT_YOLO=<on|off> \
+#        bin/fm-codex-toolkit-dispatch.sh <ticket> <slug> <brief-file>
 set -u
 
 fail() {
