@@ -25,15 +25,16 @@ returns state you then carry has moved the state into the wrong place.
 ## 2. Dispatching a worker
 
 Use the client's fresh-worker mechanism. Claude Code uses the `Agent` tool. Codex uses its named
-project roles, except for the drain operative: Codex `spawn_agent` inherits the parent checkout and
-cannot isolate a lane, so `drain-ready-queue` uses its bounded `run-codex-operative.sh` process.
-That process starts a fresh `codex exec` in one proven owned worktree. Never replace it with a
-Codex subagent in the parent checkout.
+project roles, except for the drain operative.
+Firstmate dispatches that operative asynchronously through its durable task record.
+Never replace it with a Codex subagent or direct process in the parent checkout.
 
 Harness workers already run in the background and notify you when one completes.
 `run_in_background` is a **Bash** parameter, not an `Agent` one, and passing it to `Agent` is an
-input error, not a no-op. For Codex operative lanes, start one blocking runner command per lane in
-a parallel shell tool-call batch and take whichever call returns first.
+input error, not a no-op.
+For Codex operative lanes, `run-codex-operative.sh` reports only dispatch acceptance.
+Keep the lane occupied until Firstmate surfaces that task's terminal notification, then read the
+durable task state before advancing the ticket.
 
 **Concurrent dispatches are the stage's call, never yours.** Where a stage's own doctrine gives it a
 capacity — `drain-ready-queue`'s lanes, resolved from `max_lanes`

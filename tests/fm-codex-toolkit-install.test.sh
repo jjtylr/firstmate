@@ -40,6 +40,7 @@ if [ "${FM_CODEX_TOOLKIT_INSTALL_LIVE_E2E:-0}" = 1 ]; then
   for adapted_path in \
     .agents/skills/setup-engineering-skills/scripts/configure-codex-project.sh \
     .agents/skills/drain-ready-queue/CODEX-OPERATIVE.md \
+    .agents/skills/drain-ready-queue/ORCHESTRATION.md \
     .agents/skills/drain-ready-queue/MERGE-PIPELINE.md \
     .agents/skills/drain-ready-queue/MERGE-POLICY.md \
     .agents/skills/drain-ready-queue/SKILL.md \
@@ -205,6 +206,7 @@ for adapted_path in \
   .agents/skills/setup-engineering-skills/scripts/configure-codex-project.sh \
   .agents/skills/drain-ready-queue/SKILL.md \
   .agents/skills/drain-ready-queue/CODEX-OPERATIVE.md \
+  .agents/skills/drain-ready-queue/ORCHESTRATION.md \
   .agents/skills/drain-ready-queue/MERGE-PIPELINE.md \
   .agents/skills/drain-ready-queue/MERGE-POLICY.md \
   .agents/skills/drain-ready-queue/scripts/merge-pinned.sh \
@@ -236,8 +238,14 @@ printf '%s\n' "$*" >> "$HOLD_LOG"
 SH
 cat > "$fakebin/gh" <<'SH'
 #!/usr/bin/env bash
+[ -z "${GH_LOG:-}" ] || printf '%s\n' "$*" >> "$GH_LOG"
 case "${1:-} ${2:-}" in
-  "repo view") printf 'https://github.com/example/project\n' ;;
+  "repo view")
+    case " $* " in
+      *" nameWithOwner "*) printf 'example/project\n' ;;
+      *) printf 'https://github.com/example/project\n' ;;
+    esac
+    ;;
   "pr view")
     case " $* " in
       *" --json commits "*) printf 'build: keep examined behavior\n' ;;
@@ -249,6 +257,7 @@ case "${1:-} ${2:-}" in
       *) exit 1 ;;
     esac
     ;;
+  "pr merge") exit 0 ;;
   *) exit 1 ;;
 esac
 SH
@@ -265,6 +274,20 @@ assert_contains "$(cat "$spawn_log")" "task-42 $project --mode direct-PR --yolo 
   "Codex toolkit runner did not pass explicit Firstmate spawn policy"
 merge_log="$TMP_ROOT/merge.log"
 hold_log="$TMP_ROOT/hold.log"
+gh_log="$TMP_ROOT/gh.log"
+rm -f "$merge_log" "$gh_log"
+GH_LOG="$gh_log" MERGE_LOG="$merge_log" FM_ROOT="$project" \
+  PATH="$fakebin:$PATH" \
+  "$project/.agents/skills/drain-ready-queue/scripts/merge-pinned.sh" \
+  7 0123456789012345678901234567890123456789 squash auto-on-verdict \
+  > "$TMP_ROOT/claude-merge.out" 2> "$TMP_ROOT/claude-merge.err" \
+  || fail "Claude toolkit merge runner did not preserve its four-argument path"
+assert_absent "$merge_log" "Claude toolkit merge reached Firstmate's Codex merge owner"
+assert_contains "$(cat "$TMP_ROOT/claude-merge.out")" "MERGE-PINNED:#7 merged" \
+  "Claude toolkit merge runner did not report its pinned merge"
+assert_contains "$(cat "$gh_log")" \
+  "pr merge 7 --squash --subject build: keep examined behavior (#7) --delete-branch --repo example/project --match-head-commit 0123456789012345678901234567890123456789" \
+  "Claude toolkit merge runner did not preserve its pinned forge command"
 printf 'yolo=on\n' > "$TMP_ROOT/home/state/task-42.meta"
 for rejected_policy in pm-merge unknown-policy; do
   rm -f "$merge_log" "$hold_log"

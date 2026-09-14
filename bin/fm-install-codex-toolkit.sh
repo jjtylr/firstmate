@@ -167,33 +167,38 @@ root="\${FM_ROOT:-$(cd "$here/../../../../" 2>/dev/null && pwd -P)}"
 }
 FM_ROOT="$root" exec "$root/bin/fm-codex-toolkit-dispatch.sh" "$@"
 `;
-const mergeWrapper = `#!/usr/bin/env bash
-# Firstmate adaptation of the upstream merge-pinned runner.
-set -u
-here="$(cd "$(dirname "\${BASH_SOURCE[0]}")" 2>/dev/null && pwd)" || exit 1
-root="\${FM_ROOT:-$(cd "$here/../../../../" 2>/dev/null && pwd -P)}"
-[ -x "$root/bin/fm-codex-toolkit-merge.sh" ] || {
-  printf 'MERGE-FAILED:Firstmate merge adapter is missing; nothing was attempted\\n'
-  exit 1
-}
-FM_ROOT="$root" exec "$root/bin/fm-codex-toolkit-merge.sh" "$@"
-`;
 fs.writeFileSync(
   path.join(root, '.agents/skills/drain-ready-queue/scripts/run-codex-operative.sh'),
   dispatchWrapper,
   'utf8'
 );
-fs.writeFileSync(
-  path.join(root, '.agents/skills/drain-ready-queue/scripts/merge-pinned.sh'),
-  mergeWrapper,
-  'utf8'
+const mergeScriptPath = path.join(
+  root,
+  '.agents/skills/drain-ready-queue/scripts/merge-pinned.sh'
 );
+let mergeScript = fs.readFileSync(mergeScriptPath, 'utf8');
+const mergeAnchor = 'here="$(cd "$(dirname "$0")" && pwd)"\n';
+const firstmateMergeRoute = `
+if [ "$#" -eq 5 ]; then
+  root="\${FM_ROOT:-$(cd "$here/../../../../" 2>/dev/null && pwd -P)}"
+  [ -x "$root/bin/fm-codex-toolkit-merge.sh" ] || {
+    printf 'MERGE-FAILED:Firstmate merge adapter is missing; nothing was attempted\\n'
+    exit 1
+  }
+  FM_ROOT="$root" exec "$root/bin/fm-codex-toolkit-merge.sh" "$@"
+fi
+`;
+if (!mergeScript.includes(mergeAnchor)) {
+  throw new Error('merge-pinned entry point is missing');
+}
+mergeScript = mergeScript.replace(mergeAnchor, mergeAnchor + firstmateMergeRoute);
+fs.writeFileSync(mergeScriptPath, mergeScript, 'utf8');
 fs.chmodSync(
   path.join(root, '.agents/skills/drain-ready-queue/scripts/run-codex-operative.sh'),
   0o755
 );
 fs.chmodSync(
-  path.join(root, '.agents/skills/drain-ready-queue/scripts/merge-pinned.sh'),
+  mergeScriptPath,
   0o755
 );
 
@@ -285,6 +290,39 @@ const upstreamMerge = 'the park conditions; `gh pr merge` never runs bare, and n
 const firstmateMerge = 'the park conditions. The toolkit never invokes a forge merge command directly; carry the Firstmate\nmerge owner\'s verified result into this cycle. Carry in what this cycle established:';
 adaptSkill(upstreamMerge, firstmateMerge, 'merge');
 fs.writeFileSync(skillDoc, skill, 'utf8');
+
+const orchestrationPath = path.join(root, '.agents/skills/drain-ready-queue/ORCHESTRATION.md');
+let orchestration = fs.readFileSync(orchestrationPath, 'utf8');
+const upstreamDispatch = `Use the client's fresh-worker mechanism. Claude Code uses the \`Agent\` tool. Codex uses its named
+project roles, except for the drain operative: Codex \`spawn_agent\` inherits the parent checkout and
+cannot isolate a lane, so \`drain-ready-queue\` uses its bounded \`run-codex-operative.sh\` process.
+That process starts a fresh \`codex exec\` in one proven owned worktree. Never replace it with a
+Codex subagent in the parent checkout.`;
+const firstmateDispatch = `Use the client's fresh-worker mechanism. Claude Code uses the \`Agent\` tool. Codex uses its named
+project roles, except for the drain operative.
+Firstmate dispatches that operative asynchronously through its durable task record.
+Never replace it with a Codex subagent or direct process in the parent checkout.`;
+const upstreamWait = `Harness workers already run in the background and notify you when one completes.
+\`run_in_background\` is a **Bash** parameter, not an \`Agent\` one, and passing it to \`Agent\` is an
+input error, not a no-op. For Codex operative lanes, start one blocking runner command per lane in
+a parallel shell tool-call batch and take whichever call returns first.`;
+const firstmateWait = `Harness workers already run in the background and notify you when one completes.
+\`run_in_background\` is a **Bash** parameter, not an \`Agent\` one, and passing it to \`Agent\` is an
+input error, not a no-op.
+For Codex operative lanes, \`run-codex-operative.sh\` reports only dispatch acceptance.
+Keep the lane occupied until Firstmate surfaces that task's terminal notification, then read the
+durable task state before advancing the ticket.`;
+for (const [upstream, adapted, label] of [
+  [upstreamDispatch, firstmateDispatch, 'dispatch'],
+  [upstreamWait, firstmateWait, 'completion']
+]) {
+  if (orchestration.includes(upstream)) {
+    orchestration = orchestration.replace(upstream, adapted);
+  } else if (!orchestration.includes(adapted)) {
+    throw new Error(`orchestration ${label} adaptation source is missing`);
+  }
+}
+fs.writeFileSync(orchestrationPath, orchestration, 'utf8');
 
 const mergePipelinePath = path.join(root, '.agents/skills/drain-ready-queue/MERGE-PIPELINE.md');
 let mergePipeline = fs.readFileSync(mergePipelinePath, 'utf8');
