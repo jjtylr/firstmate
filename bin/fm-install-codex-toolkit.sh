@@ -382,6 +382,69 @@ const configurerAdaptations = [
     "matcher: 'startup|resume'"
   ],
   [
+    `const signature = '.agents/skills/unslop/scripts/reminder.sh';
+function withoutToolkit(groups) {
+  if (groups === undefined) return [];
+  if (!Array.isArray(groups)) throw new Error('hook event must contain an array');
+  return groups.flatMap(group => {
+    if (!group || Array.isArray(group) || typeof group !== 'object' || !Array.isArray(group.hooks)) {
+      throw new Error('hook matcher group must contain a hooks array');
+    }
+    const hooks = group.hooks.filter(handler =>
+      !(handler && typeof handler.command === 'string' && handler.command.includes(signature))
+    );
+    return hooks.length ? [{ ...group, hooks }] : [];
+  });
+}
+doc.hooks.SessionStart = withoutToolkit(doc.hooks.SessionStart);
+doc.hooks.UserPromptSubmit = withoutToolkit(doc.hooks.UserPromptSubmit);
+doc.hooks.SessionStart.push({
+  matcher: 'startup|resume',
+  hooks: [{
+    type: 'command',
+    command: '/bin/bash "$(git rev-parse --show-toplevel)/.agents/skills/unslop/scripts/reminder.sh" codex-session'
+  }]
+});
+doc.hooks.UserPromptSubmit.push({
+  hooks: [{
+    type: 'command',
+    command: '/bin/bash "$(git rev-parse --show-toplevel)/.agents/skills/unslop/scripts/reminder.sh" codex-prompt'
+  }]
+});`,
+    `const sessionCommand = '/bin/bash "$(git rev-parse --show-toplevel)/.agents/skills/unslop/scripts/reminder.sh" codex-session';
+const promptCommand = '/bin/bash "$(git rev-parse --show-toplevel)/.agents/skills/unslop/scripts/reminder.sh" codex-prompt';
+function isManagedHandler(handler, command) {
+  return handler && !Array.isArray(handler) && typeof handler === 'object' &&
+    Object.keys(handler).length === 2 && handler.type === 'command' && handler.command === command;
+}
+function withoutToolkit(groups, command) {
+  if (groups === undefined) return [];
+  if (!Array.isArray(groups)) throw new Error('hook event must contain an array');
+  return groups.flatMap(group => {
+    if (!group || Array.isArray(group) || typeof group !== 'object' || !Array.isArray(group.hooks)) {
+      throw new Error('hook matcher group must contain a hooks array');
+    }
+    const hooks = group.hooks.filter(handler => !isManagedHandler(handler, command));
+    return hooks.length ? [{ ...group, hooks }] : [];
+  });
+}
+doc.hooks.SessionStart = withoutToolkit(doc.hooks.SessionStart, sessionCommand);
+doc.hooks.UserPromptSubmit = withoutToolkit(doc.hooks.UserPromptSubmit, promptCommand);
+doc.hooks.SessionStart.push({
+  matcher: 'startup|resume',
+  hooks: [{
+    type: 'command',
+    command: sessionCommand
+  }]
+});
+doc.hooks.UserPromptSubmit.push({
+  hooks: [{
+    type: 'command',
+    command: promptCommand
+  }]
+});`
+  ],
+  [
     `printf 'CODEX-PROJECT-OK: installed %s skills, 4 agent roles, and 2 hook handlers in %s\\n' "$skill_count" "$project"
 printf '%s\\n' 'Restart Codex in this repository. Approve project trust, then review and trust the project hooks.'`,
     `printf 'CODEX-PROJECT-OK: installed %s skills, 4 agent roles, and 2 codex-exec hook handlers in %s\\n' "$skill_count" "$project"

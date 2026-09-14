@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Firstmate dispatch adapter for the installed Codex toolkit operative role.
 # Usage: FM_HOME=<firstmate-home> FM_ROOT=<firstmate-repository> FM_TASK_ID=<task-id> \
-#        FM_TOOLKIT_PROJECT=<project> FM_TOOLKIT_MODE=<mode> FM_TOOLKIT_YOLO=<on|off> \
+#        FM_TOOLKIT_PROJECT=<project> FM_TOOLKIT_MODE=<no-mistakes|direct-PR> FM_TOOLKIT_YOLO=<on|off> \
 #        bin/fm-codex-toolkit-dispatch.sh <ticket> <slug> <brief-file>
 set -u
 
@@ -42,7 +42,7 @@ yolo="${FM_TOOLKIT_YOLO:-}"
 [ -n "$project" ] || fail 'set FM_TOOLKIT_PROJECT to the task project passed to fm-brief.sh'
 [ -n "$mode" ] || fail 'set FM_TOOLKIT_MODE to the task mode passed to fm-brief.sh'
 [ -n "$yolo" ] || fail 'set FM_TOOLKIT_YOLO to the task merge posture'
-case "$mode" in no-mistakes|direct-PR|local-only) ;; *) fail "invalid FM_TOOLKIT_MODE: $mode" ;; esac
+case "$mode" in no-mistakes|direct-PR) ;; *) fail "invalid FM_TOOLKIT_MODE: $mode" ;; esac
 case "$yolo" in on|off) ;; *) fail "invalid FM_TOOLKIT_YOLO: $yolo" ;; esac
 
 # fm-spawn.sh owns harness-adapter selection, isolated worktree creation,

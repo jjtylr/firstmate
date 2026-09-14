@@ -119,33 +119,36 @@ if (doc.hooks === undefined) doc.hooks = {};
 if (!doc.hooks || Array.isArray(doc.hooks) || typeof doc.hooks !== 'object') {
   throw new Error('hooks.json hooks must contain an object');
 }
-const signature = '.agents/skills/unslop/scripts/reminder.sh';
-function withoutToolkit(groups) {
+const sessionCommand = '/bin/bash "$(git rev-parse --show-toplevel)/.agents/skills/unslop/scripts/reminder.sh" codex-session';
+const promptCommand = '/bin/bash "$(git rev-parse --show-toplevel)/.agents/skills/unslop/scripts/reminder.sh" codex-prompt';
+function isManagedHandler(handler, command) {
+  return handler && !Array.isArray(handler) && typeof handler === 'object' &&
+    Object.keys(handler).length === 2 && handler.type === 'command' && handler.command === command;
+}
+function withoutToolkit(groups, command) {
   if (groups === undefined) return [];
   if (!Array.isArray(groups)) throw new Error('hook event must contain an array');
   return groups.flatMap(group => {
     if (!group || Array.isArray(group) || typeof group !== 'object' || !Array.isArray(group.hooks)) {
       throw new Error('hook matcher group must contain a hooks array');
     }
-    const hooks = group.hooks.filter(handler =>
-      !(handler && typeof handler.command === 'string' && handler.command.includes(signature))
-    );
+    const hooks = group.hooks.filter(handler => !isManagedHandler(handler, command));
     return hooks.length ? [{ ...group, hooks }] : [];
   });
 }
-doc.hooks.SessionStart = withoutToolkit(doc.hooks.SessionStart);
-doc.hooks.UserPromptSubmit = withoutToolkit(doc.hooks.UserPromptSubmit);
+doc.hooks.SessionStart = withoutToolkit(doc.hooks.SessionStart, sessionCommand);
+doc.hooks.UserPromptSubmit = withoutToolkit(doc.hooks.UserPromptSubmit, promptCommand);
 doc.hooks.SessionStart.push({
   matcher: 'startup|resume',
   hooks: [{
     type: 'command',
-    command: '/bin/bash "$(git rev-parse --show-toplevel)/.agents/skills/unslop/scripts/reminder.sh" codex-session'
+    command: sessionCommand
   }]
 });
 doc.hooks.UserPromptSubmit.push({
   hooks: [{
     type: 'command',
-    command: '/bin/bash "$(git rev-parse --show-toplevel)/.agents/skills/unslop/scripts/reminder.sh" codex-prompt'
+    command: promptCommand
   }]
 });
 fs.writeFileSync(output, `${JSON.stringify(doc, null, 2)}\n`, { mode: 0o600 });

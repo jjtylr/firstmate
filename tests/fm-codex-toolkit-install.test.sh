@@ -47,14 +47,23 @@ for role, description in expected_roles.items():
     assert role_config["developer_instructions"].strip(), role
 
 hooks = json.loads((root / ".codex/hooks.json").read_text(encoding="utf-8"))["hooks"]
-session = [group for group in hooks["SessionStart"] if group.get("matcher") == "startup|resume"]
-prompt = hooks["UserPromptSubmit"]
+session_command = '/bin/bash "$(git rev-parse --show-toplevel)/.agents/skills/unslop/scripts/reminder.sh" codex-session'
+prompt_command = '/bin/bash "$(git rev-parse --show-toplevel)/.agents/skills/unslop/scripts/reminder.sh" codex-prompt'
+session = [
+    handler
+    for group in hooks["SessionStart"]
+    if group.get("matcher") == "startup|resume"
+    for handler in group["hooks"]
+    if handler == {"type": "command", "command": session_command}
+]
+prompt = [
+    handler
+    for group in hooks["UserPromptSubmit"]
+    for handler in group["hooks"]
+    if handler == {"type": "command", "command": prompt_command}
+]
 assert len(session) == 1
-assert len(session[0]["hooks"]) == 1
-assert session[0]["hooks"][0]["type"] == "command"
 assert len(prompt) == 1
-assert len(prompt[0]["hooks"]) == 1
-assert prompt[0]["hooks"][0]["type"] == "command"
 PY
 }
 
@@ -111,7 +120,35 @@ fi
 fixture="$TMP_ROOT/upstream"
 project="$TMP_ROOT/project"
 fakebin="$TMP_ROOT/fakebin"
-mkdir -p "$fixture/.agents/skills" "$project/bin" "$fakebin"
+mkdir -p "$fixture/.agents/skills" "$project/bin" "$project/.codex" "$fakebin"
+cat > "$project/.codex/hooks.json" <<'JSON'
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/bash \"$(git rev-parse --show-toplevel)/.agents/skills/unslop/scripts/reminder.sh\" custom-session"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "wrapper .agents/skills/unslop/scripts/reminder.sh custom-prompt",
+            "timeout": 7
+          }
+        ]
+      }
+    ]
+  }
+}
+JSON
 REAL_GIT=$(command -v git)
 
 while IFS= read -r skill; do
@@ -210,6 +247,21 @@ assert_contains "$out" "Toolkit project hooks support codex exec only" \
 
 assert_installed_semantics "$project" \
   || fail "installer produced invalid Codex skill, role, or hook configuration"
+python3 - "$project/.codex/hooks.json" <<'PY'
+import json
+import pathlib
+import sys
+
+hooks = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))["hooks"]
+commands = {
+    handler["command"]
+    for groups in hooks.values()
+    for group in groups
+    for handler in group["hooks"]
+}
+assert '/bin/bash "$(git rev-parse --show-toplevel)/.agents/skills/unslop/scripts/reminder.sh" custom-session' in commands
+assert "wrapper .agents/skills/unslop/scripts/reminder.sh custom-prompt" in commands
+PY
 
 first=$(tree_digest)
 install_fixture >/dev/null || fail "pinned toolkit reinstall failed"
@@ -279,6 +331,15 @@ for missing_input in project mode yolo; do
   fi
   assert_absent "$spawn_log" "missing $missing_input routing input reached Firstmate spawn"
 done
+rm -f "$spawn_log"
+if SPAWN_LOG="$spawn_log" FM_ROOT="$project" FM_HOME="$TMP_ROOT/home" FM_TASK_ID=task-42 \
+  FM_TOOLKIT_PROJECT="$task_project" FM_TOOLKIT_MODE=local-only FM_TOOLKIT_YOLO=on \
+  "$project/.agents/skills/drain-ready-queue/scripts/run-codex-operative.sh" \
+  42 example "$TMP_ROOT/brief.md" > "$TMP_ROOT/local-only.out" \
+  2> "$TMP_ROOT/local-only.err"; then
+  fail "Codex toolkit runner accepted local-only for a PR-producing drain lane"
+fi
+assert_absent "$spawn_log" "local-only Codex drain routing reached Firstmate spawn"
 SPAWN_LOG="$spawn_log" FM_ROOT="$project" FM_HOME="$TMP_ROOT/home" FM_TASK_ID=task-42 \
   FM_TOOLKIT_PROJECT="$task_project" FM_TOOLKIT_MODE=no-mistakes FM_TOOLKIT_YOLO=on \
   "$project/.agents/skills/drain-ready-queue/scripts/run-codex-operative.sh" \
