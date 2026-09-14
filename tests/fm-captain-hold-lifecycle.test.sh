@@ -3859,6 +3859,19 @@ SH
   pass "cleanup refuses a ship row when its captain hold cannot be read"
 }
 
+test_absent_probe_preserves_distinct_exit_under_errexit() {
+  local home rc=0
+  home=$(make_home absent-probe-errexit)
+  PATH="$home/fakebin:$PATH" REAL_TASKS_AXI="$TASKS_AXI_BIN" \
+    FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_CONFIG_OVERRIDE="$home/config" \
+    /bin/bash -e "$ROOT/bin/fm-captain-hold.sh" \
+      open sample-absent-call --distinguish-absent >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 3 ] \
+    || fail "errexit changed the absent captain-call result from 3 to $rc"
+  pass "absent captain-call probes preserve their distinct result under errexit"
+}
+
 test_uninventoried_report_decision_refuses_completion
 test_completion_gate_attests_and_transfers
 test_answer_records_and_closes
@@ -3902,6 +3915,7 @@ test_merge_entrypoints_refuse_a_reused_task_incarnation
 test_merge_entrypoints_serialize_forced_teardown_before_task_reads
 test_released_merge_passes_the_entrypoint_and_lands
 test_teardown_refuses_a_ship_when_the_captain_hold_cannot_be_read
+test_absent_probe_preserves_distinct_exit_under_errexit
 test_verify_resolves_a_hold_migrated_to_beads_notes
 test_verify_resolves_a_hold_migrated_under_the_configured_prefix
 test_marker_noted_row_wins_over_a_prefix_namesake

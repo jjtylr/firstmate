@@ -57,7 +57,7 @@ load-bearing.
   from the host and verify at exactly that commit, then chain
   `merge-decision.sh <verdict> <checks-line> <merge_policy> <verdict-marker>` into
   `merge-freshness.sh <pr> <commit>` into `merge-pinned.sh <pr> <commit> <merge_method>
-  <merge_policy>`. `gh pr merge` never runs bare and never unpinned; `merge_policy` and
+  <merge_policy> <task-id>`. `gh pr merge` never runs bare and never unpinned; `merge_policy` and
   `merge_method` come from the repo's `loop.md` and `<verdict-marker>` is the `MARKER` line the
   verifier reported. SKILL.md step 6 is the exact chain; `--delete-branch --repo` is what collects
   the remote loop branch, and RATIONALE § 6 says why `--repo` is required for it to reach the

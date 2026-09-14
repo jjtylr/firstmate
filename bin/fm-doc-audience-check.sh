@@ -86,7 +86,7 @@ def resolve_local_target(root: Path, source: Path, raw: str) -> Path | None:
     if not split.path:
         return source.resolve(strict=False) if split.fragment else None
     decoded = unquote(split.path)
-    if decoded.startswith("${CLAUDE_PLUGIN_ROOT}"):
+    if decoded == "${CLAUDE_PLUGIN_ROOT}" or decoded.startswith("${CLAUDE_PLUGIN_ROOT}/"):
         return None
     if decoded.startswith("/"):
         fail(f"absolute local link in {source.relative_to(root)}: {raw}")

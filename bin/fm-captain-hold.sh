@@ -1847,8 +1847,8 @@ command_open() {  # <task-id> [--identity] [--distinguish-absent]
     esac
     shift
   done
-  captain_task_probe "$id"
-  probe_status=$?
+  probe_status=0
+  captain_task_probe "$id" || probe_status=$?
   case "$probe_status" in
     0)
       state=${FM_BACKLOG_ROW_STATE%% *}
@@ -1878,8 +1878,8 @@ command_open() {  # <task-id> [--identity] [--distinguish-absent]
 command_released() {  # <task-id>
   local id=${1:-} show state hold_kind body probe_status
   [ "$#" -eq 1 ] || { usage >&2; exit 2; }
-  captain_task_probe "$id"
-  probe_status=$?
+  probe_status=0
+  captain_task_probe "$id" || probe_status=$?
   [ "$probe_status" -eq 0 ] || return "$probe_status"
   state=${FM_BACKLOG_ROW_STATE%% *}
   hold_kind=$FM_BACKLOG_ROW_HOLD_KIND

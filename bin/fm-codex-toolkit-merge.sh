@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Firstmate merge adapter for the installed Codex toolkit.
-# Usage: bin/fm-codex-toolkit-merge.sh <pr-number> <examined-commit> <merge-method> <merge-policy>
+# Usage: bin/fm-codex-toolkit-merge.sh <pr-number> <examined-commit> <merge-method> <merge-policy> <task-id>
 set -u
 
 failed() { echo "MERGE-FAILED:$1"; exit 1; }
@@ -9,9 +9,11 @@ pr="${1-}"
 commit="${2-}"
 method="${3-}"
 policy="${4-}"
-case "$pr" in ''|*[!0-9]*) failed 'usage: merge-pinned.sh <pr-number> <examined-commit> <merge-method> <merge-policy>' ;; esac
-{ [ -n "$commit" ] && [ -n "$method" ] && [ -n "$policy" ]; } ||
-  failed 'usage: merge-pinned.sh <pr-number> <examined-commit> <merge-method> <merge-policy>'
+task_id="${5-}"
+usage='usage: merge-pinned.sh <pr-number> <examined-commit> <merge-method> <merge-policy> <task-id>'
+[ "$#" -eq 5 ] || failed "$usage"
+case "$pr" in ''|*[!0-9]*) failed "$usage" ;; esac
+{ [ -n "$commit" ] && [ -n "$method" ] && [ -n "$policy" ]; } || failed "$usage"
 case "$commit" in
   [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
   *) failed "'$commit' is not a full 40-character commit id — a pin must name the examined commit exactly; nothing was attempted" ;;
@@ -31,8 +33,9 @@ case "$(bash "$policy_owner" pass CHECKS-PASS "$policy" 2>/dev/null)" in
   *)
     failed "the merge policy owner did not answer whether '$policy' is an auto policy — an unread policy is never an auto one; nothing was attempted" ;;
 esac
-task_id="${FM_TASK_ID:-}"
-[ -n "$task_id" ] || failed 'Firstmate merge authority requires FM_TASK_ID; nothing was attempted'
+case "$task_id" in
+  ''|*[!A-Za-z0-9._-]*) failed "invalid Firstmate task id: $task_id; nothing was attempted" ;;
+esac
 [ -n "${FM_HOME:-}" ] || failed 'Firstmate merge authority requires FM_HOME; nothing was attempted'
 meta="$FM_HOME/state/$task_id.meta"
 [ -f "$meta" ] && [ ! -L "$meta" ] ||

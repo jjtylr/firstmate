@@ -203,38 +203,117 @@ const codexDocText = [
   '',
   'Firstmate owns worker dispatch, isolation, harness selection, trust handling, and merge authority.',
   "The upstream toolkit runner's private `codex exec` path is not used after installation here.",
+  'Use one stable Firstmate task id for each ticket from dispatch through cleanup.',
   '',
   "1. Create the task brief with Firstmate's `bin/fm-brief.sh`.",
-  '2. Spawn it with `bin/fm-spawn.sh <task-id> <project-dir> --mode <mode> --yolo <on|off> --harness codex`.',
-  "3. Supervise the task through Firstmate's normal durable records and merge owner.",
+  '2. Run `FM_TASK_ID=<task-id> bash "$SKILL/scripts/run-codex-operative.sh" <N> <SLUG> <absolute-brief-file>` from the repo root.',
+  "3. Supervise the task through Firstmate's durable records, and send requested fixes through `bin/fm-send.sh <task-id> <message>`.",
+  '4. Pass the same `<task-id>` as the fifth argument to `merge-pinned.sh`.',
+  '5. After the pull request lands, or after a terminal no-change result, run `bin/fm-teardown.sh <task-id>`.',
   '',
-  'For callers that still use the upstream three-argument interface, the adapted',
-  '`run-codex-operative.sh` verifies `FM_HOME`, `FM_TASK_ID`, and that the supplied brief matches',
-  '`$FM_HOME/data/$FM_TASK_ID/brief.md`, then delegates to `bin/fm-spawn.sh`. It prints',
+  'The adapted `run-codex-operative.sh` verifies `FM_HOME`, `FM_TASK_ID`, and that the supplied brief',
+  'matches `$FM_HOME/data/$FM_TASK_ID/brief.md`, then delegates to `bin/fm-spawn.sh`. It prints',
   '`CODEX-OPERATIVE-DISPATCHED` when that handoff succeeds and `CODEX-OPERATIVE-REFUSED` otherwise.',
   'It never falls back to a direct Codex process or to the parent checkout.',
+  'The upstream `reap.sh` and `cleanup-stopped.sh` scripts own Claude worktrees only and must not run for a Firstmate-dispatched Codex task.',
+  'If `fm-teardown.sh` refuses cleanup, leave the task record, worktree, branch, and lane claim intact and report the refusal.',
   ''
 ].join('\n');
 fs.writeFileSync(codexDoc, codexDocText, 'utf8');
 const skillDoc = path.join(root, '.agents/skills/drain-ready-queue/SKILL.md');
 let skill = fs.readFileSync(skillDoc, 'utf8');
+function adaptSkill(upstream, adapted, label) {
+  if (!skill.includes(upstream)) throw new Error(`${label} instructions are missing`);
+  skill = skill.replace(upstream, () => adapted);
+}
+adaptSkill(
+  'flag it. It provisions no workspaces but reaps each subagent\'s worktree under\n' +
+    '`<repo>/.claude/worktrees/` (RATIONALE § 0).',
+  'flag it. It provisions no workspaces.',
+  'workspace lifecycle'
+);
+adaptSkill(
+  '### 1. Reap what merged while the PM was reviewing — `bash "$SKILL/scripts/reap.sh"`\n',
+  '### 1. Reconcile finished work\n\n' +
+    '**Codex:** follow [CODEX-OPERATIVE.md](./CODEX-OPERATIVE.md) and skip the Claude worktree reaper.\n\n' +
+    '**Claude Code:** `bash "$SKILL/scripts/reap.sh"`\n',
+  'reconciliation lifecycle'
+);
 const upstreamCodex = `**Codex:** follow [CODEX-OPERATIVE.md](./CODEX-OPERATIVE.md). Run \`bash
 "$SKILL/scripts/run-codex-operative.sh" <N> <SLUG> <absolute-brief-file>\` from the repo root, one
 parallel call per lane. Never use \`spawn_agent\` or replace a refusal with direct \`codex exec\`.
 `;
-const firstmateCodex = `**Codex:** Firstmate owns Codex dispatch. Create and record the task brief with Firstmate's
-\`bin/fm-brief.sh\`, then invoke \`bin/fm-spawn.sh\` with explicit mode, yolo posture, and \`--harness
-codex\`. The adapted \`run-codex-operative.sh\` accepts the legacy arguments only to verify the
-recorded brief and delegates through that Firstmate owner; it never launches Codex directly.
-Never use \`spawn_agent\` or bypass Firstmate dispatch after a refusal.
+const firstmateCodex = `**Codex:** follow [CODEX-OPERATIVE.md](./CODEX-OPERATIVE.md), including its stable Firstmate task id.
+Never use \`spawn_agent\`, direct \`codex exec\`, or bypass Firstmate dispatch after a refusal.
 `;
-if (!skill.includes(upstreamCodex)) throw new Error('Codex dispatch instructions are missing');
-skill = skill.replace(upstreamCodex, firstmateCodex);
+adaptSkill(upstreamCodex, firstmateCodex, 'Codex dispatch');
+adaptSkill(
+  '**If a subagent dies mid-ticket**, never silently re-dispatch — RATIONALE § 4 has the procedure.',
+  '**If a subagent dies mid-ticket**, Codex follows Firstmate\'s task record in\n' +
+    '[CODEX-OPERATIVE.md](./CODEX-OPERATIVE.md), while Claude Code follows RATIONALE § 4.\n' +
+    'Never silently re-dispatch.',
+  'dead worker lifecycle'
+);
+adaptSkill(
+  '- **Merge** → nothing to do; the next iteration\'s reap (step 1) collects the worktree and branches.',
+  '- **Merge** → Codex follows the guarded cleanup in [CODEX-OPERATIVE.md](./CODEX-OPERATIVE.md), while\n' +
+    '  Claude Code\'s next iteration reaps its worktree and branches.',
+  'merged worker lifecycle'
+);
+adaptSkill(
+  '- **More fixes** → **`SendMessage` to that same agent** with the PM\'s notes (RATIONALE § 6).',
+  '- **More fixes** → Codex sends the PM\'s notes through `bin/fm-send.sh <task-id> <message>`, while\n' +
+    '  Claude Code uses **`SendMessage` to that same agent** (RATIONALE § 6).',
+  'worker steering'
+);
+adaptSkill(
+  '- **STOPPED recap** → move the ticket out of the queue, then collect the branch the no-PR run left:\n',
+  '- **STOPPED recap** → move the ticket out of the queue, then collect the branch the no-PR run left:\n\n' +
+    '  Codex follows the guarded cleanup in [CODEX-OPERATIVE.md](./CODEX-OPERATIVE.md).\n' +
+    '  Claude Code runs:\n',
+  'stopped worker lifecycle'
+);
+adaptSkill(
+  '- `MERGE-PINNED:` (exit 0) → merged. Count it toward the `auto_merge_checkin` bound and name the\n' +
+    '  policy and the reason in your report, so the PM can audit the run afterwards.',
+  '- `MERGE-PINNED:` (exit 0) → merged. Codex first follows the guarded cleanup in\n' +
+    '  [CODEX-OPERATIVE.md](./CODEX-OPERATIVE.md). Count it toward the `auto_merge_checkin` bound and\n' +
+    '  name the policy and the reason in your report, so the PM can audit the run afterwards.',
+  'auto-merge cleanup'
+);
 const upstreamMerge = 'the park conditions; `gh pr merge` never runs bare, and never unpinned. Carry in what this cycle\nestablished:';
 const firstmateMerge = 'the park conditions. The toolkit never invokes a forge merge command directly; carry the Firstmate\nmerge owner\'s verified result into this cycle. Carry in what this cycle established:';
-if (!skill.includes(upstreamMerge)) throw new Error('merge instructions are missing');
-skill = skill.replace(upstreamMerge, () => firstmateMerge);
+adaptSkill(upstreamMerge, firstmateMerge, 'merge');
 fs.writeFileSync(skillDoc, skill, 'utf8');
+
+const mergePipelinePath = path.join(root, '.agents/skills/drain-ready-queue/MERGE-PIPELINE.md');
+let mergePipeline = fs.readFileSync(mergePipelinePath, 'utf8');
+const upstreamPinnedCommand =
+  '  && bash "$SKILL/scripts/merge-pinned.sh" <pr> <commit from step 3> <merge_method> <merge_policy>\n```';
+const firstmatePinnedCommand =
+  '  && bash "$SKILL/scripts/merge-pinned.sh" <pr> <commit from step 3> <merge_method> <merge_policy> <task-id>\n```\n\n' +
+  'For a Firstmate-dispatched Codex task, `<task-id>` is the stable task id chosen at dispatch.';
+if (mergePipeline.includes(upstreamPinnedCommand)) {
+  mergePipeline = mergePipeline.replace(upstreamPinnedCommand, firstmatePinnedCommand);
+} else if (!mergePipeline.includes(firstmatePinnedCommand)) {
+  throw new Error('merge pipeline task-id adaptation source is missing');
+}
+fs.writeFileSync(mergePipelinePath, mergePipeline, 'utf8');
+
+const mergePolicyPath = path.join(root, '.agents/skills/drain-ready-queue/MERGE-POLICY.md');
+let mergePolicy = fs.readFileSync(mergePolicyPath, 'utf8');
+const upstreamPolicyCommand =
+  '  `merge-freshness.sh <pr> <commit>` into `merge-pinned.sh <pr> <commit> <merge_method>\n' +
+  '  <merge_policy>`. `gh pr merge`';
+const firstmatePolicyCommand =
+  '  `merge-freshness.sh <pr> <commit>` into `merge-pinned.sh <pr> <commit> <merge_method>\n' +
+  '  <merge_policy> <task-id>`. `gh pr merge`';
+if (mergePolicy.includes(upstreamPolicyCommand)) {
+  mergePolicy = mergePolicy.replace(upstreamPolicyCommand, firstmatePolicyCommand);
+} else if (!mergePolicy.includes(firstmatePolicyCommand)) {
+  throw new Error('merge policy task-id adaptation source is missing');
+}
+fs.writeFileSync(mergePolicyPath, mergePolicy, 'utf8');
 
 const configurerPath = path.join(
   root,

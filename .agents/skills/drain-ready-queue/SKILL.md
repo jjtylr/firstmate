@@ -50,8 +50,7 @@ and under an auto policy step 6 merges only through the decision script. **The f
 missing name, or one the catalog does not carry, reads as `pm-merge` and is a findings line — a
 config typo degrades to "the PM merges", never to silent auto-merging. Under every policy the loop
 **never deploys**: a ticket whose *implementation* is a production operation is out of scope, so
-flag it. It provisions no workspaces but reaps each subagent's worktree under
-`<repo>/.claude/worktrees/` (RATIONALE § 0).
+flag it. It provisions no workspaces.
 
 ### 0c. Read the lane count — `lanes=$(bash "$SKILL/scripts/resolve-lanes.sh")`
 
@@ -64,7 +63,11 @@ first dispatch of a run, whenever the count is above 1.
 
 ## The cycle — run it from the repo root; one pass fills every free lane, one ticket each
 
-### 1. Reap what merged while the PM was reviewing — `bash "$SKILL/scripts/reap.sh"`
+### 1. Reconcile finished work
+
+**Codex:** follow [CODEX-OPERATIVE.md](./CODEX-OPERATIVE.md) and skip the Claude worktree reaper.
+
+**Claude Code:** `bash "$SKILL/scripts/reap.sh"`
 
 Teardown sits at the **top** of the iteration (RATIONALE § 1). The reap acts only on **owned**
 worktrees — the ones the harness's own lock or `agent-*` directory proves it made — and it measures
@@ -209,17 +212,16 @@ diff, gates and merge. **This loop never writes to `docs/atlas/` itself** (RATIO
 If unresolved, spawn a generic worktree-isolated subagent with [the operative role](./agent-roles/operative.md)
 ahead of it. No isolation or readable role means stop. Never dispatch into the parent checkout.
 
-**Codex:** Firstmate owns Codex dispatch. Create and record the task brief with Firstmate's
-`bin/fm-brief.sh`, then invoke `bin/fm-spawn.sh` with explicit mode, yolo posture, and `--harness
-codex`. The adapted `run-codex-operative.sh` accepts the legacy arguments only to verify the
-recorded brief and delegates through that Firstmate owner; it never launches Codex directly.
-Never use `spawn_agent` or bypass Firstmate dispatch after a refusal.
+**Codex:** follow [CODEX-OPERATIVE.md](./CODEX-OPERATIVE.md), including its stable Firstmate task id.
+Never use `spawn_agent`, direct `codex exec`, or bypass Firstmate dispatch after a refusal.
 
 **One ticket takes one slot, and a slot is free only until it is filled.** A second ticket starts
 only when the lane count leaves a slot free and step 3 cleared it against everything in flight
 (SCHEDULER.md's slot rule).
 
-**If a subagent dies mid-ticket**, never silently re-dispatch — RATIONALE § 4 has the procedure.
+**If a subagent dies mid-ticket**, Codex follows Firstmate's task record in
+[CODEX-OPERATIVE.md](./CODEX-OPERATIVE.md), while Claude Code follows RATIONALE § 4.
+Never silently re-dispatch.
 
 ### 5. Verify closure, then a verdict — `bash "$SKILL/scripts/ensure-closes.sh" <pr> <N>`
 
@@ -279,9 +281,14 @@ issue, and step 6's STOPPED relabel is yours to run, not to hand over.
 
 **Under `pm-merge`** — and under any name the catalog does not carry — the PM decides:
 
-- **Merge** → nothing to do; the next iteration's reap (step 1) collects the worktree and branches.
-- **More fixes** → **`SendMessage` to that same agent** with the PM's notes (RATIONALE § 6).
+- **Merge** → Codex follows the guarded cleanup in [CODEX-OPERATIVE.md](./CODEX-OPERATIVE.md), while
+  Claude Code's next iteration reaps its worktree and branches.
+- **More fixes** → Codex sends the PM's notes through `bin/fm-send.sh <task-id> <message>`, while
+  Claude Code uses **`SendMessage` to that same agent** (RATIONALE § 6).
 - **STOPPED recap** → move the ticket out of the queue, then collect the branch the no-PR run left:
+
+  Codex follows the guarded cleanup in [CODEX-OPERATIVE.md](./CODEX-OPERATIVE.md).
+  Claude Code runs:
 
   ```bash
   gh issue edit <N> --remove-label ready-for-agent --add-label needs-info
@@ -299,8 +306,9 @@ config's `merge_policy` and `merge_method`, the verdict block's `MARKER` line, a
 commit. A missing or superseded marker reads as **no verdict** and the decision script refuses:
 re-verify such a PR, never re-label it by hand.
 
-- `MERGE-PINNED:` (exit 0) → merged. Count it toward the `auto_merge_checkin` bound and name the
-  policy and the reason in your report, so the PM can audit the run afterwards.
+- `MERGE-PINNED:` (exit 0) → merged. Codex first follows the guarded cleanup in
+  [CODEX-OPERATIVE.md](./CODEX-OPERATIVE.md). Count it toward the `auto_merge_checkin` bound and
+  name the policy and the reason in your report, so the PM can audit the run afterwards.
 - Every other line → the pipeline's § 5 and § *The park conditions* decide: a first
   `MERGE-PIN-REFUSED` re-enters the pipeline once where this PR's re-entry for this run is unspent,
   and everything else **parks** to the PM path above. A STOPPED recap is handled the same under both

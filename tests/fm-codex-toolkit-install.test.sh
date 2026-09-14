@@ -39,6 +39,9 @@ if [ "${FM_CODEX_TOOLKIT_INSTALL_LIVE_E2E:-0}" = 1 ]; then
     || fail "live installer changed the canonical skills lock"
   for adapted_path in \
     .agents/skills/setup-engineering-skills/scripts/configure-codex-project.sh \
+    .agents/skills/drain-ready-queue/CODEX-OPERATIVE.md \
+    .agents/skills/drain-ready-queue/MERGE-PIPELINE.md \
+    .agents/skills/drain-ready-queue/MERGE-POLICY.md \
     .agents/skills/drain-ready-queue/SKILL.md \
     .agents/skills/drain-ready-queue/scripts/runner.sh; do
     cmp "$ROOT/$adapted_path" "$live_project/$adapted_path" >/dev/null \
@@ -202,6 +205,8 @@ for adapted_path in \
   .agents/skills/setup-engineering-skills/scripts/configure-codex-project.sh \
   .agents/skills/drain-ready-queue/SKILL.md \
   .agents/skills/drain-ready-queue/CODEX-OPERATIVE.md \
+  .agents/skills/drain-ready-queue/MERGE-PIPELINE.md \
+  .agents/skills/drain-ready-queue/MERGE-POLICY.md \
   .agents/skills/drain-ready-queue/scripts/merge-pinned.sh \
   .agents/skills/drain-ready-queue/scripts/run-codex-operative.sh \
   .agents/skills/drain-ready-queue/scripts/runner.sh; do
@@ -264,9 +269,9 @@ printf 'yolo=on\n' > "$TMP_ROOT/home/state/task-42.meta"
 for rejected_policy in pm-merge unknown-policy; do
   rm -f "$merge_log" "$hold_log"
   if HOLD_LOG="$hold_log" RELEASED_APPROVAL=1 MERGE_LOG="$merge_log" FM_ROOT="$project" \
-    FM_HOME="$TMP_ROOT/home" FM_TASK_ID=task-42 PATH="$fakebin:$PATH" \
+    FM_HOME="$TMP_ROOT/home" PATH="$fakebin:$PATH" \
     "$project/.agents/skills/drain-ready-queue/scripts/merge-pinned.sh" \
-    7 0123456789012345678901234567890123456789 squash "$rejected_policy" \
+    7 0123456789012345678901234567890123456789 squash "$rejected_policy" task-42 \
     > "$TMP_ROOT/policy.out" 2> "$TMP_ROOT/policy.err"; then
     fail "Codex toolkit merge runner accepted non-auto policy $rejected_policy"
   fi
@@ -278,9 +283,9 @@ done
 
 printf 'yolo=off\n' > "$TMP_ROOT/home/state/task-42.meta"
 if HOLD_LOG="$hold_log" RELEASED_APPROVAL=0 MERGE_LOG="$merge_log" FM_ROOT="$project" \
-  FM_HOME="$TMP_ROOT/home" FM_TASK_ID=task-42 PATH="$fakebin:$PATH" \
+  FM_HOME="$TMP_ROOT/home" PATH="$fakebin:$PATH" \
   "$project/.agents/skills/drain-ready-queue/scripts/merge-pinned.sh" \
-  7 0123456789012345678901234567890123456789 squash auto-on-verdict \
+  7 0123456789012345678901234567890123456789 squash auto-on-verdict task-42 \
   > "$TMP_ROOT/unauthorized.out" 2> "$TMP_ROOT/unauthorized.err"; then
   fail "Codex toolkit merge runner accepted yolo=off without a captain release"
 fi
@@ -289,9 +294,9 @@ assert_contains "$(cat "$TMP_ROOT/unauthorized.out")" "no durable captain releas
   "unauthorized Codex toolkit merge did not name its missing authority"
 
 HOLD_LOG="$hold_log" RELEASED_APPROVAL=1 MERGE_LOG="$merge_log" FM_ROOT="$project" \
-  FM_HOME="$TMP_ROOT/home" FM_TASK_ID=task-42 PATH="$fakebin:$PATH" \
+  FM_HOME="$TMP_ROOT/home" PATH="$fakebin:$PATH" \
   "$project/.agents/skills/drain-ready-queue/scripts/merge-pinned.sh" \
-  7 0123456789012345678901234567890123456789 squash auto-on-verdict >/dev/null \
+  7 0123456789012345678901234567890123456789 squash auto-on-verdict task-42 >/dev/null \
   || fail "Codex toolkit merge runner did not delegate through Firstmate merge authority"
 assert_contains "$(cat "$hold_log")" "released task-42" \
   "Codex toolkit merge runner did not verify the captain release"
@@ -300,9 +305,9 @@ assert_contains "$(cat "$merge_log")" \
   "Codex toolkit merge runner dropped its commit pin or squash subject"
 
 if HOLD_LOG="$hold_log" RELEASED_APPROVAL=1 MERGE_LOG="$merge_log" FM_ROOT="$project" \
-  FM_HOME="$TMP_ROOT/home" FM_TASK_ID=task-42 GH_PR_STATE=OPEN PATH="$fakebin:$PATH" \
+  FM_HOME="$TMP_ROOT/home" GH_PR_STATE=OPEN PATH="$fakebin:$PATH" \
   "$project/.agents/skills/drain-ready-queue/scripts/merge-pinned.sh" \
-  7 0123456789012345678901234567890123456789 squash auto-on-verdict \
+  7 0123456789012345678901234567890123456789 squash auto-on-verdict task-42 \
   > "$TMP_ROOT/queued.out" 2> "$TMP_ROOT/queued.err"; then
   fail "Codex toolkit merge runner reported a queued PR as landed"
 fi
