@@ -1,0 +1,5 @@
+interface:
+  display_name: "Atlas"
+  short_description: "Maintain the standing project map"
+policy:
+  allow_implicit_invocation: false

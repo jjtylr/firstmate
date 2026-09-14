@@ -41,3 +41,4 @@ The tracked hook anchors to `pwd -P`, verifies that root is Firstmate-shaped and
 Codex's primary watcher protocol is `../../../bin/fm-watch-checkpoint.sh --seconds "${FM_CODEX_WATCH_CHECKPOINT:-180}"`, not `../../../bin/fm-watch-arm.sh`.
 Codex cannot reason while a foreground tool call is running, so the checkpoint is deliberately foreground and bounded to return control regularly for user messages and queued notifications.
 Codex's PreToolUse watcher-arm seatbelt blocks directly through its project hook.
+[`supervision.md`](../../../../../docs/verification/supervision.md#codex-toolkit-project-hooks-2026-09-11) records the `codex exec`-only toolkit reminder path; do not claim those project hooks for the interactive TUI.

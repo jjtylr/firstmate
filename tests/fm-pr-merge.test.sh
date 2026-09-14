@@ -386,6 +386,28 @@ test_verified_merge_records_pr_and_head() {
   pass "fm-pr-merge records pr= and pr_head= for a verified GitHub merge"
 }
 
+test_expected_head_refuses_a_different_live_commit() {
+  local case_dir rc expected live
+  case_dir=$(make_case expected-head-mismatch)
+  mkdir -p "$case_dir/wt"
+  expected=1212121212121212121212121212121212121212
+  live=3434343434343434343434343434343434343434
+  add_gh_mocks "$case_dir" "$live"
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/91 \
+    --expected-head "$expected" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "expected-head-mismatch: a changed live head must refuse"
+  assert_grep "live head $live does not match expected head $expected" "$case_dir/stderr" \
+    "expected-head-mismatch: refusal did not name both commits"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "expected-head-mismatch: gh pr merge ran for a commit the caller did not examine"
+  pass "fm-pr-merge binds upstream verification to the live commit"
+}
+
 # The forge call is the point of no return: once gh-axi has merged, nothing this
 # script does afterwards can un-merge it. Proving pr= is already in the task's
 # meta at that moment is what makes a later failure unable to lose the merge.
@@ -2036,6 +2058,7 @@ test_github_closed_unqueued_outcome_omits_retry_flags
 test_github_agreeing_queue_rules_keep_retry_guidance
 test_github_conflicting_queue_rules_report_ambiguity
 test_verified_merge_records_pr_and_head
+test_expected_head_refuses_a_different_live_commit
 test_pr_metadata_is_recorded_before_the_forge_call
 test_merge_failure_propagates_after_recording
 test_github_open_unqueued_outcome_refuses

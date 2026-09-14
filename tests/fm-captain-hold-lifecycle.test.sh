@@ -848,9 +848,14 @@ EOF
   FM_CAPTAIN_HOLD_NOW=2026-06-01T12:00:00Z run_captain "$home" hold sample-widget \
     --reason "captain go needed before shipping" >/dev/null \
     || fail "could not hold the work item for the captain"
+  if run_captain "$home" released sample-widget; then
+    fail "an open captain hold was reported as released"
+  fi
   printf 'Not urgent; ship it as planned.\n' > "$home/go.txt"
   run_captain "$home" answer sample-widget --decision-file "$home/go.txt" --release >/dev/null \
     || fail "answer --release failed on the held work item"
+  run_captain "$home" released sample-widget \
+    || fail "the durable captain release was not recognized"
   show=$(tasks_in "$home" show sample-widget --full)
   assert_contains "$show" "state: queued" "a released work item did not stay queued"
   assert_contains "$show" "held: no" "a released work item kept its hold"
@@ -891,6 +896,9 @@ EOF
   FM_CAPTAIN_HOLD_NOW=2026-07-14T12:00:00Z run_captain "$home" hold sample-widget \
     --reason "captain pricing call needed" >/dev/null \
     || fail "could not re-hold the released work item"
+  if run_captain "$home" released sample-widget; then
+    fail "a new captain hold inherited an earlier release"
+  fi
   snap=$(PATH="$home/fakebin:$PATH" FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" \
     FM_DATA_OVERRIDE="$home/data" FM_CONFIG_OVERRIDE="$home/config" \
     FM_PROJECTS_OVERRIDE="$home/projects" FM_SNAPSHOT_NOW=2026-07-14T12:00:00Z \
@@ -3851,6 +3859,19 @@ SH
   pass "cleanup refuses a ship row when its captain hold cannot be read"
 }
 
+test_absent_probe_preserves_distinct_exit_under_errexit() {
+  local home rc=0
+  home=$(make_home absent-probe-errexit)
+  PATH="$home/fakebin:$PATH" REAL_TASKS_AXI="$TASKS_AXI_BIN" \
+    FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_CONFIG_OVERRIDE="$home/config" \
+    /bin/bash -e "$ROOT/bin/fm-captain-hold.sh" \
+      open sample-absent-call --distinguish-absent >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 3 ] \
+    || fail "errexit changed the absent captain-call result from 3 to $rc"
+  pass "absent captain-call probes preserve their distinct result under errexit"
+}
+
 test_uninventoried_report_decision_refuses_completion
 test_completion_gate_attests_and_transfers
 test_answer_records_and_closes
@@ -3894,6 +3915,7 @@ test_merge_entrypoints_refuse_a_reused_task_incarnation
 test_merge_entrypoints_serialize_forced_teardown_before_task_reads
 test_released_merge_passes_the_entrypoint_and_lands
 test_teardown_refuses_a_ship_when_the_captain_hold_cannot_be_read
+test_absent_probe_preserves_distinct_exit_under_errexit
 test_verify_resolves_a_hold_migrated_to_beads_notes
 test_verify_resolves_a_hold_migrated_under_the_configured_prefix
 test_marker_noted_row_wins_over_a_prefix_namesake

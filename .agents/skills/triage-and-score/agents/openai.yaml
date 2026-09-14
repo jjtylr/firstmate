@@ -1,0 +1,5 @@
+interface:
+  display_name: "Triage and Score"
+  short_description: "Verify, score, and rank the backlog"
+policy:
+  allow_implicit_invocation: false

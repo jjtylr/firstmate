@@ -86,6 +86,8 @@ def resolve_local_target(root: Path, source: Path, raw: str) -> Path | None:
     if not split.path:
         return source.resolve(strict=False) if split.fragment else None
     decoded = unquote(split.path)
+    if decoded == "${CLAUDE_PLUGIN_ROOT}" or decoded.startswith("${CLAUDE_PLUGIN_ROOT}/"):
+        return None
     if decoded.startswith("/"):
         fail(f"absolute local link in {source.relative_to(root)}: {raw}")
     target = (source.parent / decoded).resolve(strict=False)
@@ -96,9 +98,35 @@ def resolve_local_target(root: Path, source: Path, raw: str) -> Path | None:
     return target
 
 
+def without_fenced_code_blocks(text: str) -> str:
+    kept: list[str] = []
+    fence_char = ""
+    fence_length = 0
+    for line in text.splitlines(keepends=True):
+        match = re.match(r"^ {0,3}(`{3,}|~{3,})", line)
+        if not fence_char:
+            if match:
+                marker = match.group(1)
+                fence_char = marker[0]
+                fence_length = len(marker)
+                kept.append("\n" if line.endswith("\n") else "")
+            else:
+                kept.append(line)
+            continue
+        closing = re.match(
+            rf"^ {{0,3}}{re.escape(fence_char)}{{{fence_length},}}[ \t]*(?:\r?\n)?$",
+            line,
+        )
+        if closing:
+            fence_char = ""
+            fence_length = 0
+        kept.append("\n" if line.endswith("\n") else "")
+    return "".join(kept)
+
+
 def markdown_local_links(root: Path, source: Path) -> list[tuple[str, Path]]:
     try:
-        text = source.read_text(encoding="utf-8")
+        text = without_fenced_code_blocks(source.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError) as exc:
         fail(f"cannot read prose surface {source.relative_to(root)}: {exc}")
     raw_links = MARKDOWN_LINK_RE.findall(text) + HTML_LINK_RE.findall(text)
