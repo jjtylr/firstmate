@@ -1883,7 +1883,7 @@ command_released() {  # <task-id>
   [ "$probe_status" -eq 0 ] || return "$probe_status"
   state=${FM_BACKLOG_ROW_STATE%% *}
   hold_kind=$FM_BACKLOG_ROW_HOLD_KIND
-  if [ "$state" != done ] && [ "$hold_kind" = captain ]; then
+  if [ "$state" != "done" ] && [ "$hold_kind" = captain ]; then
     return 1
   fi
   show=$(task_show "$id") || {

@@ -57,9 +57,12 @@ fi
 # This adapter deliberately does not invoke a forge merge subcommand. The Firstmate owner
 # reads the canonical PR, current head, task hold, yolo posture, and live checks
 # and records the outcome under its normal merge authority.
-repo_url="$(gh repo view --json url -q .url 2>&1)"
-[ $? -eq 0 ] && [ -n "$repo_url" ] ||
+if repo_url="$(gh repo view --json url -q .url 2>&1)"; then
+  [ -n "$repo_url" ] ||
+    failed "cannot read this repository URL from the host — $repo_url; nothing was attempted"
+else
   failed "cannot read this repository URL from the host — $repo_url; nothing was attempted"
+fi
 pr_url="$repo_url/pull/$pr"
 case "$method" in
   squash)
@@ -72,13 +75,14 @@ case "$method" in
   merge) merge_arg=(--merge) ;;
   rebase) merge_arg=(--rebase) ;;
 esac
-out="$(FM_ROOT="$FM_ROOT" FM_TASK_ID="$task_id" \
+out="$(FM_TASK_ID="$task_id" \
   "$FM_ROOT/bin/fm-pr-merge.sh" "$task_id" "$pr_url" \
   --expected-head "$commit" -- "${merge_arg[@]}" 2>&1)"
 code=$?
 if [ "$code" -eq 0 ]; then
-  after="$(gh pr view "$pr" --json state,headRefOid 2>&1)"
-  [ $? -eq 0 ] || failed "Firstmate accepted PR #$pr, but its outcome could not be read from the host — $after"
+  if ! after="$(gh pr view "$pr" --json state,headRefOid 2>&1)"; then
+    failed "Firstmate accepted PR #$pr, but its outcome could not be read from the host — $after"
+  fi
   state="$(printf '%s' "$after" | jq -r '.state // empty' 2>/dev/null)"
   head="$(printf '%s' "$after" | jq -r '.headRefOid // empty' 2>/dev/null)"
   [ "$state" = MERGED ] ||
@@ -89,8 +93,7 @@ fi
 printf '%s\n' "$out" >&2
 # The Firstmate owner has already classified its refusal. Preserve the toolkit
 # pipeline's retry distinction only when the live head moved from its input.
-after="$(gh pr view "$pr" --json state,headRefOid 2>&1)"
-if [ $? -eq 0 ]; then
+if after="$(gh pr view "$pr" --json state,headRefOid 2>&1)"; then
   state="$(printf '%s' "$after" | jq -r '.state // empty' 2>/dev/null)"
   head="$(printf '%s' "$after" | jq -r '.headRefOid // empty' 2>/dev/null)"
   if [ -n "$head" ] && [ "$head" != "$commit" ] && [ "$state" != MERGED ]; then
