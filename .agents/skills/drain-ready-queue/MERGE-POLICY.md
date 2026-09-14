@@ -52,12 +52,12 @@ load-bearing.
   decision at spec #73 sign-off — a single-witness merge would contradict the two-witness
   doctrine), so it stays effectively `pm-merge` until it has CI. A repo whose no-CI state is a
   choice, not a gap, is `auto-on-verdict-no-ci`'s entry below.
-- **Merge-step action:** the serialized merge pipeline, [MERGE-PIPELINE.md](./MERGE-PIPELINE.md) —
-  one PR at a time: update the branch server-side, wait out the restarted checks, read the head
-  from the host and verify at exactly that commit, then chain
-  `merge-decision.sh <verdict> <checks-line> <merge_policy> <verdict-marker>` into
-  `merge-freshness.sh <pr> <commit>` into `merge-pinned.sh <pr> <commit> <merge_method>
-  <merge_policy> <task-id>`. `gh pr merge` never runs bare and never unpinned; `merge_policy` and
+- **Merge-step action:** Run the serialized merge pipeline in [MERGE-PIPELINE.md](./MERGE-PIPELINE.md), one PR at a time.
+  Update the branch server-side, wait out the restarted checks, read the head from the host, and verify at exactly that commit.
+  Then run the harness-specific chain in [MERGE-PIPELINE.md](./MERGE-PIPELINE.md).
+  Claude Code uses the upstream four-argument merge entry point.
+  A Firstmate-dispatched Codex task adds its stable task id as the fifth argument.
+  `gh pr merge` never runs bare and never unpinned; `merge_policy` and
   `merge_method` come from the repo's `loop.md` and `<verdict-marker>` is the `MARKER` line the
   verifier reported. SKILL.md step 6 is the exact chain; `--delete-branch --repo` is what collects
   the remote loop branch, and RATIONALE § 6 says why `--repo` is required for it to reach the

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Firstmate dispatch adapter for the installed Codex toolkit operative role.
-# Usage: bin/fm-codex-toolkit-dispatch.sh <ticket> <slug> <brief-file>
+# Usage: FM_TOOLKIT_PROJECT=<project> FM_TOOLKIT_MODE=<mode> FM_TOOLKIT_YOLO=<on|off> bin/fm-codex-toolkit-dispatch.sh <ticket> <slug> <brief-file>
 set -u
 
 fail() {
@@ -34,9 +34,12 @@ if ! cmp -s "$brief" "$recorded"; then
   fail "the supplied brief does not match Firstmate's recorded brief: $recorded"
 fi
 
-project="${FM_TOOLKIT_PROJECT:-$FM_ROOT}"
-mode="${FM_TOOLKIT_MODE:-direct-PR}"
-yolo="${FM_TOOLKIT_YOLO:-off}"
+project="${FM_TOOLKIT_PROJECT:-}"
+mode="${FM_TOOLKIT_MODE:-}"
+yolo="${FM_TOOLKIT_YOLO:-}"
+[ -n "$project" ] || fail 'set FM_TOOLKIT_PROJECT to the task project passed to fm-brief.sh'
+[ -n "$mode" ] || fail 'set FM_TOOLKIT_MODE to the task mode passed to fm-brief.sh'
+[ -n "$yolo" ] || fail 'set FM_TOOLKIT_YOLO to the task merge posture'
 case "$mode" in no-mistakes|direct-PR|local-only) ;; *) fail "invalid FM_TOOLKIT_MODE: $mode" ;; esac
 case "$yolo" in on|off) ;; *) fail "invalid FM_TOOLKIT_YOLO: $yolo" ;; esac
 

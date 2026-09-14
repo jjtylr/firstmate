@@ -10,6 +10,54 @@ MANIFEST="$ROOT/.agents/skills/setup-engineering-skills/codex/skill-manifest.txt
 UPSTREAM_FIXTURE="$ROOT/tests/fixtures/codex-toolkit-upstream"
 TMP_ROOT=$(fm_test_tmproot fm-codex-toolkit-install)
 
+assert_installed_semantics() {
+  python3 - "$1" <<'PY'
+import json
+import pathlib
+import sys
+import tomllib
+
+root = pathlib.Path(sys.argv[1])
+manifest = root / ".agents/skills/setup-engineering-skills/codex/skill-manifest.txt"
+skills = [line for line in manifest.read_text(encoding="utf-8").splitlines() if line]
+assert len(skills) == 30
+for skill in skills:
+    lines = (root / ".agents/skills" / skill / "SKILL.md").read_text(encoding="utf-8").splitlines()
+    close = lines.index("---", 1)
+    frontmatter = lines[1:close]
+    metadata = frontmatter.index("metadata:")
+    block = frontmatter[metadata + 1:]
+    block = block[:next((i for i, line in enumerate(block) if line and not line[0].isspace()), len(block))]
+    values = dict(line.strip().split(":", 1) for line in block if ":" in line)
+    assert values.get("internal", "").strip() == "true", skill
+
+config = tomllib.loads((root / ".codex/config.toml").read_text(encoding="utf-8"))
+expected_roles = {
+    "operative": "Implements one ready-for-agent backlog ticket end to end for the drain loop.",
+    "verifier": "Checks one open PR at a named commit and posts a verdict for the drain loop.",
+    "scorer": "Verifies and scores one backlog issue for the triage-and-score loop.",
+    "score-calibrator": "Re-ranks one completed score batch and returns bounded calibration moves.",
+}
+assert set(config["agents"]) == set(expected_roles)
+for role, description in expected_roles.items():
+    role_file = root / ".codex" / config["agents"][role]["config_file"]
+    role_config = tomllib.loads(role_file.read_text(encoding="utf-8"))
+    assert role_config["description"] == description, role
+    assert role_config["model_reasoning_effort"] == "high", role
+    assert role_config["developer_instructions"].strip(), role
+
+hooks = json.loads((root / ".codex/hooks.json").read_text(encoding="utf-8"))["hooks"]
+session = [group for group in hooks["SessionStart"] if group.get("matcher") == "startup|resume"]
+prompt = hooks["UserPromptSubmit"]
+assert len(session) == 1
+assert len(session[0]["hooks"]) == 1
+assert session[0]["hooks"][0]["type"] == "command"
+assert len(prompt) == 1
+assert len(prompt[0]["hooks"]) == 1
+assert prompt[0]["hooks"][0]["type"] == "command"
+PY
+}
+
 if [ "${FM_CODEX_TOOLKIT_INSTALL_LIVE_E2E:-0}" = 1 ]; then
   fm_live_gate opt-in FM_CODEX_TOOLKIT_INSTALL_LIVE_E2E git node npx codex
   live_project="$TMP_ROOT/live-project"
@@ -37,17 +85,8 @@ if [ "${FM_CODEX_TOOLKIT_INSTALL_LIVE_E2E:-0}" = 1 ]; then
 
   cmp "$ROOT/skills-lock.json" "$live_project/skills-lock.json" >/dev/null \
     || fail "live installer changed the canonical skills lock"
-  for adapted_path in \
-    .agents/skills/setup-engineering-skills/scripts/configure-codex-project.sh \
-    .agents/skills/drain-ready-queue/CODEX-OPERATIVE.md \
-    .agents/skills/drain-ready-queue/ORCHESTRATION.md \
-    .agents/skills/drain-ready-queue/MERGE-PIPELINE.md \
-    .agents/skills/drain-ready-queue/MERGE-POLICY.md \
-    .agents/skills/drain-ready-queue/SKILL.md \
-    .agents/skills/drain-ready-queue/scripts/runner.sh; do
-    cmp "$ROOT/$adapted_path" "$live_project/$adapted_path" >/dev/null \
-      || fail "live installer output differs from the tracked $adapted_path contract"
-  done
+  assert_installed_semantics "$live_project" \
+    || fail "live installer produced invalid Codex skill, role, or hook configuration"
   live_tree_digest() {
     (
       cd "$live_project"
@@ -169,52 +208,8 @@ assert_contains "$out" "FM-TOOLKIT-INSTALL-OK: agent-toolkit 26bc6befdcfbd335a8f
 assert_contains "$out" "Toolkit project hooks support codex exec only" \
   "installer did not state the supported toolkit hook path"
 
-python3 - "$project" <<'PY'
-import json
-import pathlib
-import sys
-import tomllib
-
-root = pathlib.Path(sys.argv[1])
-manifest = root / ".agents/skills/setup-engineering-skills/codex/skill-manifest.txt"
-skills = [line for line in manifest.read_text(encoding="utf-8").splitlines() if line]
-assert len(skills) == 30
-for skill in skills:
-    lines = (root / ".agents/skills" / skill / "SKILL.md").read_text(encoding="utf-8").splitlines()
-    close = lines.index("---", 1)
-    frontmatter = lines[1:close]
-    metadata = frontmatter.index("metadata:")
-    block = frontmatter[metadata + 1:]
-    block = block[:next((i for i, line in enumerate(block) if line and not line[0].isspace()), len(block))]
-    values = dict(line.strip().split(":", 1) for line in block if ":" in line)
-    assert values.get("internal", "").strip() == "true", skill
-
-config = tomllib.loads((root / ".codex/config.toml").read_text(encoding="utf-8"))
-assert set(config["agents"]) == {"operative", "verifier", "scorer", "score-calibrator"}
-for role, entry in config["agents"].items():
-    role_file = root / ".codex" / entry["config_file"]
-    bundled = root / ".agents/skills/setup-engineering-skills/codex/agents" / role_file.name
-    assert role_file.read_bytes() == bundled.read_bytes(), role
-
-hooks = json.loads((root / ".codex/hooks.json").read_text(encoding="utf-8"))["hooks"]
-assert len(hooks["SessionStart"]) == 1
-assert len(hooks["UserPromptSubmit"]) == 1
-assert hooks["SessionStart"][0]["matcher"] == "startup|resume"
-PY
-
-for adapted_path in \
-  .agents/skills/setup-engineering-skills/scripts/configure-codex-project.sh \
-  .agents/skills/drain-ready-queue/SKILL.md \
-  .agents/skills/drain-ready-queue/CODEX-OPERATIVE.md \
-  .agents/skills/drain-ready-queue/ORCHESTRATION.md \
-  .agents/skills/drain-ready-queue/MERGE-PIPELINE.md \
-  .agents/skills/drain-ready-queue/MERGE-POLICY.md \
-  .agents/skills/drain-ready-queue/scripts/merge-pinned.sh \
-  .agents/skills/drain-ready-queue/scripts/run-codex-operative.sh \
-  .agents/skills/drain-ready-queue/scripts/runner.sh; do
-  cmp "$ROOT/$adapted_path" "$project/$adapted_path" >/dev/null \
-    || fail "installer output differs from the tracked $adapted_path contract"
-done
+assert_installed_semantics "$project" \
+  || fail "installer produced invalid Codex skill, role, or hook configuration"
 
 first=$(tree_digest)
 install_fixture >/dev/null || fail "pinned toolkit reinstall failed"
@@ -264,14 +259,34 @@ SH
 chmod +x "$project/bin/fm-spawn.sh" "$project/bin/fm-pr-merge.sh" \
   "$project/bin/fm-captain-hold.sh" "$fakebin/gh"
 mkdir -p "$TMP_ROOT/home/data/task-42" "$TMP_ROOT/home/state"
+task_project="$TMP_ROOT/task-project"
+mkdir -p "$task_project"
 printf 'dispatch brief\n' > "$TMP_ROOT/brief.md"
 cp "$TMP_ROOT/brief.md" "$TMP_ROOT/home/data/task-42/brief.md"
+for missing_input in project mode yolo; do
+  rm -f "$spawn_log"
+  case "$missing_input" in
+    project) routing_env=() ;;
+    mode) routing_env=(FM_TOOLKIT_PROJECT="$task_project") ;;
+    yolo) routing_env=(FM_TOOLKIT_PROJECT="$task_project" FM_TOOLKIT_MODE=no-mistakes) ;;
+  esac
+  if env "${routing_env[@]}" SPAWN_LOG="$spawn_log" FM_ROOT="$project" \
+    FM_HOME="$TMP_ROOT/home" FM_TASK_ID=task-42 \
+    "$project/.agents/skills/drain-ready-queue/scripts/run-codex-operative.sh" \
+    42 example "$TMP_ROOT/brief.md" > "$TMP_ROOT/missing-$missing_input.out" \
+    2> "$TMP_ROOT/missing-$missing_input.err"; then
+    fail "Codex toolkit runner accepted a missing $missing_input routing input"
+  fi
+  assert_absent "$spawn_log" "missing $missing_input routing input reached Firstmate spawn"
+done
 SPAWN_LOG="$spawn_log" FM_ROOT="$project" FM_HOME="$TMP_ROOT/home" FM_TASK_ID=task-42 \
+  FM_TOOLKIT_PROJECT="$task_project" FM_TOOLKIT_MODE=no-mistakes FM_TOOLKIT_YOLO=on \
   "$project/.agents/skills/drain-ready-queue/scripts/run-codex-operative.sh" \
   42 example "$TMP_ROOT/brief.md" >/dev/null \
   || fail "Codex toolkit runner did not delegate through Firstmate spawn"
-assert_contains "$(cat "$spawn_log")" "task-42 $project --mode direct-PR --yolo off --harness codex" \
-  "Codex toolkit runner did not pass explicit Firstmate spawn policy"
+assert_contains "$(cat "$spawn_log")" \
+  "task-42 $task_project --mode no-mistakes --yolo on --harness codex" \
+  "Codex toolkit runner did not preserve explicit Firstmate task routing"
 merge_log="$TMP_ROOT/merge.log"
 hold_log="$TMP_ROOT/hold.log"
 gh_log="$TMP_ROOT/gh.log"

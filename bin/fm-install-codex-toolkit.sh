@@ -211,14 +211,13 @@ const codexDocText = [
   'Use one stable Firstmate task id for each ticket from dispatch through cleanup.',
   '',
   "1. Create the task brief with Firstmate's `bin/fm-brief.sh`.",
-  '2. Run `FM_TASK_ID=<task-id> bash "$SKILL/scripts/run-codex-operative.sh" <N> <SLUG> <absolute-brief-file>` from the repo root.',
+  '2. Run `FM_TASK_ID=<task-id> FM_TOOLKIT_PROJECT=<project> FM_TOOLKIT_MODE=<mode> FM_TOOLKIT_YOLO=<on|off> bash "$SKILL/scripts/run-codex-operative.sh" <N> <SLUG> <absolute-brief-file>` from the repo root.',
   "3. Supervise the task through Firstmate's durable records, and send requested fixes through `bin/fm-send.sh <task-id> <message>`.",
   '4. Pass the same `<task-id>` as the fifth argument to `merge-pinned.sh`.',
   '5. After the pull request lands, or after a terminal no-change result, run `bin/fm-teardown.sh <task-id>`.',
   '',
-  'The adapted `run-codex-operative.sh` verifies `FM_HOME`, `FM_TASK_ID`, and that the supplied brief',
-  'matches `$FM_HOME/data/$FM_TASK_ID/brief.md`, then delegates to `bin/fm-spawn.sh`. It prints',
-  '`CODEX-OPERATIVE-DISPATCHED` when that handoff succeeds and `CODEX-OPERATIVE-REFUSED` otherwise.',
+  'The adapted `run-codex-operative.sh` verifies `FM_HOME`, `FM_TASK_ID`, the explicit project, mode, and yolo inputs, and that the supplied brief matches `$FM_HOME/data/$FM_TASK_ID/brief.md`.',
+  'It then delegates to `bin/fm-spawn.sh` and prints `CODEX-OPERATIVE-DISPATCHED` when that handoff succeeds and `CODEX-OPERATIVE-REFUSED` otherwise.',
   'It never falls back to a direct Codex process or to the parent checkout.',
   'The upstream `reap.sh` and `cleanup-stopped.sh` scripts own Claude worktrees only and must not run for a Firstmate-dispatched Codex task.',
   'If `fm-teardown.sh` refuses cleanup, leave the task record, worktree, branch, and lane claim intact and report the refusal.',
@@ -327,10 +326,21 @@ fs.writeFileSync(orchestrationPath, orchestration, 'utf8');
 const mergePipelinePath = path.join(root, '.agents/skills/drain-ready-queue/MERGE-PIPELINE.md');
 let mergePipeline = fs.readFileSync(mergePipelinePath, 'utf8');
 const upstreamPinnedCommand =
+  '```bash\n' +
+  'bash "$SKILL/scripts/merge-decision.sh" <verdict> "<checks-line>" <merge_policy> "<MARKER>" \\\n' +
+  '  && bash "$SKILL/scripts/merge-freshness.sh" <pr> <commit from step 3> \\\n' +
   '  && bash "$SKILL/scripts/merge-pinned.sh" <pr> <commit from step 3> <merge_method> <merge_policy>\n```';
 const firstmatePinnedCommand =
-  '  && bash "$SKILL/scripts/merge-pinned.sh" <pr> <commit from step 3> <merge_method> <merge_policy> <task-id>\n```\n\n' +
-  'For a Firstmate-dispatched Codex task, `<task-id>` is the stable task id chosen at dispatch.';
+  'Use the four-argument merge entry point for a Claude Code lane.\n\n' +
+  '```bash\n' +
+  'bash "$SKILL/scripts/merge-decision.sh" <verdict> "<checks-line>" <merge_policy> "<MARKER>" \\\n' +
+  '  && bash "$SKILL/scripts/merge-freshness.sh" <pr> <commit from step 3> \\\n' +
+  '  && bash "$SKILL/scripts/merge-pinned.sh" <pr> <commit from step 3> <merge_method> <merge_policy>\n```\n\n' +
+  'Use the five-argument entry point only for a Firstmate-dispatched Codex task, with the stable task id chosen at dispatch.\n\n' +
+  '```bash\n' +
+  'bash "$SKILL/scripts/merge-decision.sh" <verdict> "<checks-line>" <merge_policy> "<MARKER>" \\\n' +
+  '  && bash "$SKILL/scripts/merge-freshness.sh" <pr> <commit from step 3> \\\n' +
+  '  && bash "$SKILL/scripts/merge-pinned.sh" <pr> <commit from step 3> <merge_method> <merge_policy> <task-id>\n```';
 if (mergePipeline.includes(upstreamPinnedCommand)) {
   mergePipeline = mergePipeline.replace(upstreamPinnedCommand, firstmatePinnedCommand);
 } else if (!mergePipeline.includes(firstmatePinnedCommand)) {
@@ -341,11 +351,19 @@ fs.writeFileSync(mergePipelinePath, mergePipeline, 'utf8');
 const mergePolicyPath = path.join(root, '.agents/skills/drain-ready-queue/MERGE-POLICY.md');
 let mergePolicy = fs.readFileSync(mergePolicyPath, 'utf8');
 const upstreamPolicyCommand =
+  '- **Merge-step action:** the serialized merge pipeline, [MERGE-PIPELINE.md](./MERGE-PIPELINE.md) —\n' +
+  '  one PR at a time: update the branch server-side, wait out the restarted checks, read the head\n' +
+  '  from the host and verify at exactly that commit, then chain\n' +
+  '  `merge-decision.sh <verdict> <checks-line> <merge_policy> <verdict-marker>` into\n' +
   '  `merge-freshness.sh <pr> <commit>` into `merge-pinned.sh <pr> <commit> <merge_method>\n' +
   '  <merge_policy>`. `gh pr merge`';
 const firstmatePolicyCommand =
-  '  `merge-freshness.sh <pr> <commit>` into `merge-pinned.sh <pr> <commit> <merge_method>\n' +
-  '  <merge_policy> <task-id>`. `gh pr merge`';
+  '- **Merge-step action:** Run the serialized merge pipeline in [MERGE-PIPELINE.md](./MERGE-PIPELINE.md), one PR at a time.\n' +
+  '  Update the branch server-side, wait out the restarted checks, read the head from the host, and verify at exactly that commit.\n' +
+  '  Then run the harness-specific chain in [MERGE-PIPELINE.md](./MERGE-PIPELINE.md).\n' +
+  '  Claude Code uses the upstream four-argument merge entry point.\n' +
+  '  A Firstmate-dispatched Codex task adds its stable task id as the fifth argument.\n' +
+  '  `gh pr merge`';
 if (mergePolicy.includes(upstreamPolicyCommand)) {
   mergePolicy = mergePolicy.replace(upstreamPolicyCommand, firstmatePolicyCommand);
 } else if (!mergePolicy.includes(firstmatePolicyCommand)) {

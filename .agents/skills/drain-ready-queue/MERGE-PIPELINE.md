@@ -90,13 +90,21 @@ is a PR the host will not merge as it stands.
 
 ## 4. Decide, then check freshness — both, chained
 
+Use the four-argument merge entry point for a Claude Code lane.
+
+```bash
+bash "$SKILL/scripts/merge-decision.sh" <verdict> "<checks-line>" <merge_policy> "<MARKER>" \
+  && bash "$SKILL/scripts/merge-freshness.sh" <pr> <commit from step 3> \
+  && bash "$SKILL/scripts/merge-pinned.sh" <pr> <commit from step 3> <merge_method> <merge_policy>
+```
+
+Use the five-argument entry point only for a Firstmate-dispatched Codex task, with the stable task id chosen at dispatch.
+
 ```bash
 bash "$SKILL/scripts/merge-decision.sh" <verdict> "<checks-line>" <merge_policy> "<MARKER>" \
   && bash "$SKILL/scripts/merge-freshness.sh" <pr> <commit from step 3> \
   && bash "$SKILL/scripts/merge-pinned.sh" <pr> <commit from step 3> <merge_method> <merge_policy> <task-id>
 ```
-
-For a Firstmate-dispatched Codex task, `<task-id>` is the stable task id chosen at dispatch.
 
 The decision script is unchanged: the verdict word **this** iteration's dispatch returned, the checks
 line, the policy name, and the marker the verifier reported. It runs first because it is free and
