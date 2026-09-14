@@ -120,7 +120,10 @@ fi
 fixture="$TMP_ROOT/upstream"
 project="$TMP_ROOT/project"
 fakebin="$TMP_ROOT/fakebin"
-mkdir -p "$fixture/.agents/skills" "$project/bin" "$project/.codex" "$fakebin"
+mkdir -p "$fixture/.agents/skills" "$project/bin" "$project/.codex" \
+  "$project/.agents/skills/preexisting" "$fakebin"
+printf '%s\n' 'preexisting internal skill' \
+  > "$project/.agents/skills/preexisting/SKILL.md"
 cat > "$project/.codex/hooks.json" <<'JSON'
 {
   "hooks": {
@@ -131,6 +134,15 @@ cat > "$project/.codex/hooks.json" <<'JSON'
           {
             "type": "command",
             "command": "/bin/bash \"$(git rev-parse --show-toplevel)/.agents/skills/unslop/scripts/reminder.sh\" custom-session"
+          }
+        ]
+      },
+      {
+        "matcher": "clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/bash \"$(git rev-parse --show-toplevel)/.agents/skills/unslop/scripts/reminder.sh\" codex-session"
           }
         ]
       }
@@ -196,6 +208,7 @@ while IFS= read -r skill; do
   cp -R "$source/.agents/skills/$skill" "$PWD/.agents/skills/$skill"
 done < "$source/.agents/skills/setup-engineering-skills/codex/skill-manifest.txt"
 printf '%s\n' '{"source":"temporary-local-checkout"}' > "$PWD/skills-lock.json"
+[ "${FAIL_NPX_AFTER_COPY:-0}" = 0 ] || exit 9
 SH
 cat > "$fakebin/git" <<'SH'
 #!/usr/bin/env bash
@@ -239,6 +252,15 @@ tree_digest() {
   done | shasum -a 256 | cut -d' ' -f1
 }
 
+before_failed_install=$(tree_digest)
+if FAIL_NPX_AFTER_COPY=1 install_fixture > "$TMP_ROOT/partial-install.out" \
+  2> "$TMP_ROOT/partial-install.err"; then
+  fail "installer accepted a partially failed toolkit copy"
+fi
+after_failed_install=$(tree_digest)
+[ "$before_failed_install" = "$after_failed_install" ] \
+  || fail "failed toolkit copy changed the live project tree"
+
 out=$(install_fixture) || fail "pinned toolkit installer failed on a released snapshot"
 assert_contains "$out" "FM-TOOLKIT-INSTALL-OK: agent-toolkit 26bc6befdcfbd335a8f99cc466e664e994f647d2" \
   "installer did not report the pinned release"
@@ -261,6 +283,11 @@ commands = {
 }
 assert '/bin/bash "$(git rev-parse --show-toplevel)/.agents/skills/unslop/scripts/reminder.sh" custom-session' in commands
 assert "wrapper .agents/skills/unslop/scripts/reminder.sh custom-prompt" in commands
+assert any(
+    group.get("matcher") == "clear"
+    and {"type": "command", "command": '/bin/bash "$(git rev-parse --show-toplevel)/.agents/skills/unslop/scripts/reminder.sh" codex-session'} in group["hooks"]
+    for group in hooks["SessionStart"]
+)
 PY
 
 first=$(tree_digest)

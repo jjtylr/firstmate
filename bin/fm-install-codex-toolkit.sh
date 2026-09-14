@@ -28,6 +28,7 @@ git -C "$ROOT" rev-parse --show-toplevel >/dev/null 2>&1 || fail "$ROOT is not a
 toolkit_tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-codex-toolkit.XXXXXX") \
   || fail 'could not create a temporary toolkit checkout'
 toolkit_source="$toolkit_tmp/source"
+stage_root="$toolkit_tmp/stage"
 lock_backup="$toolkit_tmp/skills-lock.json"
 cleanup() {
   rm -rf "$toolkit_tmp"
@@ -47,20 +48,35 @@ git -C "$toolkit_source" checkout -q --detach FETCH_HEAD \
   || fail 'the canonical Firstmate skills lock is missing'
 cp "$ROOT/skills-lock.json" "$lock_backup" \
   || fail 'the canonical Firstmate skills lock could not be staged'
+mkdir -p "$stage_root/.agents" \
+  || fail 'could not create the staged Firstmate tree'
+cp -R "$ROOT/.agents/skills" "$stage_root/.agents/skills" \
+  || fail 'the existing Firstmate skills could not be staged'
+if [ -d "$ROOT/.codex" ]; then
+  cp -R "$ROOT/.codex" "$stage_root/.codex" \
+    || fail 'the existing Codex project configuration could not be staged'
+else
+  mkdir "$stage_root/.codex" \
+    || fail 'the staged Codex project configuration could not be created'
+fi
+cp "$lock_backup" "$stage_root/skills-lock.json" \
+  || fail 'the canonical Firstmate skills lock could not be copied into staging'
+git -C "$stage_root" init -q \
+  || fail 'could not initialize the staged Firstmate tree'
 
 (
-  cd "$ROOT"
+  cd "$stage_root"
   npx --yes "$SKILLS_PACKAGE" add "$toolkit_source" --skill '*' --agent codex --copy --yes
 ) || fail 'the pinned toolkit snapshot could not be installed'
-cp "$lock_backup" "$ROOT/skills-lock.json" \
+cp "$lock_backup" "$stage_root/skills-lock.json" \
   || fail 'the canonical Firstmate skills lock could not be restored'
 
-manifest="$ROOT/.agents/skills/setup-engineering-skills/codex/skill-manifest.txt"
-runner="$ROOT/.agents/skills/drain-ready-queue/scripts/runner.sh"
+manifest="$stage_root/.agents/skills/setup-engineering-skills/codex/skill-manifest.txt"
+runner="$stage_root/.agents/skills/drain-ready-queue/scripts/runner.sh"
 [ -f "$manifest" ] || fail "missing installed skill manifest: $manifest"
 [ -f "$runner" ] || fail "missing installed headless runner: $runner"
 
-node - "$ROOT" "$manifest" "$runner" <<'NODE'
+node - "$stage_root" "$manifest" "$runner" <<'NODE'
 const fs = require('fs');
 const path = require('path');
 
@@ -417,19 +433,32 @@ function isManagedHandler(handler, command) {
   return handler && !Array.isArray(handler) && typeof handler === 'object' &&
     Object.keys(handler).length === 2 && handler.type === 'command' && handler.command === command;
 }
-function withoutToolkit(groups, command) {
+function withoutToolkit(groups, matchers, command) {
   if (groups === undefined) return [];
   if (!Array.isArray(groups)) throw new Error('hook event must contain an array');
   return groups.flatMap(group => {
     if (!group || Array.isArray(group) || typeof group !== 'object' || !Array.isArray(group.hooks)) {
       throw new Error('hook matcher group must contain a hooks array');
     }
+    const keys = Object.keys(group);
+    const matcher = Object.hasOwn(group, 'matcher') ? group.matcher : undefined;
+    const managedShape = keys.every(key => key === 'matcher' || key === 'hooks') &&
+      matchers.includes(matcher);
+    if (!managedShape) return [group];
     const hooks = group.hooks.filter(handler => !isManagedHandler(handler, command));
     return hooks.length ? [{ ...group, hooks }] : [];
   });
 }
-doc.hooks.SessionStart = withoutToolkit(doc.hooks.SessionStart, sessionCommand);
-doc.hooks.UserPromptSubmit = withoutToolkit(doc.hooks.UserPromptSubmit, promptCommand);
+doc.hooks.SessionStart = withoutToolkit(
+  doc.hooks.SessionStart,
+  ['startup|resume', 'startup|resume|clear|compact'],
+  sessionCommand
+);
+doc.hooks.UserPromptSubmit = withoutToolkit(
+  doc.hooks.UserPromptSubmit,
+  [undefined],
+  promptCommand
+);
 doc.hooks.SessionStart.push({
   matcher: 'startup|resume',
   hooks: [{
@@ -461,8 +490,67 @@ for (const [upstream, adapted] of configurerAdaptations) {
 fs.writeFileSync(configurerPath, configurer, 'utf8');
 NODE
 
-configurer="$ROOT/.agents/skills/setup-engineering-skills/scripts/configure-codex-project.sh"
+configurer="$stage_root/.agents/skills/setup-engineering-skills/scripts/configure-codex-project.sh"
 [ -x "$configurer" ] || fail "missing executable Codex configurer: $configurer"
-"$configurer" "$ROOT" || fail 'the Codex roles and hooks could not be configured'
+"$configurer" "$stage_root" || fail 'the Codex roles and hooks could not be configured'
+
+node - "$ROOT" "$stage_root" <<'NODE'
+const fs = require('fs');
+const path = require('path');
+
+const [root, stage] = process.argv.slice(2);
+const nonce = `${process.pid}-${Date.now()}`;
+const entries = [
+  {
+    live: path.join(root, '.agents', 'skills'),
+    staged: path.join(stage, '.agents', 'skills'),
+    prepared: path.join(root, '.agents', `.fm-toolkit-skills-${nonce}`),
+    backup: path.join(root, '.agents', `.fm-toolkit-skills-backup-${nonce}`)
+  },
+  {
+    live: path.join(root, '.codex'),
+    staged: path.join(stage, '.codex'),
+    prepared: path.join(root, `.fm-toolkit-codex-${nonce}`),
+    backup: path.join(root, `.fm-toolkit-codex-backup-${nonce}`)
+  },
+  {
+    live: path.join(root, 'skills-lock.json'),
+    staged: path.join(stage, 'skills-lock.json'),
+    prepared: path.join(root, `.fm-toolkit-skills-lock-${nonce}`),
+    backup: path.join(root, `.fm-toolkit-skills-lock-backup-${nonce}`)
+  }
+];
+
+try {
+  for (const entry of entries) {
+    fs.cpSync(entry.staged, entry.prepared, { recursive: true });
+  }
+  for (const entry of entries) {
+    if (fs.existsSync(entry.live)) {
+      fs.renameSync(entry.live, entry.backup);
+      entry.backedUp = true;
+    }
+    fs.renameSync(entry.prepared, entry.live);
+    entry.published = true;
+  }
+} catch (error) {
+  for (const entry of [...entries].reverse()) {
+    if (entry.published && fs.existsSync(entry.live)) {
+      fs.rmSync(entry.live, { recursive: true, force: true });
+    }
+    if (entry.backedUp && fs.existsSync(entry.backup)) {
+      fs.renameSync(entry.backup, entry.live);
+    }
+    if (fs.existsSync(entry.prepared)) {
+      fs.rmSync(entry.prepared, { recursive: true, force: true });
+    }
+  }
+  throw error;
+}
+
+for (const entry of entries) {
+  fs.rmSync(entry.backup, { recursive: true, force: true });
+}
+NODE
 
 printf 'FM-TOOLKIT-INSTALL-OK: agent-toolkit %s installed with Firstmate adaptations\n' "$TOOLKIT_COMMIT"

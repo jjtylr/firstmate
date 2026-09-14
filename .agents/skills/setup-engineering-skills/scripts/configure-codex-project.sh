@@ -125,19 +125,32 @@ function isManagedHandler(handler, command) {
   return handler && !Array.isArray(handler) && typeof handler === 'object' &&
     Object.keys(handler).length === 2 && handler.type === 'command' && handler.command === command;
 }
-function withoutToolkit(groups, command) {
+function withoutToolkit(groups, matchers, command) {
   if (groups === undefined) return [];
   if (!Array.isArray(groups)) throw new Error('hook event must contain an array');
   return groups.flatMap(group => {
     if (!group || Array.isArray(group) || typeof group !== 'object' || !Array.isArray(group.hooks)) {
       throw new Error('hook matcher group must contain a hooks array');
     }
+    const keys = Object.keys(group);
+    const matcher = Object.hasOwn(group, 'matcher') ? group.matcher : undefined;
+    const managedShape = keys.every(key => key === 'matcher' || key === 'hooks') &&
+      matchers.includes(matcher);
+    if (!managedShape) return [group];
     const hooks = group.hooks.filter(handler => !isManagedHandler(handler, command));
     return hooks.length ? [{ ...group, hooks }] : [];
   });
 }
-doc.hooks.SessionStart = withoutToolkit(doc.hooks.SessionStart, sessionCommand);
-doc.hooks.UserPromptSubmit = withoutToolkit(doc.hooks.UserPromptSubmit, promptCommand);
+doc.hooks.SessionStart = withoutToolkit(
+  doc.hooks.SessionStart,
+  ['startup|resume', 'startup|resume|clear|compact'],
+  sessionCommand
+);
+doc.hooks.UserPromptSubmit = withoutToolkit(
+  doc.hooks.UserPromptSubmit,
+  [undefined],
+  promptCommand
+);
 doc.hooks.SessionStart.push({
   matcher: 'startup|resume',
   hooks: [{
