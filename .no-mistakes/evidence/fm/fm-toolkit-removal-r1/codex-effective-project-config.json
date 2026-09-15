@@ -1,0 +1,13 @@
+{
+  "interface": "codex app-server config/read",
+  "codexVersion": "codex-cli 0.154.0",
+  "projectLayer": "/Users/josh/.no-mistakes/worktrees/4ecf35ccebba/01M2KE3JZ1SBAWR0171Z0KTM0E/.codex",
+  "projectLayerConfig": {},
+  "removedAgentRolesExpected": [
+    "operative",
+    "verifier",
+    "scorer",
+    "score-calibrator"
+  ],
+  "removedAgentRolesPresent": []
+}

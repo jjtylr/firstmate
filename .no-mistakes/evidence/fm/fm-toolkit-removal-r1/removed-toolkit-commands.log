@@ -1,0 +1,6 @@
+command=bin/fm-install-codex-toolkit.sh --help status=127
+bash: bin/fm-install-codex-toolkit.sh: No such file or directory
+command=bin/fm-codex-toolkit-dispatch.sh --help status=127
+bash: bin/fm-codex-toolkit-dispatch.sh: No such file or directory
+command=bin/fm-codex-toolkit-merge.sh --help status=127
+bash: bin/fm-codex-toolkit-merge.sh: No such file or directory

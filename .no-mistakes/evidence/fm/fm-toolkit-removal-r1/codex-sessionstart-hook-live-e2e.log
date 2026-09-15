@@ -1,0 +1,8 @@
+# claude: not installed on this host, so its run-tier evidence was NOT refreshed
+ok - codex codex-cli 0.154.0: a cold open reports source 'startup' and its hook stdout reaches model context
+ok - codex codex-cli 0.154.0: a worker detached by the session-open hook outlives it, so the deferred network checks still run
+ok - codex codex-cli 0.154.0: a context-preserving reopen reports source 'resume', which the run tier routes without a re-emit
+# codex codex-cli 0.154.0: codex exec run-tier evidence refreshed; the interactive TUI remains uncovered because tracked project hooks provide no session-open or re-emit channel there
+# pi: not installed on this host, so its run-tier evidence was NOT refreshed
+# run-tier evidence was refreshed for 1 harness(es); still missing: claude pi
+# fm-sessionstart-hook-live-e2e.test.sh: all live assertions passed
