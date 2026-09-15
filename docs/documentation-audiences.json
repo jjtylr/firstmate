@@ -177,6 +177,10 @@
       "audience": "agent-runtime"
     },
     {
+      "path": ".agents/skills/harness-adapters/references/harness/agy.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": ".agents/skills/harness-adapters/references/harness/claude.md",
       "audience": "agent-runtime"
     },
@@ -226,6 +230,10 @@
     },
     {
       "path": ".agents/skills/project-management/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/quiet/SKILL.md",
       "audience": "agent-runtime"
     },
     {
@@ -297,10 +305,6 @@
       "audience": "operator-current"
     },
     {
-      "path": "docs/captain-hold-lifecycle.md",
-      "audience": "maintainer-architecture"
-    },
-    {
       "path": "docs/cd-guard.md",
       "audience": "maintainer-architecture"
     },
@@ -317,7 +321,15 @@
       "audience": "operator-current"
     },
     {
+      "path": "docs/captain-hold-lifecycle.md",
+      "audience": "maintainer-architecture"
+    },
+    {
       "path": "docs/documentation-audiences.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "docs/extension-bindings.md",
       "audience": "maintainer-architecture"
     },
     {
@@ -339,10 +351,6 @@
     {
       "path": "docs/examples/wedge-alarm",
       "audience": "operator-example"
-    },
-    {
-      "path": "docs/extension-bindings.md",
-      "audience": "maintainer-architecture"
     },
     {
       "path": "docs/fm-test-isolation-proof.md",
@@ -373,12 +381,12 @@
       "audience": "operator-current"
     },
     {
-      "path": "docs/scripts.md",
-      "audience": "operator-current"
-    },
-    {
       "path": "docs/secondmate-parent-channel.md",
       "audience": "maintainer-architecture"
+    },
+    {
+      "path": "docs/scripts.md",
+      "audience": "operator-current"
     },
     {
       "path": "docs/sessionstart-nudge.md",
@@ -431,6 +439,10 @@
     {
       "path": "docs/turnend-guard.md",
       "audience": "operator-current"
+    },
+    {
+      "path": "docs/verification/agy.md",
+      "audience": "maintainer-verification"
     },
     {
       "path": "docs/verification/dispatch-auth.md",

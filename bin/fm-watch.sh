@@ -106,10 +106,12 @@
 #                          an actionable row in an endpoint-recorded local
 #                          secondmate home's durable wake queue did not advance
 #                          between observations for FM_SECONDMATE_WAKE_STALL_SECS
-#                          while the mate was not in an active turn; declared
-#                          external-wait pause rows do not feed this escalation,
-#                          observation is read-only, and one parent notification
-#                          covers each no-progress episode
+#                          while the mate was not in an active turn (a busy mate
+#                          is exempt only until the queue has been frozen for
+#                          BUSY_TURN_MAX_SECS); declared external-wait pause
+#                          rows do not feed this escalation, observation is
+#                          read-only, and one parent notification covers each
+#                          no-progress episode
 # For normal supervision, resume the session-start primary-harness protocol
 # after each printed reason. Direct duplicate invocations of this script still
 # no-op through the watcher singleton lock.
@@ -147,6 +149,10 @@ mkdir -p "$STATE"
 # worker while adding no uncovered file.
 # shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-merge-outcome-lib.sh"
+# The durable merge-authority owner is shared with bin/fm-pr-merge.sh. The
+# watcher consumes only its identity-bound record after a poll observes landing.
+# shellcheck source=/dev/null
+. "$SCRIPT_DIR/fm-merge-authority-lib.sh"
 # shellcheck source=bin/fm-x-lib.sh
 . "$SCRIPT_DIR/fm-x-lib.sh"
 # shellcheck source=bin/fm-check-lib.sh
@@ -734,13 +740,17 @@ secondmate_oldest_queue_row() {  # <queue-path>
 # by the same BUSY_TURN_MAX_SECS that stops a busy pane from proving liveness
 # forever. A mate mid-turn has not stopped draining its queue - it simply drains
 # between turns - so this gate, not the elapsed interval, is what separates a
-# healthy mate from a frozen wake loop. Any absence of proof (no window, a failed
-# capture, an idle or unknown verdict, a busy pane past the bound) is NOT an
-# active turn, so a frozen queue still escalates.
-secondmate_in_active_turn() {  # <task> <window>
-  local task=$1 w=$2 tail40
+# healthy mate from a frozen wake loop. The bound is measured on <idle>, how long
+# the queue's drain position has not moved, because a mate's turns end in its own
+# home and this home holds no completed-turn evidence to age them by
+# (busy_turn_over_age, whose spawn-record fallback would age every mate from its
+# launch). Any absence of proof (no window, a failed capture, an idle or unknown
+# verdict, a queue frozen past the bound) is NOT an active turn, so a frozen
+# queue still escalates.
+secondmate_in_active_turn() {  # <window> <idle>
+  local w=$1 idle=$2 tail40
   [ -n "$w" ] || return 1
-  ! busy_turn_over_age "$task" || return 1
+  [ "$idle" -lt "$BUSY_TURN_MAX_SECS" ] || return 1
   tail40=$(fm_backend_capture "$(window_backend "$w")" "$w" 40 "$(window_label "$w")" 2>/dev/null) || return 1
   window_is_busy "$w" "$tail40"
 }
@@ -755,7 +765,8 @@ secondmate_in_active_turn() {  # <task> <window>
 # never to the interval. A moved position ends an alerted episode and starts a
 # new observation interval, so a newly-oldest row cannot alert immediately while
 # a later genuine freeze remains visible. A mate demonstrably inside an active
-# turn never escalates, so the interval is only the backstop behind that gate.
+# turn defers its escalation, but only while this same interval is under
+# BUSY_TURN_MAX_SECS, so a turn that never ends cannot hide a frozen queue.
 # Receipts close the append-before-marker crash window without changing the
 # foreign queue.
 secondmate_wake_stall_tick() {
@@ -819,7 +830,7 @@ EOF
     [ "$episode_alerted" -eq 0 ] || continue
     idle=$((now - observed_at))
     [ "$idle" -ge "$threshold" ] || continue
-    ! secondmate_in_active_turn "$task" "$(fm_backend_target_of_meta "$meta")" || continue
+    ! secondmate_in_active_turn "$(fm_backend_target_of_meta "$meta")" "$idle" || continue
     receipt="$receipt_dir/$row_key"
     if [ "$(cat "$receipt" 2>/dev/null || true)" = "$row_key" ]; then
       fm_wake_secondmate_stall_marker_write "$task" "$row_key" || return 1
@@ -1841,8 +1852,16 @@ reconcile_requests_detached() {
   RECONCILE_REQUEST_PID=$!
 }
 
+PR_POLL_CONTROL_LOCK=
+
+pr_poll_control_release() {
+  [ -z "$PR_POLL_CONTROL_LOCK" ] || fm_lock_release "$PR_POLL_CONTROL_LOCK" || return 1
+  PR_POLL_CONTROL_LOCK=
+}
+
 watcher_cleanup() {
   local cleanup_status=0 owns_lock=0 transition=release-lock
+  pr_poll_control_release || cleanup_status=1
   if [ "$(cat "$WATCH_LOCK/pid" 2>/dev/null || true)" = "${WATCHER_PID:-}" ]; then
     owns_lock=1
     if [ "${WATCHER_RECOVERY_PENDING:-0}" -eq 1 ] \
@@ -2012,6 +2031,13 @@ while :; do
           host=$FM_PR_POLL_SNAPSHOT_HOST
           path=$FM_PR_POLL_SNAPSHOT_PATH
           number=$FM_PR_POLL_SNAPSHOT_NUMBER
+          PR_POLL_CONTROL_LOCK="$STATE/.control-$id.lock"
+          fm_lock_acquire_wait "$PR_POLL_CONTROL_LOCK" || exit 1
+          if ! fm_pr_poll_snapshot_matches "$STATE" "$id" "$SCRIPT_DIR/fm-pr-poll.sh"; then
+            pr_poll_control_release || exit 1
+            triage_log "PR poll for $id changed before its validated check; skipping the stale snapshot"
+            continue
+          fi
           run_check_capture "$SCRIPT_DIR/fm-pr-poll.sh" --validated \
             "$provider" "$url" "$host" "$path" "$number" || exit 1
           out=$FM_CHECK_RESULT
@@ -2029,14 +2055,28 @@ while :; do
       if [ -n "$out" ]; then
         reason="check: $c: $out"
         if [ "$is_pr_poll" -eq 1 ] && [ "$out" = merged ]; then
+          if ! fm_merge_authority_read "$STATE" "$id" \
+              "$provider" "$host" "$path" "$number"; then
+            triage_log "no matching persisted merge authority for $id; recording an external merge outcome"
+          fi
+          merge_authority=$FM_MERGE_AUTHORITY
+          merge_authority_record_identity=$FM_MERGE_AUTHORITY_RECORD_IDENTITY
           merge_outcome_rc=0
           fm_merge_outcome_report "$FM_HOME" "$STATE" "$id" "$url" poll \
-            || merge_outcome_rc=$?
+            "$merge_authority" || merge_outcome_rc=$?
           if [ "$merge_outcome_rc" -ne 0 ]; then
             triage_log "merge outcome for $id could not be recorded (rc=$merge_outcome_rc)"
             exit 1
           fi
+          if [ -n "$merge_authority_record_identity" ] \
+            && ! fm_merge_authority_remove_if_matches "$STATE" "$id" \
+              "$provider" "$host" "$path" "$number" "$merge_authority" \
+              "$merge_authority_record_identity"; then
+            triage_log "published merge outcome for $id but could not retire its authority record"
+            exit 1
+          fi
           retire_merged_pr_poll "$id"
+          pr_poll_control_release || exit 1
           touch "$STATE/.last-check"
           if [ "$FM_MERGE_OUTCOME_ALREADY_RECORDED" = true ]; then
             triage_log "absorbed duplicate merged PR poll result for $id"
@@ -2044,10 +2084,12 @@ while :; do
           fi
           wake "$reason"
         fi
+        pr_poll_control_release || exit 1
         fm_wake_append check "$c" "$reason" || exit 1
         touch "$STATE/.last-check"
         wake "$reason"
       fi
+      pr_poll_control_release || exit 1
     done
     if [ -n "$rejected_checks" ]; then
       reason="check: rejected unauthenticated state checks:$rejected_checks"
