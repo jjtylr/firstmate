@@ -12,6 +12,4 @@ __pycache__/
 .env
 config/
 
-.claude/worktrees/
-
 .tools/
