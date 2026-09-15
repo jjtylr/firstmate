@@ -1,5 +1,0 @@
-interface:
-  display_name: "Brainstorming"
-  short_description: "Turn an uncertain idea into a brief"
-policy:
-  allow_implicit_invocation: false

@@ -1,9 +1,0 @@
-# Managed by agent-toolkit. Rerun the Codex project installer to update this file.
-description = "Implements one ready-for-agent backlog ticket end to end for the drain loop."
-model_reasoning_effort = "high"
-developer_instructions = """
-Codex spawned you in the parent's checkout, which is not an isolated operative lane. Do not edit,
-commit, push, open a PR, or run the ticket. Tell the parent to use
-`.agents/skills/drain-ready-queue/scripts/run-codex-operative.sh` from the repository root, then
-stop. Only that bounded runner creates or acquires the owned worktree and starts the real operative.
-"""

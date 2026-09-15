@@ -1,5 +1,0 @@
-interface:
-  display_name: "Drain Ready Queue"
-  short_description: "Implement the ready backlog through PRs"
-policy:
-  allow_implicit_invocation: false
