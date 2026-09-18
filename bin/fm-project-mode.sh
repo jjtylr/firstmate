@@ -9,7 +9,8 @@
 # bin/fm-brief.sh, bin/fm-spawn.sh, and bin/fm-promote.sh (AGENTS.md section 7).
 # The consumers are bin/fm-fleet-sync.sh (skip local-only clones),
 # bin/fm-home-seed.sh (refuse local-only seeding, run no-mistakes init), and
-# bin/fm-spawn.sh's advisory registry-deviation notice.
+# bin/fm-spawn.sh (advisory registry-deviation notice plus strict registration
+# validation before granting Pi-family worker trust).
 #
 # Registry line format (data/projects.md):
 #   - <name> - <desc> (added <date>)                  -> no-mistakes off  (legacy default)
@@ -34,8 +35,8 @@
 # --strict requires a safe registry and exactly one valid matching entry instead
 # of applying the advisory fallback behavior.
 #
-# An unknown/missing project or unknown mode falls back to "no-mistakes off" and warns
-# to stderr, so a typo never silently drops the gate.
+# Without --strict, an unknown or missing project or unknown mode falls back to
+# "no-mistakes off" and warns to stderr, so a typo never silently drops the gate.
 # Usage: fm-project-mode.sh [--raw] [--strict] <project-name>
 set -eu
 

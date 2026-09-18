@@ -144,8 +144,10 @@
 #   a failed or inconclusive probe omits it so older Pi versions remain launchable.
 #   A missing selected executable refuses before endpoint creation, and pi-signed
 #   never falls back to pi. Ship and scout launches require the canonical Pi
-#   template, which grants per-launch project trust with --approve after the
-#   isolated copy is validated. The grant does not change Pi's saved trust store.
+#   template, which grants per-launch project trust with --approve only after
+#   the source is the exact clone named by exactly one valid registry entry and the
+#   isolated copy is proven to share that clone's Git repository identity.
+#   The grant does not change Pi's saved trust store.
 #   Spawn reports success only after the per-task Pi extension matches the unique
 #   token in the delivered prompt and records its ensuing lifecycle event.
 #   Missing processing evidence within the bounded readiness window fails the

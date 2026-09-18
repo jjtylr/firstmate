@@ -395,8 +395,8 @@ Dropping the retention-is-not-durable line makes the refusal claim a retention t
 
 ## Pi-family project trust and launch readiness
 
-`bin/fm-spawn.sh` owns the Pi and Pi-signed ship/scout guarantee: grant `--approve` only through the canonical launch template after isolated-copy validation, then require the `pi-ext` lifecycle receipt causally matched to the unique token in the delivered launch prompt.
-Secondmate startup and non-Pi launch handling retain their existing contracts.
+`bin/fm-spawn.sh` owns the Pi and Pi-signed ship/scout guarantee: grant `--approve` only through the canonical launch template after the source resolves to the exact registered clone and the isolated copy passes repository-identity validation, then require the `pi-ext` lifecycle receipt causally matched to the unique token in the delivered launch prompt.
+Pi secondmates retain the manual trust contract in the [Pi adapter reference](../../.agents/skills/harness-adapters/references/harness/pi.md); this ship/scout guarantee does not cover them.
 Readiness uses the shared durable state reader, independent of terminal width, conversation text, Pi version strings, and viewport-capture support on tmux, Herdr, Zellij, Orca, or cmux.
 
 Installed Pi 0.85.1 source reviewed on 2026-09-18 resolves the explicit trust override before saved denials or `defaultProjectTrust` and does not persist that override.
