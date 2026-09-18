@@ -98,7 +98,7 @@ fm_test_fake_gh_axi() {
 # FM_FAKE_DUPLICATE_WINDOW is printed from list-windows. A Pi spawn fixture can
 # set FM_FAKE_PI_LAUNCH_MARKER, FM_FAKE_PI_STATE_DIR, FM_FAKE_PI_ID, and
 # FM_FAKE_BUSY_EVENT: the fake pane then renders a nonempty worker viewport and
-# writes the same public pi-ext agent-start receipt a real launched extension
+# writes the same public pi-ext launch-agent-start receipt a real launched extension
 # emits after the launch command's Enter.
 #
 # The pane path defaults to empty when FM_FAKE_PANE_PATH is unset. Window
@@ -161,11 +161,11 @@ case "${1:-}" in
         *' Enter '*)
           if [ -n "${FM_FAKE_PI_LAUNCH_MARKER:-}" ] && [ -f "$FM_FAKE_PI_LAUNCH_MARKER" ]; then
             "$FM_FAKE_BUSY_EVENT" apply "$FM_FAKE_PI_STATE_DIR" "$FM_FAKE_PI_ID" busy \
-              --current-gen --source pi-ext --event agent-start >/dev/null 2>&1 || true
+              --current-gen --source pi-ext --event launch-agent-start >/dev/null 2>&1 || true
           elif [ -f "${FM_FAKE_LAUNCH_LOG:-/nonexistent}.pi-info" ]; then
             IFS=$'\t' read -r pi_event pi_state pi_id <"$FM_FAKE_LAUNCH_LOG.pi-info"
             "$pi_event" apply "$pi_state" "$pi_id" busy \
-              --current-gen --source pi-ext --event agent-start >/dev/null 2>&1 || true
+              --current-gen --source pi-ext --event launch-agent-start >/dev/null 2>&1 || true
           fi
           ;;
       esac

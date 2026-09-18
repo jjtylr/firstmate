@@ -401,7 +401,7 @@ STUB
 # conditional policy, maps it to its most rigorous leg for them, and exposes the
 # raw annotation for the one caller that must tell a policy from a flat mode.
 test_project_mode_maps_the_conditional_policy() {
-  local home out err
+  local home out err status
   home="$TMP_ROOT/project-mode/home"
   mkdir -p "$home/data"
   cat > "$home/data/projects.md" <<'EOF'
@@ -428,7 +428,15 @@ EOF
   [ "$out" = "no-mistakes off" ] || fail "a typo'd mode no longer falls back to the most rigorous default"
   err=$(FM_HOME="$home" "$PROJECT_MODE" typoproj 2>&1 >/dev/null)
   assert_contains "$err" "unknown mode" "a typo'd registry mode stopped warning"
-  pass "fm-project-mode: the conditional policy is accepted, mapped for mechanical callers, and readable raw"
+
+  out=$(FM_HOME="$home" "$PROJECT_MODE" --strict flatproj 2>/dev/null)
+  [ "$out" = "direct-PR off" ] || fail "--strict changed a unique valid registry entry (got '$out')"
+  printf '%s\n' '- flatproj [local-only] - duplicate fixture (added 2026-01-01)' >>"$home/data/projects.md"
+  status=0
+  out=$(FM_HOME="$home" "$PROJECT_MODE" --strict flatproj 2>&1) || status=$?
+  [ "$status" -ne 0 ] || fail "--strict accepted duplicate project entries"
+  assert_contains "$out" 'has 2 registry entries' "--strict did not report duplicate project entries"
+  pass "fm-project-mode maps policy annotations and strictly rejects duplicate registrations"
 }
 
 # Spawn and promotion refuse leftover Task-subsection placeholders through the

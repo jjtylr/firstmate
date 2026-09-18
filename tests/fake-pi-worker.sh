@@ -8,6 +8,7 @@ fi
 
 approved=0
 extension=
+prompt=${!#}
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --approve) approved=1 ;;
@@ -19,11 +20,12 @@ done
 printf '%s\n' verified-pi-worker
 if [ "$approved" -eq 1 ]; then
   [ -n "$extension" ]
-  EXT_PATH="$extension" node --input-type=module <<'JS'
+  EXT_PATH="$extension" FM_FAKE_PI_PROMPT="$prompt" node --input-type=module <<'JS'
 import { pathToFileURL } from "node:url";
 const handlers = {};
 const extension = await import(pathToFileURL(process.env.EXT_PATH).href);
 extension.default({ on: (name, fn) => { handlers[name] = fn; } });
+await handlers.before_agent_start({ prompt: process.env.FM_FAKE_PI_PROMPT }, {});
 await handlers.agent_start({}, {});
 JS
 fi

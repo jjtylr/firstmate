@@ -395,7 +395,7 @@ Dropping the retention-is-not-durable line makes the refusal claim a retention t
 
 ## Pi-family project trust and launch readiness
 
-`bin/fm-spawn.sh` owns the Pi and Pi-signed ship/scout guarantee: grant `--approve` only through the canonical launch template after isolated-copy validation, then require the current generation's `pi-ext` processing receipt.
+`bin/fm-spawn.sh` owns the Pi and Pi-signed ship/scout guarantee: grant `--approve` only through the canonical launch template after isolated-copy validation, then require the `pi-ext` lifecycle receipt causally matched to the unique token in the delivered launch prompt.
 Secondmate startup and non-Pi launch handling retain their existing contracts.
 Readiness uses the shared durable state reader, independent of terminal width, conversation text, Pi version strings, and viewport-capture support on tmux, Herdr, Zellij, Orca, or cmux.
 

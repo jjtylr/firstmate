@@ -62,14 +62,22 @@ classify() {  # <harness> <id> <state-dir>
 # Node host and fire one lifecycle handler. Modes: agent-start, settle-idle,
 # settle-continuing, turn-end.
 drive_pi_ext() {
-  EXT_PATH="$1" MODE="$2" node --input-type=module 2>&1 <<'EOF'
+  local ext=$1 mode=$2 state id prompt
+  state=${ext%/*}
+  id=${ext##*/}
+  id=${id%.pi-ext.ts}
+  prompt="${state%/state}/data/$id/launch-brief.md"
+  EXT_PATH="$ext" MODE="$mode" PROMPT_PATH="$prompt" node --input-type=module 2>&1 <<'EOF'
 import { pathToFileURL } from "node:url";
+import { readFileSync } from "node:fs";
 const mod = await import(pathToFileURL(process.env.EXT_PATH).href);
 const handlers = {};
 mod.default({ on: (name, fn) => { handlers[name] = fn; }, events: { on: (name, fn) => { handlers[name] = fn; } } });
 const ctx = { isIdle: () => process.env.MODE !== "settle-continuing" };
+await handlers["before_agent_start"]({ prompt: readFileSync(process.env.PROMPT_PATH, "utf8") }, ctx);
+await handlers["agent_start"]({}, ctx);
 switch (process.env.MODE) {
-  case "agent-start": await handlers["agent_start"]({}, ctx); break;
+  case "agent-start": break;
   case "settle-idle": await handlers["agent_settled"]({}, ctx); break;
   case "settle-continuing": await handlers["agent_settled"]({}, ctx); break;
   case "settle-then-start":

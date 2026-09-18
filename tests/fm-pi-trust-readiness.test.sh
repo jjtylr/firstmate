@@ -35,6 +35,7 @@ case "${1:-}" in
   --help) printf '%s\n' '  --tui-mode <mode>'; exit 0 ;;
 esac
 printf '%s\n' "$@" >"$FM_FAKE_ARGS_LOG"
+prompt=${!#}
 approved=0
 extension=
 while [ "$#" -gt 0 ]; do
@@ -46,7 +47,7 @@ while [ "$#" -gt 0 ]; do
 done
 [ "$approved" -eq 1 ] || exit 0
 case "$FM_FAKE_PI_MODE" in never-begins|abort-during-readiness) exit 0 ;; esac
-EXT_PATH="$extension" node --input-type=module <<'JS'
+EXT_PATH="$extension" FM_FAKE_PI_PROMPT="$prompt" node --input-type=module <<'JS'
 import { pathToFileURL } from "node:url";
 import { readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
@@ -56,19 +57,29 @@ extension.default({ on: (name, fn) => { handlers[name] = fn; } });
 const state = process.env.FM_FAKE_STATE_DIR;
 const id = process.env.FM_FAKE_ID;
 const mode = process.env.FM_FAKE_PI_MODE;
+const prompt = process.env.FM_FAKE_PI_PROMPT;
 const record = `${state}/${id}.busy-state`;
 const arm = () => execFileSync(process.env.FM_FAKE_BUSY_EVENT, ["arm", state, id]);
-if (mode === "stale-callback") arm();
-await handlers.agent_start({}, {});
-if (mode === "settled") await handlers.agent_settled({}, { isIdle: () => true });
-if (mode === "stale-record") {
-  const prior = readFileSync(record);
-  arm();
-  writeFileSync(record, prior);
+const before = (value) => handlers.before_agent_start({ prompt: value }, {});
+if (mode === "unrelated-startup" || mode === "startup-then-brief") {
+  await before("message queued by a trusted project extension");
+  await handlers.agent_start({}, {});
+  await handlers.agent_settled({}, { isIdle: () => true });
 }
-if (mode === "wrong-source") {
-  execFileSync(process.env.FM_FAKE_BUSY_EVENT, ["apply", state, id, "busy",
-    "--current-gen", "--source", "fm-spawn", "--event", "agent-start"]);
+if (mode !== "unrelated-startup") {
+  await before(prompt);
+  if (mode === "stale-callback") arm();
+  await handlers.agent_start({}, {});
+  if (mode === "settled") await handlers.agent_settled({}, { isIdle: () => true });
+  if (mode === "stale-record") {
+    const prior = readFileSync(record);
+    arm();
+    writeFileSync(record, prior);
+  }
+  if (mode === "wrong-source") {
+    execFileSync(process.env.FM_FAKE_BUSY_EVENT, ["apply", state, id, "busy",
+      "--current-gen", "--source", "fm-spawn", "--event", "agent-start"]);
+  }
 }
 JS
 SH
@@ -294,10 +305,10 @@ test_processing_receipt_is_independent_of_viewport() {
       expect_code 0 "$rc" "$harness $mode should launch without viewport capture: $out"
       assert_contains "$out" "spawned $id harness=$harness kind=$kind" "launch did not preserve identity and kind"
       if [ "$mode" = settled ]; then
-        assert_grep 'state=idle source=pi-ext event=agent-settled' "$HOME_DIR/state/$id.busy-state" \
+        assert_grep 'state=idle source=pi-ext event=launch-agent-settled' "$HOME_DIR/state/$id.busy-state" \
           "a completed first turn did not prove readiness"
       else
-        assert_grep 'state=busy source=pi-ext event=agent-start' "$HOME_DIR/state/$id.busy-state" \
+        assert_grep 'state=busy source=pi-ext event=launch-agent-start' "$HOME_DIR/state/$id.busy-state" \
           "launch succeeded without a processing receipt"
       fi
       [ "$(wc -l <"$CASE_DIR/enter.log" | tr -d ' ')" = 1 ] || fail "launch sent an extra trust key"
@@ -315,6 +326,28 @@ test_conversation_trust_words_do_not_veto_processing() {
     "$id" started pi) || rc=$?
   expect_code 0 "$rc" "conversation text should not veto the processing receipt: $out"
   pass "conversation trust words do not veto a current-generation processing receipt"
+}
+
+test_readiness_requires_the_matching_launch_prompt() {
+  local mode id rec out rc
+  for mode in unrelated-startup startup-then-brief; do
+    id="pi-$mode-$$"
+    RUNTIME_TASK_TMPS+=("/tmp/fm-$id")
+    rec=$(make_case "$mode" "$id")
+    read_case "$rec"
+    rc=0
+    out=$(run_spawn "$CASE_DIR" "$HOME_DIR" "$PROJECT_DIR" "$WORKTREE_DIR" "$FAKEBIN_DIR" \
+      "$id" "$mode" pi) || rc=$?
+    if [ "$mode" = unrelated-startup ]; then
+      [ "$rc" -ne 0 ] || fail "an unrelated startup run proved launch readiness"
+      assert_failed_cleanup "$out" "$id"
+    else
+      expect_code 0 "$rc" "the exact launch prompt did not prove readiness after startup activity: $out"
+      assert_grep 'state=busy source=pi-ext event=launch-agent-start' "$HOME_DIR/state/$id.busy-state" \
+        "the causally matched launch event was not recorded"
+    fi
+  done
+  pass "Pi readiness follows the exact token-bearing launch prompt"
 }
 
 test_invalid_processing_evidence_fails() {
@@ -363,11 +396,25 @@ test_pi_trust_requires_the_exact_registered_project() {
   out=$(run_spawn "$CASE_DIR" "$HOME_DIR" "$PROJECT_DIR" "$WORKTREE_DIR" "$FAKEBIN_DIR" \
     "$id" started pi) || rc=$?
   [ "$rc" -ne 0 ] || fail "an unregistered project received Pi trust"
-  assert_contains "$out" 'Pi worker trust requires a verified project registry' \
+  assert_contains "$out" 'Pi worker trust requires exactly one valid registry entry' \
     "unregistered Pi refusal did not name the registry requirement"
   assert_no_grep 'new-window' "$CASE_DIR/tmux-calls.log" \
     "unregistered Pi project created an endpoint"
   [ ! -s "$CASE_DIR/launch.log" ] || fail "unregistered Pi project received a launch command"
+
+  printf '%s\n' \
+    '- project [no-mistakes] - readiness fixture (added 2026-09-18)' \
+    '- project [direct-PR] - duplicate fixture (added 2026-09-18)' \
+    >"$HOME_DIR/data/projects.md"
+  rc=0
+  out=$(run_spawn "$CASE_DIR" "$HOME_DIR" "$PROJECT_DIR" "$WORKTREE_DIR" "$FAKEBIN_DIR" \
+    "$id" started pi) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a duplicate project registration received Pi trust"
+  assert_contains "$out" 'has 2 registry entries' \
+    "duplicate Pi refusal did not come from strict registry validation"
+  assert_no_grep 'new-window' "$CASE_DIR/tmux-calls.log" \
+    "duplicate Pi project registration created an endpoint"
+  [ ! -s "$CASE_DIR/launch.log" ] || fail "duplicate Pi project registration received a launch command"
 
   printf '%s\n' '- project [no-mistakes] - readiness fixture (added 2026-09-18)' >"$HOME_DIR/data/projects.md"
   rogue_project="$CASE_DIR/rogue/project"
@@ -495,6 +542,7 @@ SH
 
 test_processing_receipt_is_independent_of_viewport
 test_conversation_trust_words_do_not_veto_processing
+test_readiness_requires_the_matching_launch_prompt
 test_invalid_processing_evidence_fails
 test_executable_harness_strings_refuse
 test_pi_trust_requires_the_exact_registered_project

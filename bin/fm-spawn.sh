@@ -146,8 +146,8 @@
 #   never falls back to pi. Ship and scout launches require the canonical Pi
 #   template, which grants per-launch project trust with --approve after the
 #   isolated copy is validated. The grant does not change Pi's saved trust store.
-#   Spawn reports success only after the per-task Pi extension has replaced the
-#   launch seed with a current-generation `agent_start` or `agent_settled` event.
+#   Spawn reports success only after the per-task Pi extension matches the unique
+#   token in the delivered prompt and records its ensuing lifecycle event.
 #   Missing processing evidence within the bounded readiness window fails the
 #   launch and closes the worker endpoint instead of reporting `spawned`.
 #   For omp (Oh My Pi), fm-spawn resolves the `omp` executable from PATH once and
@@ -1462,6 +1462,7 @@ SPAWN_TASK_LOCK_HELD=1
 PROJ=
 ARG3=
 FIRSTMATE_HOME=
+PI_LAUNCH_TOKEN=
 
 # --relaunch adoption: every identity axis comes from the task's own validated
 # durable record, never from the command line, so a relaunch can only ever
@@ -2356,20 +2357,13 @@ resolve_project_dir_arg() {
 }
 
 validate_pi_registered_project() {
-  local project=$1 name count registered project_real registered_real
+  local project=$1 name registered project_real registered_real
   name=$(basename "$project")
-  if ! fm_backlog_record_present "$DATA/projects.md" "project registry" "$DATA"; then
-    echo "error: Pi worker trust requires a verified project registry: $FM_BACKLOG_TRANSITION_ERROR" >&2
+  if ! FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" \
+    "$FM_ROOT/bin/fm-project-mode.sh" --strict "$name" >/dev/null; then
+    echo "error: Pi worker trust requires exactly one valid registry entry for project $name" >&2
     return 1
   fi
-  count=$(LC_ALL=C awk -v name="$name" '$1 == "-" && $2 == name { count++ } END { print count + 0 }' "$DATA/projects.md") || {
-    echo "error: Pi worker trust could not read the project registry at $DATA/projects.md" >&2
-    return 1
-  }
-  [ "$count" -eq 1 ] || {
-    echo "error: Pi worker trust requires exactly one registry entry for project $name; found $count" >&2
-    return 1
-  }
   registered="$PROJECTS/$name"
   project_real=$(cd "$project" 2>/dev/null && pwd -P) || project_real=
   registered_real=$(cd "$registered" 2>/dev/null && pwd -P) || registered_real=
@@ -2561,6 +2555,7 @@ else
 fi
 if [ "$KIND" != secondmate ] && { [ "$HARNESS" = pi ] || [ "$HARNESS" = pi-signed ]; }; then
   validate_pi_registered_project "$PROJ_ABS" || exit 1
+  PI_LAUNCH_TOKEN="fm-pi-launch-$ID-${BASHPID:-$$}-$RANDOM-$(date +%s)"
 fi
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   SPAWN_TREEHOUSE_PROJECT_LOCK=$(fm_treehouse_project_lock_path "$PROJ_ABS") || {
@@ -2613,6 +2608,9 @@ if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
       cat "$SOURCE_BRIEF" &&
       if [ "$KIND" = ship ] && [ "$MODE" = no-mistakes ]; then
         fm_brief_intent_overlay "$CAPTAIN_INTENT"
+      fi &&
+      if [ -n "$PI_LAUNCH_TOKEN" ]; then
+        printf '\n<firstmate-launch-token>%s</firstmate-launch-token>\n' "$PI_LAUNCH_TOKEN"
       fi
   } >"$BRIEF_TMP" || {
     rm -f -- "$BRIEF_TMP"
@@ -3295,9 +3293,10 @@ spawn_send_key() { # <target> <key>
 }
 
 # The launch seed is intentionally not readiness evidence. Only an event written
-# by the loaded Pi extension proves that the positional brief reached Pi's agent
-# loop. A very short turn may already be settled by the first read, so both the
-# opening and closing events qualify.
+# after the loaded Pi extension matches this launch's token in before_agent_start
+# proves that the positional brief reached Pi's agent loop. A very short turn may
+# already be settled by the first read, so both the opening and closing events
+# qualify.
 pi_brief_processing_began() {
   local record state source event seq
   record=$(fm_busy_record_read "$STATE_REAL" "$ID" 2>/dev/null) || return 1
@@ -3305,7 +3304,7 @@ pi_brief_processing_began() {
 $record
 EOF
   case "$state:$source:$event" in
-    busy:pi-ext:agent-start | idle:pi-ext:agent-settled) ;;
+    busy:pi-ext:launch-agent-start | idle:pi-ext:launch-agent-settled) ;;
     *) return 1 ;;
   esac
   case "$seq" in '' | *[!0-9]*) return 1 ;; esac
@@ -4073,7 +4072,8 @@ EOF
     cat >"$STATE/$ID.pi-ext.ts" <<EOF
 // Firstmate semantic busy-state events + turn-end notification; written by
 // fm-spawn under the contract owned by bin/fm-busy-lib.sh.
-// Semantic state: "agent_start" -> busy when a low-level agent run begins;
+// After before_agent_start matches this launch's prompt token, semantic state:
+// "agent_start" -> busy when a low-level agent run begins;
 // "agent_settled" -> idle only when ctx.isIdle() confirms Pi will not
 // continue automatically - auto-retries, auto-compaction retries, tool
 // loops, and queued continuations all keep the run un-settled, and a settle
@@ -4090,10 +4090,25 @@ const busyEvent = (state: string, event: string) =>
     ], () => resolve());
   });
 export default function (pi: any) {
-  pi.on("agent_start", () => busyEvent("busy", "agent-start"));
+  const launchMarker = "<firstmate-launch-token>$PI_LAUNCH_TOKEN</firstmate-launch-token>";
+  let launchPending = false;
+  let launchEstablished = false;
+  pi.on("before_agent_start", (event: any) => {
+    if (launchEstablished) return;
+    launchPending = typeof event?.prompt === "string" && event.prompt.includes(launchMarker);
+  });
+  pi.on("agent_start", () => {
+    if (launchPending) {
+      launchPending = false;
+      launchEstablished = true;
+    }
+    if (!launchEstablished) return;
+    return busyEvent("busy", "launch-agent-start");
+  });
   pi.on("agent_settled", (_event: any, ctx: any) => {
+    if (!launchEstablished) return;
     if (ctx && typeof ctx.isIdle === "function" && !ctx.isIdle()) return;
-    return busyEvent("idle", "agent-settled");
+    return busyEvent("idle", "launch-agent-settled");
   });
   pi.on("turn_end", () => execFile("touch", ["$TURNEND"]));
   // A native harness can make progress inside one Pi turn. This separate
