@@ -60,7 +60,7 @@ classify() {  # <harness> <id> <state-dir>
 
 # drive_pi_ext <ext-path> <mode>: load the generated Pi extension in a plain
 # Node host and fire one lifecycle handler. Modes: agent-start, settle-idle,
-# settle-continuing, turn-end.
+# settle-continuing, unmarked-agent-start, unmarked-settle-idle, turn-end.
 drive_pi_ext() {
   local ext=$1 mode=$2 state id prompt
   state=${ext%/*}
@@ -74,11 +74,16 @@ const mod = await import(pathToFileURL(process.env.EXT_PATH).href);
 const handlers = {};
 mod.default({ on: (name, fn) => { handlers[name] = fn; }, events: { on: (name, fn) => { handlers[name] = fn; } } });
 const ctx = { isIdle: () => process.env.MODE !== "settle-continuing" };
-await handlers["before_agent_start"]({ prompt: readFileSync(process.env.PROMPT_PATH, "utf8") }, ctx);
+const prompt = process.env.MODE.startsWith("unmarked-")
+  ? "later prompt after extension reload"
+  : readFileSync(process.env.PROMPT_PATH, "utf8");
+await handlers["before_agent_start"]({ prompt }, ctx);
 await handlers["agent_start"]({}, ctx);
 switch (process.env.MODE) {
   case "agent-start": break;
+  case "unmarked-agent-start": break;
   case "settle-idle": await handlers["agent_settled"]({}, ctx); break;
+  case "unmarked-settle-idle": await handlers["agent_settled"]({}, ctx); break;
   case "settle-continuing": await handlers["agent_settled"]({}, ctx); break;
   case "settle-then-start":
     await handlers["agent_settled"]({}, ctx);
@@ -133,7 +138,18 @@ test_pi_extension_semantic_lifecycle() {
   out=$(drive_pi_ext "$ext" settle-idle) || fail "final settle drive failed: $out"
   out=$(classify pi "$id" "$state")
   [ "$out" = "idle pi-ext" ] || fail "the final settle must classify idle, got '$out'"
-  pass "pi extension reports agent_start busy, settles idle only via ctx.isIdle(), and keeps turn_end a notification"
+
+  out=$(drive_pi_ext "$ext" unmarked-agent-start) || fail "post-reload agent_start drive failed: $out"
+  out=$(classify pi "$id" "$state")
+  [ "$out" = "busy pi-ext" ] || fail "a reloaded extension dropped a later agent_start: $out"
+  assert_grep 'event=agent-start' "$state/$id.busy-state" \
+    "a reloaded extension did not preserve the ordinary busy event"
+  out=$(drive_pi_ext "$ext" unmarked-settle-idle) || fail "post-reload agent_settled drive failed: $out"
+  out=$(classify pi "$id" "$state")
+  [ "$out" = "idle pi-ext" ] || fail "a reloaded extension dropped a later agent_settled: $out"
+  assert_grep 'event=agent-settled' "$state/$id.busy-state" \
+    "a reloaded extension did not preserve the ordinary idle event"
+  pass "pi extension tracks initial readiness and later lifecycle events across reloads"
 }
 
 test_pi_extension_serializes_settle_before_next_start() {

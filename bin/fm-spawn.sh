@@ -4073,12 +4073,13 @@ EOF
     cat >"$STATE/$ID.pi-ext.ts" <<EOF
 // Firstmate semantic busy-state events + turn-end notification; written by
 // fm-spawn under the contract owned by bin/fm-busy-lib.sh.
-// After before_agent_start matches this launch's prompt token, semantic state:
-// "agent_start" -> busy when a low-level agent run begins;
+// Semantic state: "agent_start" -> busy when a low-level agent run begins;
 // "agent_settled" -> idle only when ctx.isIdle() confirms Pi will not
 // continue automatically - auto-retries, auto-compaction retries, tool
 // loops, and queued continuations all keep the run un-settled, and a settle
 // that raced another extension's fresh run keeps state busy via isIdle().
+// The token-matched initial run receives launch-prefixed event names for the
+// readiness gate; every later run keeps the ordinary semantic state edges.
 // "turn_end" fires at every inner turn boundary (one LLM response plus its
 // tool calls) and stays a wake NOTIFICATION touch for the watcher, never
 // current-state truth.
@@ -4093,23 +4094,23 @@ const busyEvent = (state: string, event: string) =>
 export default function (pi: any) {
   const launchMarker = "<firstmate-launch-token>$PI_LAUNCH_TOKEN</firstmate-launch-token>";
   let launchPending = false;
-  let launchEstablished = false;
+  let launchRun = false;
   pi.on("before_agent_start", (event: any) => {
-    if (launchEstablished) return;
     launchPending = typeof event?.prompt === "string" && event.prompt.includes(launchMarker);
   });
   pi.on("agent_start", () => {
     if (launchPending) {
       launchPending = false;
-      launchEstablished = true;
+      launchRun = true;
     }
-    if (!launchEstablished) return;
-    return busyEvent("busy", "launch-agent-start");
+    return busyEvent("busy", launchRun ? "launch-agent-start" : "agent-start");
   });
   pi.on("agent_settled", (_event: any, ctx: any) => {
-    if (!launchEstablished) return;
     if (ctx && typeof ctx.isIdle === "function" && !ctx.isIdle()) return;
-    return busyEvent("idle", "launch-agent-settled");
+    const event = launchRun ? "launch-agent-settled" : "agent-settled";
+    launchPending = false;
+    launchRun = false;
+    return busyEvent("idle", event);
   });
   pi.on("turn_end", () => execFile("touch", ["$TURNEND"]));
   // A native harness can make progress inside one Pi turn. This separate
