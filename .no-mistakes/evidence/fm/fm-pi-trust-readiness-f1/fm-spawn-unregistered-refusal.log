@@ -1,0 +1,4 @@
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: project "unregistered" is not registered in /Users/josh/.no-mistakes/worktrees/4ecf35ccebba/01M2TJ8ZTSPMR0BVCNED4MZPDC/.nm-live-pi-product/home/data/projects.md
+error: Pi worker trust requires exactly one valid registry entry for project unregistered
+exit_code=1

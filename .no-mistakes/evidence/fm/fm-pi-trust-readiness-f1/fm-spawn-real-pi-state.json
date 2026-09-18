@@ -1,0 +1,30 @@
+{
+  "spawn_meta": {
+    "window": "fm-lab-nm-pi-01m2t:w1:p2",
+    "endpoint_task_id": "live-pi-authenticated",
+    "worktree": "/Users/josh/.no-mistakes/worktrees/4ecf35ccebba/01M2TJ8ZTSPMR0BVCNED4MZPDC/.nm-live-pi-product/home/.treehouse/project-620001/1/project",
+    "project": "/Users/josh/.no-mistakes/worktrees/4ecf35ccebba/01M2TJ8ZTSPMR0BVCNED4MZPDC/.nm-live-pi-product/home/projects/project",
+    "harness": "pi",
+    "kind": "ship",
+    "mode": "no-mistakes",
+    "yolo": "off",
+    "tasktmp": "/tmp/fm-live-pi-authenticated",
+    "model": "openai-codex/gpt-5.6-terra",
+    "effort": "low",
+    "busy_gen": "g1789759320.92489.9118",
+    "spawn_gen": "s1789759320.89736.31350",
+    "backend": "herdr",
+    "herdr_session": "fm-lab-nm-pi-01m2t",
+    "herdr_workspace_id": "w1",
+    "herdr_tab_id": "w1:t2",
+    "herdr_pane_id": "w1:p2"
+  },
+  "busy_state": "v1 gen=g1789759320.92489.9118 seq=3 state=busy source=pi-ext event=launch-message-start ts=1789759322",
+  "busy_generation": "g1789759320.92489.9118",
+  "readiness_receipt": "g1789759320.92489.9118",
+  "receipt_matches_generation": true,
+  "project_extension_session_start": {
+    "cwd": "/Users/josh/.no-mistakes/worktrees/4ecf35ccebba/01M2TJ8ZTSPMR0BVCNED4MZPDC/.nm-live-pi-product/home/.treehouse/project-620001/1/project"
+  },
+  "saved_trust_store_after_launch": {}
+}

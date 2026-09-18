@@ -1,0 +1,2 @@
+error: pi did not start processing its launch brief within the bounded readiness window; inspect window fm-lab-nm-pi-01m2t:w1:p2
+warning: leaving task live-pi-product's slot claim on /Users/josh/.no-mistakes/worktrees/4ecf35ccebba/01M2TJ8ZTSPMR0BVCNED4MZPDC/.nm-live-pi-product/home/.treehouse/project-620001/1/project in place; the Treehouse project lock is no longer held, so the next spawn's claim replaces it
