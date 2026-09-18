@@ -333,25 +333,25 @@ test_invalid_processing_evidence_fails() {
   pass "launch seeds, stale callbacks, stale records, and other sources cannot prove Pi readiness"
 }
 
-test_raw_pi_launch_refuses() {
-  local harness raw id rec out rc n=0
-  for harness in pi pi-signed; do
-    for raw in "$harness --offline" "env PI_OFFLINE=1 $harness" "bash -lc '$harness --offline'"; do
-      n=$((n + 1))
-      id="$harness-raw-$n-$$"
-      rec=$(make_case "$harness-raw-$n" "$id")
-      read_case "$rec"
-      rc=0
-      out=$(run_spawn "$CASE_DIR" "$HOME_DIR" "$PROJECT_DIR" "$WORKTREE_DIR" "$FAKEBIN_DIR" \
-        "$id" started "$raw") || rc=$?
-      [ "$rc" -ne 0 ] || fail "raw Pi launch should refuse: $raw"
-      assert_contains "$out" 'require canonical --harness pi or pi-signed' "raw launch lacked its actionable refusal"
-      [ ! -s "$CASE_DIR/launch.log" ] || fail "raw Pi command was sent to the endpoint: $raw"
-      assert_no_grep 'new-window' "$CASE_DIR/tmux-calls.log" "raw Pi command created an endpoint: $raw"
-      assert_absent "$HOME_DIR/state/$id.meta" "raw Pi refusal published task metadata"
-    done
+test_executable_harness_strings_refuse() {
+  local raw id rec out rc n=0
+  for raw in 'pi --offline' 'pi-signed --offline' 'env PI_OFFLINE=1 pi' \
+    "bash -lc 'pi --offline'" 'p=pi; "$p"' 'custom-agent --flag'; do
+    n=$((n + 1))
+    id="raw-harness-$n-$$"
+    rec=$(make_case "raw-harness-$n" "$id")
+    read_case "$rec"
+    rc=0
+    out=$(run_spawn "$CASE_DIR" "$HOME_DIR" "$PROJECT_DIR" "$WORKTREE_DIR" "$FAKEBIN_DIR" \
+      "$id" started "$raw") || rc=$?
+    [ "$rc" -ne 0 ] || fail "executable harness string should refuse: $raw"
+    assert_contains "$out" 'select an exact verified canonical adapter token' \
+      "executable harness refusal lacked its actionable requirement"
+    [ ! -s "$CASE_DIR/launch.log" ] || fail "executable harness string was sent to the endpoint: $raw"
+    assert_no_grep 'new-window' "$CASE_DIR/tmux-calls.log" "executable harness string created an endpoint: $raw"
+    assert_absent "$HOME_DIR/state/$id.meta" "executable harness refusal published task metadata"
   done
-  pass "direct and wrapped raw Pi commands cannot bypass the canonical launch path"
+  pass "only exact verified canonical adapter tokens reach worker launch"
 }
 
 test_pi_trust_requires_the_exact_registered_project() {
@@ -396,6 +396,23 @@ test_primary_path_never_receives_approval() {
   [ ! -s "$CASE_DIR/launch.log" ] || fail "an unvalidated primary path received Pi approval"
   assert_absent "$HOME_DIR/state/$id.meta" "primary path refusal published task metadata"
   pass "Pi approval is never launched when isolation validation fails"
+}
+
+test_unrelated_repository_never_receives_approval() {
+  local id="pi-unrelated-$$" rec out rc=0 unrelated unrelated_worktree
+  rec=$(make_case unrelated-repository "$id")
+  read_case "$rec"
+  unrelated="$CASE_DIR/unrelated"
+  unrelated_worktree="$CASE_DIR/unrelated-worktree"
+  fm_git_worktree "$unrelated" "$unrelated_worktree" unrelated-repository
+  out=$(run_spawn "$CASE_DIR" "$HOME_DIR" "$PROJECT_DIR" "$unrelated_worktree" "$FAKEBIN_DIR" \
+    "$id" started pi) || rc=$?
+  [ "$rc" -ne 0 ] || fail "an unrelated repository should refuse"
+  assert_contains "$out" 'belongs to a different Git repository' \
+    "unrelated repository refusal did not name its identity mismatch"
+  [ ! -s "$CASE_DIR/launch.log" ] || fail "an unrelated repository received Pi approval"
+  assert_absent "$HOME_DIR/state/$id.meta" "unrelated repository refusal published task metadata"
+  pass "Pi approval requires the isolated copy to share project repository identity"
 }
 
 test_failed_relaunch_stops_pi_and_preserves_endpoint() {
@@ -479,9 +496,10 @@ SH
 test_processing_receipt_is_independent_of_viewport
 test_conversation_trust_words_do_not_veto_processing
 test_invalid_processing_evidence_fails
-test_raw_pi_launch_refuses
+test_executable_harness_strings_refuse
 test_pi_trust_requires_the_exact_registered_project
 test_primary_path_never_receives_approval
+test_unrelated_repository_never_receives_approval
 test_failed_relaunch_stops_pi_and_preserves_endpoint
 test_abort_during_readiness_cleans_launched_pi
 test_failed_final_commit_cleans_launched_pi
