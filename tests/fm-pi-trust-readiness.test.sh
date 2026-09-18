@@ -45,7 +45,7 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 [ "$approved" -eq 1 ] || exit 0
-[ "$FM_FAKE_PI_MODE" != never-begins ] || exit 0
+case "$FM_FAKE_PI_MODE" in never-begins|abort-during-readiness) exit 0 ;; esac
 EXT_PATH="$extension" node --input-type=module <<'JS'
 import { pathToFileURL } from "node:url";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -81,13 +81,37 @@ set -u
 printf '%s\n' "$*" >>"$FM_FAKE_TMUX_CALL_LOG"
 case "$*" in
   *'#{pane_current_path}'*) printf '%s\n' "$FM_FAKE_PANE_PATH"; exit 0 ;;
+  *'#{pane_current_command}'*)
+    if [ -n "${FM_FAKE_AGENT_STATE_FILE:-}" ] && [ "$(cat "$FM_FAKE_AGENT_STATE_FILE" 2>/dev/null)" = agent ]; then
+      printf '%s\n' pi
+    else
+      printf '%s\n' zsh
+    fi
+    exit 0
+    ;;
+  *'#{pane_tty}'*) printf '\n'; exit 0 ;;
+  *'#{cursor_y}'*) printf '1\n'; exit 0 ;;
+  *'#{pane_id}'*) printf '%s\n' '%99'; exit 0 ;;
+  *'#S'*) printf '%s\n' firstmate; exit 0 ;;
 esac
 case "${1:-}" in
   display-message) printf '%s\n' '%99'; exit 0 ;;
-  list-windows|has-session|new-session|new-window|kill-window) exit 0 ;;
+  list-windows)
+    [ "${FM_FAKE_EXISTING_ENDPOINT:-no}" != yes ] || printf 'fm-%s\n' "$FM_FAKE_ID"
+    exit 0
+    ;;
+  kill-window)
+    [ -z "${FM_FAKE_AGENT_STATE_FILE:-}" ] || printf '%s\n' dead >"$FM_FAKE_AGENT_STATE_FILE"
+    exit 0
+    ;;
+  has-session|new-session|new-window) exit 0 ;;
   capture-pane)
     [ "${FM_FAKE_VIEWPORT_FAILS:-no}" != yes ] || exit 7
-    printf '%s\n' 'The brief quotes "Do not trust" and "Trust parent folder".'
+    if [ -n "${FM_FAKE_AGENT_STATE_FILE:-}" ]; then
+      printf '╭────╮\n│    │\n╰────╯\n'
+    else
+      printf '%s\n' 'The brief quotes "Do not trust" and "Trust parent folder".'
+    fi
     exit 0
     ;;
   send-keys)
@@ -99,13 +123,23 @@ case "${1:-}" in
     if [ -n "$literal" ]; then
       case "$literal" in
         *FM_PI_HARNESS=pi*) printf '%s\n' "$literal" >"$FM_FAKE_LAUNCH_LOG" ;;
+        /quit) : >"$FM_FAKE_EXIT_PENDING" ;;
       esac
     elif [ -s "$FM_FAKE_LAUNCH_LOG" ]; then
       case " $* " in
+        *' Escape '*) printf '%s\n' interrupt >>"$FM_FAKE_CONTROL_LOG" ;;
         *' Enter '*)
           printf '%s\n' enter >>"$FM_FAKE_ENTER_LOG"
-          cd "$FM_FAKE_PANE_PATH" || exit 1
-          bash -c "$(cat "$FM_FAKE_LAUNCH_LOG")"
+          if [ -e "$FM_FAKE_EXIT_PENDING" ]; then
+            printf '%s\n' dead >"$FM_FAKE_AGENT_STATE_FILE"
+            rm -f "$FM_FAKE_EXIT_PENDING"
+            printf '%s\n' exit >>"$FM_FAKE_CONTROL_LOG"
+          elif [ ! -e "$FM_FAKE_LAUNCHED_MARKER" ]; then
+            : >"$FM_FAKE_LAUNCHED_MARKER"
+            [ -z "${FM_FAKE_AGENT_STATE_FILE:-}" ] || printf '%s\n' agent >"$FM_FAKE_AGENT_STATE_FILE"
+            cd "$FM_FAKE_PANE_PATH" || exit 1
+            bash -c "$(cat "$FM_FAKE_LAUNCH_LOG")"
+          fi
           ;;
       esac
     fi
@@ -113,7 +147,18 @@ case "${1:-}" in
 esac
 SH
   chmod +x "$fakebin/tmux"
-  fm_fake_exit0 "$fakebin" treehouse gh-axi gh sleep
+  cat >"$fakebin/sleep" <<'SH'
+#!/usr/bin/env bash
+if [ "${FM_FAKE_PI_MODE:-}" = abort-during-readiness ] &&
+  [ "$(cat "${FM_FAKE_AGENT_STATE_FILE:-/nonexistent}" 2>/dev/null)" = agent ] &&
+  [ ! -e "$FM_FAKE_SIGNAL_MARKER" ]; then
+  : >"$FM_FAKE_SIGNAL_MARKER"
+  kill -TERM "$PPID"
+fi
+exit 0
+SH
+  chmod +x "$fakebin/sleep"
+  fm_fake_exit0 "$fakebin" treehouse gh-axi gh
   ln -s "$JQ_BIN" "$fakebin/jq"
   printf '%s\n' "$fakebin"
 }
@@ -145,6 +190,7 @@ EOF
   git -C "$worktree" commit -qm fixture
   : >"$case_dir/launch.log"
   : >"$case_dir/enter.log"
+  : >"$case_dir/control.log"
   : >"$case_dir/tmux-calls.log"
   printf '%s\n' "$case_dir|$home|$project|$worktree|$fakebin"
 }
@@ -165,13 +211,60 @@ run_spawn() {
     FM_SPAWN_NO_GUARD=1 FM_BACKEND=tmux TMUX='fake,1,0' FM_FAKE_PANE_PATH="$worktree" \
     FM_FAKE_PI_MODE="$mode" FM_FAKE_LAUNCH_LOG="$case_dir/launch.log" \
     FM_FAKE_ARGS_LOG="$case_dir/args.log" FM_FAKE_ENTER_LOG="$case_dir/enter.log" \
+    FM_FAKE_CONTROL_LOG="$case_dir/control.log" \
+    FM_FAKE_AGENT_STATE_FILE="${FM_FAKE_AGENT_STATE_FILE:-}" \
+    FM_FAKE_EXISTING_ENDPOINT="${FM_FAKE_EXISTING_ENDPOINT:-no}" \
+    FM_FAKE_EXIT_PENDING="$case_dir/exit-pending" \
+    FM_FAKE_LAUNCHED_MARKER="$case_dir/launched" \
+    FM_FAKE_SIGNAL_MARKER="$case_dir/signal-sent" \
     FM_FAKE_TMUX_CALL_LOG="$case_dir/tmux-calls.log" \
     FM_FAKE_BUSY_EVENT="$ROOT/bin/fm-busy-event.sh" \
     FM_FAKE_STATE_DIR="$home/state" FM_FAKE_ID="$id" \
     FM_FAKE_VIEWPORT_FAILS="${FM_FAKE_VIEWPORT_FAILS:-no}" \
     FM_PI_READY_POLLS=3 FM_PI_POLL_INTERVAL=0 \
+    FM_PI_STOP_POLLS=3 FM_PI_STOP_INTERVAL=0 \
     PATH="$fakebin:$BASE_PATH" \
     "$SPAWN" "$id" "$project" --harness "$harness" "${delivery[@]}" 2>&1
+}
+
+run_relaunch() {
+  local case_dir=$1 home=$2 worktree=$3 fakebin=$4 id=$5 mode=$6 harness=$7
+  HOME="$home" FM_ROOT_OVERRIDE='' FM_HOME="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
+    FM_SPAWN_NO_GUARD=1 FM_BACKEND=tmux TMUX='fake,1,0' FM_FAKE_PANE_PATH="$worktree" \
+    FM_FAKE_PI_MODE="$mode" FM_FAKE_LAUNCH_LOG="$case_dir/launch.log" \
+    FM_FAKE_ARGS_LOG="$case_dir/args.log" FM_FAKE_ENTER_LOG="$case_dir/enter.log" \
+    FM_FAKE_CONTROL_LOG="$case_dir/control.log" \
+    FM_FAKE_AGENT_STATE_FILE="$case_dir/agent-state" FM_FAKE_EXISTING_ENDPOINT=yes \
+    FM_FAKE_EXIT_PENDING="$case_dir/exit-pending" \
+    FM_FAKE_LAUNCHED_MARKER="$case_dir/launched" \
+    FM_FAKE_SIGNAL_MARKER="$case_dir/signal-sent" \
+    FM_FAKE_TMUX_CALL_LOG="$case_dir/tmux-calls.log" \
+    FM_FAKE_BUSY_EVENT="$ROOT/bin/fm-busy-event.sh" \
+    FM_FAKE_STATE_DIR="$home/state" FM_FAKE_ID="$id" \
+    FM_PI_READY_POLLS=3 FM_PI_POLL_INTERVAL=0 \
+    FM_PI_STOP_POLLS=3 FM_PI_STOP_INTERVAL=0 \
+    PATH="$fakebin:$BASE_PATH" \
+    "$SPAWN" "$id" --relaunch --harness "$harness" 2>&1
+}
+
+prepare_relaunch() {
+  local case_dir=$1 home=$2 project=$3 worktree=$4 id=$5 harness=$6
+  {
+    echo "window=firstmate:fm-$id"
+    echo "endpoint_task_id=$id"
+    echo "worktree=$worktree"
+    echo "project=$project"
+    echo "harness=$harness"
+    echo "kind=ship"
+    echo "mode=no-mistakes"
+    echo "yolo=off"
+    echo "tasktmp=/tmp/fm-$id"
+    echo "model=default"
+    echo "effort=default"
+  } >"$home/state/$id.meta"
+  printf '%s\n' dead >"$case_dir/agent-state"
 }
 
 assert_failed_cleanup() {
@@ -268,8 +361,53 @@ test_primary_path_never_receives_approval() {
   pass "Pi approval is never launched when isolation validation fails"
 }
 
+test_failed_relaunch_stops_pi_and_preserves_endpoint() {
+  local id="pi-relaunch-timeout-$$" rec out rc=0
+  RUNTIME_TASK_TMPS+=("/tmp/fm-$id")
+  rec=$(make_case relaunch-timeout "$id")
+  read_case "$rec"
+  prepare_relaunch "$CASE_DIR" "$HOME_DIR" "$PROJECT_DIR" "$WORKTREE_DIR" "$id" pi
+  out=$(run_relaunch "$CASE_DIR" "$HOME_DIR" "$WORKTREE_DIR" "$FAKEBIN_DIR" \
+    "$id" never-begins pi) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a Pi relaunch without processing evidence should fail"
+  assert_present "$HOME_DIR/state/$id.meta" "failed relaunch discarded its task record"
+  assert_no_grep 'kill-window' "$CASE_DIR/tmux-calls.log" \
+    "failed relaunch destroyed its reusable endpoint"
+  [ "$(cat "$CASE_DIR/agent-state")" = dead ] || fail "failed relaunch left Pi running"
+  assert_grep interrupt "$CASE_DIR/control.log" "failed relaunch did not interrupt Pi"
+  assert_grep exit "$CASE_DIR/control.log" "failed relaunch did not submit Pi's exit command"
+  assert_absent "$HOME_DIR/state/$id.busy-state" "failed relaunch retained its busy generation"
+  rm -f "$CASE_DIR/launched"
+  : >"$CASE_DIR/launch.log"
+  rc=0
+  out=$(run_relaunch "$CASE_DIR" "$HOME_DIR" "$WORKTREE_DIR" "$FAKEBIN_DIR" \
+    "$id" started pi) || rc=$?
+  expect_code 0 "$rc" "the preserved endpoint should support another relaunch: $out"
+  pass "failed Pi relaunch stops the process and preserves its reusable endpoint"
+}
+
+test_abort_during_readiness_cleans_launched_pi() {
+  local id="pi-readiness-abort-$$" rec out rc=0
+  RUNTIME_TASK_TMPS+=("/tmp/fm-$id")
+  rec=$(make_case readiness-abort "$id")
+  read_case "$rec"
+  printf '%s\n' dead >"$CASE_DIR/agent-state"
+  out=$(FM_FAKE_AGENT_STATE_FILE="$CASE_DIR/agent-state" \
+    run_spawn "$CASE_DIR" "$HOME_DIR" "$PROJECT_DIR" "$WORKTREE_DIR" "$FAKEBIN_DIR" \
+      "$id" abort-during-readiness pi) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a terminated readiness wait should fail"
+  assert_absent "$HOME_DIR/state/$id.meta" "terminated readiness wait kept provisional metadata"
+  assert_grep 'kill-window' "$CASE_DIR/tmux-calls.log" \
+    "terminated readiness wait left its launched endpoint running"
+  [ "$(cat "$CASE_DIR/agent-state")" = dead ] || fail "terminated readiness wait left Pi running"
+  assert_not_contains "$out" "spawned $id" "terminated readiness wait reported success"
+  pass "readiness interruption cleans up the launched Pi endpoint"
+}
+
 test_processing_receipt_is_independent_of_viewport
 test_conversation_trust_words_do_not_veto_processing
 test_invalid_processing_evidence_fails
 test_raw_pi_launch_refuses
 test_primary_path_never_receives_approval
+test_failed_relaunch_stops_pi_and_preserves_endpoint
+test_abort_during_readiness_cleans_launched_pi

@@ -1056,6 +1056,7 @@ SPAWN_META_LOCK=
 SPAWN_META_LOCK_HELD=0
 SPAWN_META_PUBLISH_STARTED=0
 SPAWN_FRESH_COMMIT_PENDING=0
+SPAWN_PI_DELIVERY_PENDING=0
 SPAWN_TASK_SET_LOCK=
 SPAWN_TASK_SET_LOCK_HELD=0
 SPAWN_TREEHOUSE_PROJECT_LOCK=
@@ -1098,6 +1099,11 @@ parse_orca_worktree_result() {
 
 spawn_abort_cleanup() {
   local status=$?
+  if [ "$SPAWN_PI_DELIVERY_PENDING" = 1 ]; then
+    if ! pi_delivery_cleanup; then
+      status=1
+    fi
+  fi
   if [ "$RELAUNCH_REPLACEMENT_PENDING" = 1 ] &&
     [ "$SPAWN_META_PUBLISH_STARTED" = 1 ] &&
     [ -n "$SPAWN_META_TMP" ] &&
@@ -3307,10 +3313,97 @@ pi_wait_for_brief_processing() {
   return 1
 }
 
+pi_relaunch_delivery_cleanup() {
+  local state key repeat clear i=0 max=${FM_PI_STOP_POLLS:-20}
+  local interval=${FM_PI_STOP_INTERVAL:-0.1} composer cmd verdict
+  state=$(fm_backend_agent_state "$BACKEND" "$T")
+  case "$state" in
+    dead) ;;
+    alive)
+      key=$(fm_control_interrupt_key "$HARNESS") || return 1
+      repeat=$(fm_control_interrupt_repeat "$HARNESS") || return 1
+      clear=$(fm_control_interrupt_clear_key "$HARNESS") || return 1
+      fm_control_backend_supports_key "$BACKEND" "$key" || return 1
+      [ -z "$clear" ] || fm_control_backend_supports_key "$BACKEND" "$clear" || return 1
+      while [ "$i" -lt "$repeat" ]; do
+        fm_backend_send_key "$BACKEND" "$T" "$key" "$W" || return 1
+        i=$((i + 1))
+        [ "$i" -ge "$repeat" ] || sleep "$interval"
+      done
+      [ -z "$clear" ] || fm_backend_send_key "$BACKEND" "$T" "$clear" "$W" || return 1
+      i=0
+      while [ "$i" -lt "$max" ]; do
+        state=$(fm_backend_agent_state "$BACKEND" "$T")
+        case "$state" in
+          dead) break ;;
+          alive)
+            composer=$(fm_backend_composer_state "$BACKEND" "$T" "$W" 2>/dev/null) || composer=unknown
+            [ "$composer" != empty ] || break
+            ;;
+          *)
+            echo "warning: task $ID's endpoint reads '$state' while stopping its failed Pi relaunch" >&2
+            return 1
+            ;;
+        esac
+        i=$((i + 1))
+        [ "$i" -ge "$max" ] || sleep "$interval"
+      done
+      if [ "$state" = alive ]; then
+        [ "$composer" = empty ] || {
+          echo "warning: task $ID's Pi composer did not become empty after interrupt; the failed relaunch remains registered for recovery" >&2
+          return 1
+        }
+        cmd=$(fm_control_exit_command "$HARNESS") || return 1
+        if ! verdict=$(fm_backend_send_text_submit "$BACKEND" "$T" "$cmd" 3 "$interval" 0 "$W"); then
+          echo "warning: task $ID's Pi exit command could not be sent after its failed relaunch" >&2
+          return 1
+        fi
+        [ "$verdict" != send-failed ] || {
+          echo "warning: task $ID's Pi exit command could not be sent after its failed relaunch" >&2
+          return 1
+        }
+        i=0
+        while [ "$i" -lt "$max" ]; do
+          state=$(fm_backend_agent_state "$BACKEND" "$T")
+          [ "$state" != alive ] || {
+            i=$((i + 1))
+            [ "$i" -ge "$max" ] || sleep "$interval"
+            continue
+          }
+          break
+        done
+      fi
+      ;;
+    *)
+      echo "warning: task $ID's endpoint reads '$state' while stopping its failed Pi relaunch" >&2
+      return 1
+      ;;
+  esac
+  [ "$state" = dead ] || {
+    echo "warning: task $ID's Pi process did not stop after its failed relaunch; the endpoint and task record were preserved" >&2
+    return 1
+  }
+  if [ -n "${BUSY_GEN:-}" ] &&
+    ! "$FM_ROOT/bin/fm-busy-event.sh" retire "$STATE_REAL" "$ID" --gen "$BUSY_GEN" >/dev/null 2>&1; then
+    echo "warning: task $ID's stopped Pi relaunch left a busy generation that could not be retired" >&2
+    return 1
+  fi
+  return 0
+}
+
+pi_delivery_cleanup() {
+  SPAWN_PI_DELIVERY_PENDING=0
+  if [ "$RELAUNCH" -eq 1 ]; then
+    pi_relaunch_delivery_cleanup
+  else
+    rovo_endpoint_cleanup
+  fi
+}
+
 pi_spawn_fail() { # <detail>
   printf 'failed: %s\n' "$1" >>"$STATE/$ID.status"
   echo "error: $1; inspect window $T" >&2
-  rovo_endpoint_cleanup
+  pi_delivery_cleanup || true
 }
 
 kimi_capture() {
@@ -4545,12 +4638,16 @@ if [ "${HERDR_PROJECTED:-0}" -eq 1 ]; then
   HERDR_PROJECTION_ABORT_CLEANUP=0
   spawn_herdr_presentation_order_lock_release
 fi
-spawn_send_key "$T" Enter
 if { [ "$HARNESS" = pi ] || [ "$HARNESS" = pi-signed ]; } && [ "$KIND" != secondmate ]; then
+  SPAWN_PI_DELIVERY_PENDING=1
+fi
+spawn_send_key "$T" Enter
+if [ "$SPAWN_PI_DELIVERY_PENDING" = 1 ]; then
   if ! pi_wait_for_brief_processing; then
     pi_spawn_fail "$PI_READY_FAILURE_DETAIL"
     exit 1
   fi
+  SPAWN_PI_DELIVERY_PENDING=0
 fi
 if [ "$HARNESS" = kimi ]; then
   if ! kimi_wait_for_ready; then
