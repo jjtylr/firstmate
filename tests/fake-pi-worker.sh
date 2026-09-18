@@ -25,8 +25,13 @@ import { pathToFileURL } from "node:url";
 const handlers = {};
 const extension = await import(pathToFileURL(process.env.EXT_PATH).href);
 extension.default({ on: (name, fn) => { handlers[name] = fn; } });
-await handlers.before_agent_start({ prompt: process.env.FM_FAKE_PI_PROMPT }, {});
 await handlers.agent_start({}, {});
+await handlers.message_start({
+  message: {
+    role: "user",
+    content: [{ type: "text", text: process.env.FM_FAKE_PI_PROMPT }],
+  },
+}, {});
 JS
 fi
 
