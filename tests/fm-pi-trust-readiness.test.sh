@@ -167,10 +167,11 @@ make_case() {
   local name=$1 id=$2 case_dir home project worktree fakebin
   case_dir="$TMP_ROOT/$name"
   home="$case_dir/home"
-  project="$case_dir/project"
+  project="$home/projects/project"
   worktree="$case_dir/worktree"
   fakebin=$(make_fakebin "$case_dir/fake")
   mkdir -p "$home/data/$id" "$home/state" "$home/config" "$home/projects"
+  printf '%s\n' '- project [no-mistakes] - readiness fixture (added 2026-09-18)' >"$home/data/projects.md"
   cat >"$home/data/$id/brief.md" <<'EOF'
 # Task
 ## Captain's intent
@@ -333,20 +334,56 @@ test_invalid_processing_evidence_fails() {
 }
 
 test_raw_pi_launch_refuses() {
-  local harness id rec out rc
+  local harness raw id rec out rc n=0
   for harness in pi pi-signed; do
-    id="$harness-raw-$$"
-    rec=$(make_case "$harness-raw" "$id")
-    read_case "$rec"
-    rc=0
-    out=$(run_spawn "$CASE_DIR" "$HOME_DIR" "$PROJECT_DIR" "$WORKTREE_DIR" "$FAKEBIN_DIR" \
-      "$id" started "$harness --offline") || rc=$?
-    [ "$rc" -ne 0 ] || fail "raw Pi launch should refuse"
-    assert_contains "$out" 'require canonical --harness pi or pi-signed' "raw launch lacked its actionable refusal"
-    [ ! -s "$CASE_DIR/launch.log" ] || fail "raw Pi command was sent to the endpoint"
-    assert_absent "$HOME_DIR/state/$id.meta" "raw Pi refusal published task metadata"
+    for raw in "$harness --offline" "env PI_OFFLINE=1 $harness" "bash -lc '$harness --offline'"; do
+      n=$((n + 1))
+      id="$harness-raw-$n-$$"
+      rec=$(make_case "$harness-raw-$n" "$id")
+      read_case "$rec"
+      rc=0
+      out=$(run_spawn "$CASE_DIR" "$HOME_DIR" "$PROJECT_DIR" "$WORKTREE_DIR" "$FAKEBIN_DIR" \
+        "$id" started "$raw") || rc=$?
+      [ "$rc" -ne 0 ] || fail "raw Pi launch should refuse: $raw"
+      assert_contains "$out" 'require canonical --harness pi or pi-signed' "raw launch lacked its actionable refusal"
+      [ ! -s "$CASE_DIR/launch.log" ] || fail "raw Pi command was sent to the endpoint: $raw"
+      assert_no_grep 'new-window' "$CASE_DIR/tmux-calls.log" "raw Pi command created an endpoint: $raw"
+      assert_absent "$HOME_DIR/state/$id.meta" "raw Pi refusal published task metadata"
+    done
   done
-  pass "raw Pi commands cannot bypass the trust and readiness launch template"
+  pass "direct and wrapped raw Pi commands cannot bypass the canonical launch path"
+}
+
+test_pi_trust_requires_the_exact_registered_project() {
+  local id="pi-registration-$$" rec out rc rogue_project rogue_worktree
+  rec=$(make_case registration "$id")
+  read_case "$rec"
+  rm -f "$HOME_DIR/data/projects.md"
+  rc=0
+  out=$(run_spawn "$CASE_DIR" "$HOME_DIR" "$PROJECT_DIR" "$WORKTREE_DIR" "$FAKEBIN_DIR" \
+    "$id" started pi) || rc=$?
+  [ "$rc" -ne 0 ] || fail "an unregistered project received Pi trust"
+  assert_contains "$out" 'Pi worker trust requires a verified project registry' \
+    "unregistered Pi refusal did not name the registry requirement"
+  assert_no_grep 'new-window' "$CASE_DIR/tmux-calls.log" \
+    "unregistered Pi project created an endpoint"
+  [ ! -s "$CASE_DIR/launch.log" ] || fail "unregistered Pi project received a launch command"
+
+  printf '%s\n' '- project [no-mistakes] - readiness fixture (added 2026-09-18)' >"$HOME_DIR/data/projects.md"
+  rogue_project="$CASE_DIR/rogue/project"
+  rogue_worktree="$CASE_DIR/rogue-worktree"
+  fm_git_worktree "$rogue_project" "$rogue_worktree" rogue-registration
+  : >"$CASE_DIR/tmux-calls.log"
+  rc=0
+  out=$(run_spawn "$CASE_DIR" "$HOME_DIR" "$rogue_project" "$rogue_worktree" "$FAKEBIN_DIR" \
+    "$id" started pi) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a same-named unregistered clone received Pi trust"
+  assert_contains "$out" "requires the exact registered clone $HOME_DIR/projects/project" \
+    "same-named clone refusal did not identify the registered path"
+  assert_no_grep 'new-window' "$CASE_DIR/tmux-calls.log" \
+    "same-named unregistered clone created an endpoint"
+  [ ! -s "$CASE_DIR/launch.log" ] || fail "same-named unregistered clone received a launch command"
+  pass "Pi trust accepts only the exact clone named by the project registry"
 }
 
 test_primary_path_never_receives_approval() {
@@ -404,10 +441,47 @@ test_abort_during_readiness_cleans_launched_pi() {
   pass "readiness interruption cleans up the launched Pi endpoint"
 }
 
+test_failed_final_commit_cleans_launched_pi() {
+  local id="pi-commit-failure-$$" rec out rc=0
+  RUNTIME_TASK_TMPS+=("/tmp/fm-$id")
+  rec=$(make_case commit-failure "$id")
+  read_case "$rec"
+  rm -f "$HOME_DIR/config/backlog-backend"
+  : >"$HOME_DIR/data/backlog.md"
+  cat >"$FAKEBIN_DIR/tasks-axi" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}:${2:-}" in
+  --version:*) printf '%s\n' 'tasks-axi 0.2.4' ;;
+  update:--help) printf '%s\n' 'usage: tasks-axi update --archive-body' ;;
+  mv:--help) printf '%s\n' 'usage: tasks-axi mv [<id>...] --to <path-or-dir>' ;;
+  show:*) printf '%s\n' '  state: queued' '  held: no' '  blocked: no' '  hold_kind: -' ;;
+  start:*) printf '%s\n' 'commit unavailable' >&2; exit 1 ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$FAKEBIN_DIR/tasks-axi"
+  printf '%s\n' dead >"$CASE_DIR/agent-state"
+  out=$(FM_FAKE_AGENT_STATE_FILE="$CASE_DIR/agent-state" \
+    run_spawn "$CASE_DIR" "$HOME_DIR" "$PROJECT_DIR" "$WORKTREE_DIR" "$FAKEBIN_DIR" \
+      "$id" started pi) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a failed final backlog commit should fail the spawn"
+  assert_contains "$out" 'could not be moved to In flight' \
+    "failed final commit did not report the ownership failure"
+  assert_absent "$HOME_DIR/state/$id.meta" "failed final commit retained provisional metadata"
+  assert_absent "$HOME_DIR/state/$id.busy-state" "failed final commit retained busy state"
+  assert_grep 'kill-window' "$CASE_DIR/tmux-calls.log" \
+    "failed final commit left its launched endpoint running"
+  [ "$(cat "$CASE_DIR/agent-state")" = dead ] || fail "failed final commit left Pi running"
+  assert_not_contains "$out" "spawned $id" "failed final commit reported success"
+  pass "Pi launch cleanup remains owned until the final durable commit"
+}
+
 test_processing_receipt_is_independent_of_viewport
 test_conversation_trust_words_do_not_veto_processing
 test_invalid_processing_evidence_fails
 test_raw_pi_launch_refuses
+test_pi_trust_requires_the_exact_registered_project
 test_primary_path_never_receives_approval
 test_failed_relaunch_stops_pi_and_preserves_endpoint
 test_abort_during_readiness_cleans_launched_pi
+test_failed_final_commit_cleans_launched_pi

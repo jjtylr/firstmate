@@ -21,10 +21,11 @@ make_spawn_case() {  # <name> <harness> <id>
   local name=$1 harness=$2 id=$3 case_dir home proj wt fakebin
   case_dir="$TMP_ROOT/$name"
   home="$case_dir/home"
-  proj="$case_dir/project"
+  proj="$home/projects/project"
   wt="$case_dir/wt"
   fakebin=$(make_spawn_fakebin "$case_dir/fake" pi opencode claude codex gemini)
   fm_test_spawn_home "$home" "$harness"
+  printf '%s\n' '- project [no-mistakes] - busy fixture (added 2026-09-18)' > "$home/data/projects.md"
   fm_git_worktree "$proj" "$wt" "wt-$name"
   fm_test_spawn_brief "$home" "$id"
   printf '%s\n' "$case_dir|$home|$proj|$wt|$fakebin"

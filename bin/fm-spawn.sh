@@ -1464,6 +1464,7 @@ PROJ=
 ARG3=
 FIRSTMATE_HOME=
 RAW_LAUNCH=0
+RAW_PI_LAUNCH=0
 
 # --relaunch adoption: every identity axis comes from the task's own validated
 # durable record, never from the command line, so a relaunch can only ever
@@ -1912,10 +1913,13 @@ case "$ARG3" in
   RAW_LAUNCH=1
   LAUNCH=$ARG3
   HARNESS=""
-  for word in $LAUNCH; do
+  RAW_LAUNCH_WORDS=$(printf '%s\n' "$LAUNCH" | tr "'\";|&(){}<>" '             ')
+  for word in $RAW_LAUNCH_WORDS; do
+    case "$(basename "$word")" in
+    pi | pi-signed) RAW_PI_LAUNCH=1 ;;
+    esac
     case "$word" in [A-Za-z_]*=*) continue ;; *)
-      HARNESS=$(basename "$word")
-      break
+      [ -n "$HARNESS" ] || HARNESS=$(basename "$word")
       ;;
     esac
   done
@@ -1954,6 +1958,11 @@ case "$ARG3" in
   ;;
 esac
 
+if [ "$KIND" != secondmate ] && [ "$RAW_PI_LAUNCH" -eq 1 ]; then
+  echo "error: Pi worker trust and readiness require canonical --harness pi or pi-signed, not a wrapped or raw launch command" >&2
+  exit 1
+fi
+
 # muse, gemini, and agy are verified as CREWMATE/SCOUT adapters only. A secondmate is
 # a firstmate instance, so it needs a primary supervision protocol.
 # gemini has none: docs/supervision-protocols/ carries no gemini wake protocol
@@ -1982,10 +1991,6 @@ fi
 
 case "$HARNESS" in
 pi | pi-signed)
-  if [ "$KIND" != secondmate ] && [ "$RAW_LAUNCH" -eq 1 ]; then
-    echo "error: Pi worker trust and readiness require canonical --harness pi or pi-signed, not a raw launch command" >&2
-    exit 1
-  fi
   PI_BIN=$(resolve_pi_executable "$HARNESS") || {
     echo "error: $HARNESS executable not found on PATH; install it or select a different verified harness" >&2
     exit 1
@@ -2377,6 +2382,30 @@ resolve_project_dir_arg() {
   esac
 }
 
+validate_pi_registered_project() {
+  local project=$1 name count registered project_real registered_real
+  name=$(basename "$project")
+  if ! fm_backlog_record_present "$DATA/projects.md" "project registry" "$DATA"; then
+    echo "error: Pi worker trust requires a verified project registry: $FM_BACKLOG_TRANSITION_ERROR" >&2
+    return 1
+  fi
+  count=$(LC_ALL=C awk -v name="$name" '$1 == "-" && $2 == name { count++ } END { print count + 0 }' "$DATA/projects.md") || {
+    echo "error: Pi worker trust could not read the project registry at $DATA/projects.md" >&2
+    return 1
+  }
+  [ "$count" -eq 1 ] || {
+    echo "error: Pi worker trust requires exactly one registry entry for project $name; found $count" >&2
+    return 1
+  }
+  registered="$PROJECTS/$name"
+  project_real=$(cd "$project" 2>/dev/null && pwd -P) || project_real=
+  registered_real=$(cd "$registered" 2>/dev/null && pwd -P) || registered_real=
+  [ -n "$project_real" ] && [ "$project_real" = "$registered_real" ] || {
+    echo "error: Pi worker trust requires the exact registered clone $registered; refusing project $project" >&2
+    return 1
+  }
+}
+
 path_is_ancestor_of() {
   local ancestor=$1 path=$2
   [ -n "$ancestor" ] || return 1
@@ -2556,6 +2585,9 @@ else
   PROJ_ABS="$(cd "$(resolve_project_dir_arg "$PROJ")" && pwd)"
   WT=""
   BRIEF="$DATA/$ID/brief.md"
+fi
+if [ "$KIND" != secondmate ] && { [ "$HARNESS" = pi ] || [ "$HARNESS" = pi-signed ]; }; then
+  validate_pi_registered_project "$PROJ_ABS" || exit 1
 fi
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   SPAWN_TREEHOUSE_PROJECT_LOCK=$(fm_treehouse_project_lock_path "$PROJ_ABS") || {
@@ -4647,7 +4679,6 @@ if [ "$SPAWN_PI_DELIVERY_PENDING" = 1 ]; then
     pi_spawn_fail "$PI_READY_FAILURE_DETAIL"
     exit 1
   fi
-  SPAWN_PI_DELIVERY_PENDING=0
 fi
 if [ "$HARNESS" = kimi ]; then
   if ! kimi_wait_for_ready; then
@@ -4744,11 +4775,13 @@ SPAWN_BACKLOG_COMMIT_STATUS=0
 FM_TASKS_AXI_TIMEOUT=${FM_TASKS_AXI_TIMEOUT:-30}
 if spawn_commit_backlog_transition; then
   SPAWN_FRESH_COMMIT_PENDING=0
+  SPAWN_PI_DELIVERY_PENDING=0
 else
   SPAWN_BACKLOG_COMMIT_STATUS=$?
   if spawn_commit_backlog_transition; then
     SPAWN_BACKLOG_COMMIT_STATUS=0
     SPAWN_FRESH_COMMIT_PENDING=0
+    SPAWN_PI_DELIVERY_PENDING=0
   fi
 fi
 if [ "$SPAWN_BACKLOG_COMMIT_STATUS" -ne 0 ]; then
