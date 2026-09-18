@@ -14,7 +14,7 @@ for identity in pi pi-signed; do
     printf '# %s absent: not exercised by this run\n' "$identity"
     continue
   fi
-  PI_TEST_BINARY="$binary" PI_TEST_ROOT="$TMP_ROOT/$identity" node --input-type=module <<'JS'
+  if ! PI_TEST_BINARY="$binary" PI_TEST_ROOT="$TMP_ROOT/$identity" node --input-type=module <<'JS'; then
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -73,7 +73,8 @@ for (const policy of ["fresh", "denied", "never"]) {
   console.log(`ok - ${path.basename(binary)} ${version}: ${policy} project trust is granted only by per-launch --approve`);
 }
 JS
-  [ "$?" -eq 0 ] || fail "$identity per-launch project trust guard failed"
+    fail "$identity per-launch project trust guard failed"
+  fi
   CHECKED=$((CHECKED + 1))
 done
 

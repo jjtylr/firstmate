@@ -389,7 +389,7 @@ test_invalid_processing_evidence_fails() {
 test_executable_harness_strings_refuse() {
   local raw id rec out rc n=0
   for raw in 'pi --offline' 'pi-signed --offline' 'env PI_OFFLINE=1 pi' \
-    "bash -lc 'pi --offline'" 'p=pi; "$p"' 'custom-agent --flag'; do
+    "bash -lc 'pi --offline'" "p=pi; \"\$p\"" 'custom-agent --flag'; do
     n=$((n + 1))
     id="raw-harness-$n-$$"
     rec=$(make_case "raw-harness-$n" "$id")
