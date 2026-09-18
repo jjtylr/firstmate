@@ -73,25 +73,30 @@ elif [ ! -f "$REG" ]; then
   exit 0
 fi
 
-# awk emits "<count> <mode> <yolo>" or nothing if the project is absent.
+# awk emits "<count> <valid> <mode> <yolo>" or nothing if the project is absent.
 # The mode and yolo fields always come from the first match, preserving the
 # established advisory behavior when strict validation is not requested.
 parsed=$(awk -v n="$NAME" '
   $1=="-" && $2==n {
     count++;
     if (count == 1) {
-      mode="no-mistakes"; yolo="off";
+      mode="no-mistakes"; yolo="off"; valid=0;
       if ($3 ~ /^\[/) {
-        s="";
-        for (i=3; i<=NF; i++) { s = s (s==""?"":" ") $i; if ($i ~ /\]$/) break }
-        gsub(/^\[|\]$/, "", s);           # strip the surrounding brackets
+        s=""; close_at=0;
+        for (i=3; i<=NF; i++) {
+          s = s (s==""?"":" ") $i;
+          if ($i ~ /\]$/) { close_at=i; break }
+        }
+        if (s ~ /^\[(no-mistakes|direct-PR|local-only|no-mistakes-prod-only)( \+yolo)?\]$/ &&
+            close_at > 0 && close_at + 1 < NF && $(close_at + 1) == "-") valid=1;
+        gsub(/^\[|\]$/, "", s);
         k = split(s, a, " ");
         if (a[1] != "" && a[1] != "+yolo") mode = a[1];
         for (j=1; j<=k; j++) if (a[j]=="+yolo") yolo="on";
-      }
+      } else if ($3 == "-" && NF > 3) valid=1;
     }
   }
-  END { if (count > 0) print count, mode, yolo }
+  END { if (count > 0) print count, valid, mode, yolo }
 ' "$REG")
 
 if [ -z "$parsed" ]; then
@@ -106,10 +111,16 @@ fi
 
 count=${parsed%% *}
 parsed=${parsed#* }
+valid=${parsed%% *}
+parsed=${parsed#* }
 mode=${parsed%% *}
 yolo=${parsed##* }
 if [ "$STRICT" -eq 1 ] && [ "$count" -ne 1 ]; then
   echo "error: project \"$NAME\" has $count registry entries in $REG; expected exactly one" >&2
+  exit 1
+fi
+if [ "$STRICT" -eq 1 ] && [ "$valid" -ne 1 ]; then
+  echo "error: project \"$NAME\" has a malformed registry entry in $REG; expected one valid mode with optional +yolo" >&2
   exit 1
 fi
 case "$mode" in

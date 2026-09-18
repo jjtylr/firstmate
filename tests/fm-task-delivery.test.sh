@@ -401,13 +401,14 @@ STUB
 # conditional policy, maps it to its most rigorous leg for them, and exposes the
 # raw annotation for the one caller that must tell a policy from a flat mode.
 test_project_mode_maps_the_conditional_policy() {
-  local home out err status
+  local home out err status label name line
   home="$TMP_ROOT/project-mode/home"
   mkdir -p "$home/data"
   cat > "$home/data/projects.md" <<'EOF'
 - prodproj [no-mistakes-prod-only] - fixture (added 2026-01-01)
 - yoloproj [no-mistakes-prod-only +yolo] - fixture (added 2026-01-01)
 - flatproj [direct-PR] - fixture (added 2026-01-01)
+- legacyproj - fixture (added 2026-01-01)
 - typoproj [no-mistakez] - fixture (added 2026-01-01)
 EOF
   out=$(FM_HOME="$home" "$PROJECT_MODE" prodproj 2>/dev/null)
@@ -431,12 +432,30 @@ EOF
 
   out=$(FM_HOME="$home" "$PROJECT_MODE" --strict flatproj 2>/dev/null)
   [ "$out" = "direct-PR off" ] || fail "--strict changed a unique valid registry entry (got '$out')"
+  out=$(FM_HOME="$home" "$PROJECT_MODE" --strict legacyproj 2>/dev/null)
+  [ "$out" = "no-mistakes off" ] || fail "--strict rejected a valid legacy registry entry (got '$out')"
+  while IFS='|' read -r label name line; do
+    [ -n "$label" ] || continue
+    printf '%s\n' "$line" >>"$home/data/projects.md"
+    status=0
+    out=$(FM_HOME="$home" "$PROJECT_MODE" --strict "$name" 2>&1) || status=$?
+    [ "$status" -ne 0 ] || fail "--strict accepted $label"
+    assert_contains "$out" 'malformed registry entry' "--strict did not report $label"
+  done <<'ROWS'
+an unknown annotation token|bad-extra|- bad-extra [no-mistakes +bogus] - fixture (added 2026-01-01)
+an unterminated annotation|bad-open|- bad-open [no-mistakes +yolo - fixture (added 2026-01-01)
+a yolo-only annotation|bad-mode|- bad-mode [+yolo] - fixture (added 2026-01-01)
+a duplicate yolo annotation|bad-yolo|- bad-yolo [direct-PR +yolo +yolo] - fixture (added 2026-01-01)
+a missing description separator|bad-separator|- bad-separator [direct-PR] fixture (added 2026-01-01)
+an annotation without a description|bad-empty|- bad-empty [no-mistakes] -
+a legacy entry without a description|bad-legacy|- bad-legacy -
+ROWS
   printf '%s\n' '- flatproj [local-only] - duplicate fixture (added 2026-01-01)' >>"$home/data/projects.md"
   status=0
   out=$(FM_HOME="$home" "$PROJECT_MODE" --strict flatproj 2>&1) || status=$?
   [ "$status" -ne 0 ] || fail "--strict accepted duplicate project entries"
   assert_contains "$out" 'has 2 registry entries' "--strict did not report duplicate project entries"
-  pass "fm-project-mode maps policy annotations and strictly rejects duplicate registrations"
+  pass "fm-project-mode maps policy annotations and strictly validates registrations"
 }
 
 # Spawn and promotion refuse leftover Task-subsection placeholders through the
