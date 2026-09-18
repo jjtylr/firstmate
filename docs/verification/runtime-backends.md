@@ -395,51 +395,25 @@ Dropping the retention-is-not-durable line makes the refusal claim a retention t
 
 ## Pi-family project trust and launch readiness
 
-Verified on 2026-09-18 against installed Pi 0.85.1 on macOS arm64.
-`pi-signed` was not installed on that machine, so the portable cases exercise its shared launch path while the live guard reports that identity absent rather than crediting it.
-Pi's isolated `PI_CODING_AGENT_DIR` kept the operator's `~/.pi/agent/trust.json` unchanged while the fresh-path arm rendered this complete selector: `Trust project folder?`, the exact absolute project path, the two-line explanation ending in `packages, and execute project extensions.`, selected `→ Trust`, `Trust parent folder`, both session-only options, both negative options, and the `navigate` / `select` / `escape/ctrl+c cancel` footer.
-The installed source independently identifies `--approve` as run-only trust and `ProjectTrustStore` as the exact-path persistence owner, so the spawn does neither: it answers the complete selector through the backend key plane and lets Pi persist its own decision.
-The disconfirming case is a complete-looking selector whose selected row is `Trust parent folder`, whose path is not the validated task copy, or whose Pi version is outside the measured set.
-All three retain trust markers but fail the positive classifier, receive no Enter, close the endpoint, and never report a successful launch.
+`bin/fm-spawn.sh` owns the Pi and Pi-signed ship/scout guarantee: grant `--approve` only through the canonical launch template after isolated-copy validation, then require the current generation's `pi-ext` processing receipt.
+Secondmate startup and non-Pi launch handling retain their existing contracts.
+Readiness uses the shared durable state reader, independent of terminal width, conversation text, Pi version strings, and viewport-capture support on tmux, Herdr, Zellij, Orca, or cmux.
 
-The portable public-interface regression drives `bin/fm-spawn.sh` with separate backend and Pi processes and covers fresh trust, remembered reuse, a wrapped footer, partial and changed markers, another selected option, another path, an unverified version, failed affirmative submission, a selector that persists, an unsupported or failed viewport capture, a brief that never begins, endpoint cleanup, and successful `pi-ext agent-start` processing evidence.
-
-```sh
-bin/fm-test-run.sh tests/fm-pi-trust-readiness.test.sh
-```
-
-Observed bounded output:
-
-```text
-ok - fm-spawn: a complete Pi trust selector for the exact isolated copy is accepted once before success
-ok - fm-spawn: Pi-signed reused trust skips the selector and succeeds on durable processing evidence
-ok - fm-spawn: wrapped Pi trust navigation markers retain the complete safe classifier
-ok - fm-spawn: partial, changed, and differently selected Pi trust lookalikes are never answered
-ok - fm-spawn: a complete selector for another path or an unverified Pi version is a disconfirming refusal
-ok - fm-spawn: failed trust submission and a selector that persists after submission refuse the launch
-ok - fm-spawn: Pi refuses a backend without verified viewport capture before launch
-ok - fm-spawn: a missing Pi viewport capture fails rather than guessing at trust
-ok - fm-spawn: an idle Pi pane cannot report success before the brief begins processing
-FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0
-```
-
-The token-spending refresh guard launches every installed `pi` and `pi-signed` executable in a real private tmux pane, reads only `fm_backend_visible_capture`, submits Enter after the complete exact-path selector is in that viewport, then requires a later selector-free viewport plus an `agent_start` receipt and repeats the path to prove remembered trust.
-It uses an isolated Pi agent directory and refuses a run that checked no Pi-family executable.
+Installed Pi 0.85.1 source reviewed on 2026-09-18 resolves the explicit trust override before saved denials or `defaultProjectTrust` and does not persist that override.
+The token-free installed-CLI guard below exercises that boundary for fresh paths, saved denials, and `defaultProjectTrust="never"`.
+Each arm first proves that a CLI extension loads while a project extension remains disabled, then proves `--approve` loads the project extension without changing `trust.json`, and finally proves a subsequent unapproved launch is still untrusted.
+It runs each installed Pi-family identity with an isolated agent directory, prints its exact version, and reports absent identities without crediting them.
+No model prompts or credentials are used.
 
 ```sh
-FM_PI_TRUST_READINESS_LIVE=1 bin/fm-test-run.sh tests/fm-pi-trust-readiness-live-e2e.test.sh
+bash tests/fm-pi-trust-readiness.test.sh
+FM_PI_TRUST_READINESS_LIVE=1 bash tests/fm-pi-trust-readiness-live-e2e.test.sh
 ```
 
-The 2026-09-18 verification host had no tmux, so that exact command explicitly refused instead of claiming live backend coverage:
-
-```text
-not ok - FM_PI_TRUST_READINESS_LIVE was requested but tmux is not installed
-FM_TEST_SUMMARY total=1 failed=1 skipped_gate=0
-```
-
-Run the guard on the tmux verification host after every Pi-family upgrade and update the version set only from a passing viewport-backed arm.
-The current backend applicability review is complete: tmux, Herdr, and Zellij implement the shared verified viewport-only primitive and can use the gate; Orca exposes only history reads and cmux's no-scrollback read remains unverified, so Pi ship and scout spawns on those two refuse before endpoint creation.
-This gate is scoped to Pi and Pi-signed ship/scout launches in Firstmate-created isolated copies; secondmate startup and every non-Pi consent boundary are unchanged.
+The portable regression executes the emitted launch command and generated lifecycle extension through a fake backend.
+It covers ship/scout approval for both Pi identities, started and already-settled turns, unavailable viewport capture, quoted trust-dialog text, missing processing, stale callbacks, stale records, incorrect event sources, endpoint cleanup, raw-command refusal, and isolation refusal before approval.
+A passing installed-CLI arm reports `<identity> <version>: <fresh|denied|never> project trust is granted only by per-launch --approve`.
+Run the installed-CLI guard after Pi-family upgrades; it has no selector classifier or version allowlist to maintain.
 
 ## Claude workspace trust
 

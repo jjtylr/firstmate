@@ -2,7 +2,7 @@
 
 The combined contract is genuine: Pi and the signed wrapper expose the same verified CLI and TUI behavior.
 Verified on 2026-07-27 with Pi and Pi-signed 0.82.0 unless a fact gives another version.
-The project-trust selector and launch-readiness facts were refreshed on 2026-09-18 against installed Pi 0.85.1; Pi-signed was absent on that machine and remains covered by the shared portable adapter cases until its live arm is rerun.
+The current project-trust verification entry points and installed-version evidence are in `../../../docs/verification/runtime-backends.md`.
 
 ## Operating facts
 
@@ -31,12 +31,10 @@ The router's Detection section owns how launch markers and ancestry select betwe
 Keep the instructions as one positional argument.
 Multiple positional arguments become separate queued messages; the spawn template already preserves the one-argument shape.
 
-A project trust selector can appear on the first Pi run in any not-yet-trusted directory, including a clean worktree.
-`../../../bin/fm-spawn.sh` is the single owner of its unattended handling and bounded readiness mechanics.
-For a ship or scout it requires a verified viewport-only backend capture, recognizes only the complete version-verified selector naming the exact already-validated isolated copy with `Trust` preselected, submits that choice once, verifies that trust text clears, and then requires the per-task lifecycle extension's durable `agent_start` or `agent_settled` event before reporting success.
-Partial or changed selectors, another path, an unsupported Pi version, a capture failure, a selector that persists, or a launch brief that never begins all refuse instead of receiving a blind Enter or a successful launch report.
-The decision persists by exact path in `~/.pi/agent/trust.json`, so later spawns in the same pooled slot skip the selector but still prove the brief began processing.
-The contract neither writes the trust store directly nor changes Claude or any other harness's consent handling.
+`../../../bin/fm-spawn.sh` owns per-launch trust and bounded processing verification for Pi and Pi-signed ship/scout launches in validated isolated copies.
+It grants trust with `--approve` for that process without changing Pi's saved trust decisions, and requires a current-generation lifecycle receipt before reporting success.
+Use the canonical `--harness pi` or `--harness pi-signed` launch; raw Pi worker commands are refused.
+Secondmate trust handling remains manual: accept its project trust selector with Enter and verify that the instructions begin processing.
 
 ## Worker turn-end extension
 
