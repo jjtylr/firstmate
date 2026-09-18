@@ -3293,23 +3293,17 @@ spawn_send_key() { # <target> <key>
   esac
 }
 
-# The launch seed is intentionally not readiness evidence. Only an event written
-# after the loaded Pi extension matches this launch's token in before_agent_start
-# proves that the positional brief reached Pi's agent loop. A very short turn may
-# already be settled by the first read, so both the opening and closing events
-# qualify.
+# The launch seed is intentionally not readiness evidence. The loaded Pi
+# extension writes this generation-bound receipt only when message_start carries
+# the token-bearing launch user message itself.
 pi_brief_processing_began() {
-  local record state source event seq
-  record=$(fm_busy_record_read "$STATE_REAL" "$ID" 2>/dev/null) || return 1
-  read -r state source event seq <<EOF
-$record
-EOF
-  case "$state:$source:$event" in
-    busy:pi-ext:launch-agent-start | idle:pi-ext:launch-agent-settled) ;;
-    *) return 1 ;;
-  esac
-  case "$seq" in '' | *[!0-9]*) return 1 ;; esac
-  [ "$seq" -ge 2 ]
+  local receipt current recorded
+  receipt="$STATE_REAL/$ID.pi-ready"
+  [ -f "$receipt" ] && [ ! -L "$receipt" ] || return 1
+  current=$(fm_busy_current_gen "$STATE_REAL" "$ID" 2>/dev/null) || return 1
+  [ "$current" = "$BUSY_GEN" ] || return 1
+  IFS= read -r recorded <"$receipt" 2>/dev/null || return 1
+  [ "$recorded" = "$BUSY_GEN" ]
 }
 
 pi_wait_for_brief_processing() {
@@ -4070,6 +4064,7 @@ EOF
     # Written OUTSIDE the worktree: pi's project-trust gate fires on any extension
     # loaded from inside the project (verified live), but an explicit -e path
     # elsewhere loads without a dialog. Lives in state/, cleaned by teardown.
+    rm -f -- "$STATE_REAL/$ID.pi-ready" "$STATE_REAL/$ID.pi-ready.tmp."*
     cat >"$STATE/$ID.pi-ext.ts" <<EOF
 // Firstmate semantic busy-state events + turn-end notification; written by
 // fm-spawn under the contract owned by bin/fm-busy-lib.sh.
@@ -4078,39 +4073,47 @@ EOF
 // continue automatically - auto-retries, auto-compaction retries, tool
 // loops, and queued continuations all keep the run un-settled, and a settle
 // that raced another extension's fresh run keeps state busy via isIdle().
-// The token-matched initial run receives launch-prefixed event names for the
-// readiness gate; every later run keeps the ordinary semantic state edges.
+// A user message carrying the launch token writes the separate readiness
+// receipt; ordinary busy tracking remains independent across every run.
 // "turn_end" fires at every inner turn boundary (one LLM response plus its
 // tool calls) and stays a wake NOTIFICATION touch for the watcher, never
 // current-state truth.
 import { execFile } from "node:child_process";
+import { rename, unlink, writeFile } from "node:fs/promises";
 const busyEvent = (state: string, event: string) =>
-  new Promise<void>((resolve) => {
+  new Promise<boolean>((resolve) => {
     execFile("$FM_ROOT/bin/fm-busy-event.sh", [
       "apply", "$STATE_REAL", "$ID", state,
       "--gen", "$BUSY_GEN", "--source", "pi-ext", "--event", event,
-    ], () => resolve());
+    ], (error) => resolve(error === null));
   });
 export default function (pi: any) {
   const launchMarker = "<firstmate-launch-token>$PI_LAUNCH_TOKEN</firstmate-launch-token>";
-  let launchPending = false;
-  let launchRun = false;
-  pi.on("before_agent_start", (event: any) => {
-    launchPending = typeof event?.prompt === "string" && event.prompt.includes(launchMarker);
-  });
-  pi.on("agent_start", () => {
-    if (launchPending) {
-      launchPending = false;
-      launchRun = true;
+  const readinessReceipt = "$STATE_REAL/$ID.pi-ready";
+  const readinessTmp = readinessReceipt + ".tmp." + process.pid;
+  const userMessageText = (message: any) => {
+    if (message?.role !== "user") return "";
+    if (typeof message.content === "string") return message.content;
+    if (!Array.isArray(message.content)) return "";
+    return message.content
+      .filter((part: any) => part?.type === "text" && typeof part.text === "string")
+      .map((part: any) => part.text)
+      .join("\n");
+  };
+  pi.on("message_start", async (event: any) => {
+    if (!userMessageText(event?.message).includes(launchMarker)) return;
+    if (!(await busyEvent("busy", "launch-message-start"))) return;
+    try {
+      await writeFile(readinessTmp, "$BUSY_GEN\n", { mode: 0o600 });
+      await rename(readinessTmp, readinessReceipt);
+    } catch {
+      await unlink(readinessTmp).catch(() => {});
     }
-    return busyEvent("busy", launchRun ? "launch-agent-start" : "agent-start");
   });
+  pi.on("agent_start", () => busyEvent("busy", "agent-start"));
   pi.on("agent_settled", (_event: any, ctx: any) => {
     if (ctx && typeof ctx.isIdle === "function" && !ctx.isIdle()) return;
-    const event = launchRun ? "launch-agent-settled" : "agent-settled";
-    launchPending = false;
-    launchRun = false;
-    return busyEvent("idle", event);
+    return busyEvent("idle", "agent-settled");
   });
   pi.on("turn_end", () => execFile("touch", ["$TURNEND"]));
   // A native harness can make progress inside one Pi turn. This separate

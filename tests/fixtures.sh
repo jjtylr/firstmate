@@ -98,8 +98,8 @@ fm_test_fake_gh_axi() {
 # FM_FAKE_DUPLICATE_WINDOW is printed from list-windows. A Pi spawn fixture can
 # set FM_FAKE_PI_LAUNCH_MARKER, FM_FAKE_PI_STATE_DIR, FM_FAKE_PI_ID, and
 # FM_FAKE_BUSY_EVENT: the fake pane then renders a nonempty worker viewport and
-# writes the same public pi-ext launch-agent-start receipt a real launched extension
-# emits after the launch command's Enter.
+# writes the same public pi-ext launch-message-start receipt a real launched
+# extension emits after the launch command's Enter.
 #
 # The pane path defaults to empty when FM_FAKE_PANE_PATH is unset. Window
 # cleanup and option operations are no-ops. Launch logging is env-gated, so
@@ -109,6 +109,14 @@ fm_test_fake_tmux_spawn() {
   cat > "$fakebin/tmux" <<'SH'
 #!/usr/bin/env bash
 set -u
+record_pi_ready() {
+  local event=$1 state=$2 id=$3 gen
+  "$event" apply "$state" "$id" busy \
+    --current-gen --source pi-ext --event launch-message-start >/dev/null 2>&1 || return 0
+  gen=$(cat "$state/$id.busy-gen" 2>/dev/null) || return 0
+  printf '%s\n' "$gen" >"$state/$id.pi-ready.tmp.$$" &&
+    mv -f "$state/$id.pi-ready.tmp.$$" "$state/$id.pi-ready"
+}
 case "$*" in
   *"#{pane_current_path}"*) printf '%s\n' "${FM_FAKE_PANE_PATH:-}"; exit 0 ;;
 esac
@@ -160,12 +168,10 @@ case "${1:-}" in
       case " $* " in
         *' Enter '*)
           if [ -n "${FM_FAKE_PI_LAUNCH_MARKER:-}" ] && [ -f "$FM_FAKE_PI_LAUNCH_MARKER" ]; then
-            "$FM_FAKE_BUSY_EVENT" apply "$FM_FAKE_PI_STATE_DIR" "$FM_FAKE_PI_ID" busy \
-              --current-gen --source pi-ext --event launch-agent-start >/dev/null 2>&1 || true
+            record_pi_ready "$FM_FAKE_BUSY_EVENT" "$FM_FAKE_PI_STATE_DIR" "$FM_FAKE_PI_ID"
           elif [ -f "${FM_FAKE_LAUNCH_LOG:-/nonexistent}.pi-info" ]; then
             IFS=$'\t' read -r pi_event pi_state pi_id <"$FM_FAKE_LAUNCH_LOG.pi-info"
-            "$pi_event" apply "$pi_state" "$pi_id" busy \
-              --current-gen --source pi-ext --event launch-agent-start >/dev/null 2>&1 || true
+            record_pi_ready "$pi_event" "$pi_state" "$pi_id"
           fi
           ;;
       esac

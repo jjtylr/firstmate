@@ -60,25 +60,36 @@ const mode = process.env.FM_FAKE_PI_MODE;
 const prompt = process.env.FM_FAKE_PI_PROMPT;
 const record = `${state}/${id}.busy-state`;
 const arm = () => execFileSync(process.env.FM_FAKE_BUSY_EVENT, ["arm", state, id]);
-const before = (value) => handlers.before_agent_start({ prompt: value }, {});
+const before = (value) => handlers.before_agent_start?.({ prompt: value }, {});
+const messageStart = (value) => handlers.message_start?.({
+  message: { role: "user", content: [{ type: "text", text: value }] },
+}, {});
 if (mode === "unrelated-startup" || mode === "startup-then-brief") {
   await before("message queued by a trusted project extension");
   await handlers.agent_start({}, {});
+  await messageStart("message queued by a trusted project extension");
   await handlers.agent_settled({}, { isIdle: () => true });
 }
-if (mode !== "unrelated-startup") {
+if (mode === "nested-unmarked") {
+  await before("message queued by a trusted project extension");
+  await before(prompt);
+  await handlers.agent_start({}, {});
+  await messageStart("message queued by a trusted project extension");
+  await handlers.agent_settled({}, { isIdle: () => true });
+} else if (mode === "wrong-source") {
+  await handlers.agent_start({}, {});
+  execFileSync(process.env.FM_FAKE_BUSY_EVENT, ["apply", state, id, "busy",
+    "--current-gen", "--source", "fm-spawn", "--event", "agent-start"]);
+} else if (mode !== "unrelated-startup") {
   await before(prompt);
   if (mode === "stale-callback") arm();
   await handlers.agent_start({}, {});
+  await messageStart(prompt);
   if (mode === "settled") await handlers.agent_settled({}, { isIdle: () => true });
   if (mode === "stale-record") {
     const prior = readFileSync(record);
     arm();
     writeFileSync(record, prior);
-  }
-  if (mode === "wrong-source") {
-    execFileSync(process.env.FM_FAKE_BUSY_EVENT, ["apply", state, id, "busy",
-      "--current-gen", "--source", "fm-spawn", "--event", "agent-start"]);
   }
 }
 JS
@@ -289,6 +300,13 @@ assert_failed_cleanup() {
     "missing processing evidence did not leave a concrete failure record"
 }
 
+assert_readiness_receipt() {
+  local id=$1 receipt="$HOME_DIR/state/$1.pi-ready" gen="$HOME_DIR/state/$1.busy-gen"
+  assert_present "$receipt" "successful Pi readiness did not persist its generation receipt"
+  [ "$(cat "$receipt")" = "$(cat "$gen")" ] ||
+    fail "Pi readiness receipt did not match the current busy generation"
+}
+
 test_processing_receipt_is_independent_of_viewport() {
   local harness mode kind id rec out rc
   for harness in pi pi-signed; do
@@ -304,11 +322,12 @@ test_processing_receipt_is_independent_of_viewport() {
         "$WORKTREE_DIR" "$FAKEBIN_DIR" "$id" "$mode" "$harness" "$kind") || rc=$?
       expect_code 0 "$rc" "$harness $mode should launch without viewport capture: $out"
       assert_contains "$out" "spawned $id harness=$harness kind=$kind" "launch did not preserve identity and kind"
+      assert_readiness_receipt "$id"
       if [ "$mode" = settled ]; then
-        assert_grep 'state=idle source=pi-ext event=launch-agent-settled' "$HOME_DIR/state/$id.busy-state" \
+        assert_grep 'state=idle source=pi-ext event=agent-settled' "$HOME_DIR/state/$id.busy-state" \
           "a completed first turn did not prove readiness"
       else
-        assert_grep 'state=busy source=pi-ext event=launch-agent-start' "$HOME_DIR/state/$id.busy-state" \
+        assert_grep 'state=busy source=pi-ext event=launch-message-start' "$HOME_DIR/state/$id.busy-state" \
           "launch succeeded without a processing receipt"
       fi
       [ "$(wc -l <"$CASE_DIR/enter.log" | tr -d ' ')" = 1 ] || fail "launch sent an extra trust key"
@@ -330,7 +349,7 @@ test_conversation_trust_words_do_not_veto_processing() {
 
 test_readiness_requires_the_matching_launch_prompt() {
   local mode id rec out rc
-  for mode in unrelated-startup startup-then-brief; do
+  for mode in unrelated-startup nested-unmarked startup-then-brief; do
     id="pi-$mode-$$"
     RUNTIME_TASK_TMPS+=("/tmp/fm-$id")
     rec=$(make_case "$mode" "$id")
@@ -338,16 +357,17 @@ test_readiness_requires_the_matching_launch_prompt() {
     rc=0
     out=$(run_spawn "$CASE_DIR" "$HOME_DIR" "$PROJECT_DIR" "$WORKTREE_DIR" "$FAKEBIN_DIR" \
       "$id" "$mode" pi) || rc=$?
-    if [ "$mode" = unrelated-startup ]; then
-      [ "$rc" -ne 0 ] || fail "an unrelated startup run proved launch readiness"
+    if [ "$mode" != startup-then-brief ]; then
+      [ "$rc" -ne 0 ] || fail "$mode proved launch readiness without the token-bearing user message"
       assert_failed_cleanup "$out" "$id"
     else
       expect_code 0 "$rc" "the exact launch prompt did not prove readiness after startup activity: $out"
-      assert_grep 'state=busy source=pi-ext event=launch-agent-start' "$HOME_DIR/state/$id.busy-state" \
+      assert_readiness_receipt "$id"
+      assert_grep 'state=busy source=pi-ext event=launch-message-start' "$HOME_DIR/state/$id.busy-state" \
         "the causally matched launch event was not recorded"
     fi
   done
-  pass "Pi readiness follows the exact token-bearing launch prompt"
+  pass "Pi readiness follows the exact token-bearing user message"
 }
 
 test_invalid_processing_evidence_fails() {

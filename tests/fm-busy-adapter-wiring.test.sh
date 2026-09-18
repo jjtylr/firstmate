@@ -77,8 +77,10 @@ const ctx = { isIdle: () => process.env.MODE !== "settle-continuing" };
 const prompt = process.env.MODE.startsWith("unmarked-")
   ? "later prompt after extension reload"
   : readFileSync(process.env.PROMPT_PATH, "utf8");
-await handlers["before_agent_start"]({ prompt }, ctx);
 await handlers["agent_start"]({}, ctx);
+await handlers["message_start"]({
+  message: { role: "user", content: [{ type: "text", text: prompt }] },
+}, ctx);
 switch (process.env.MODE) {
   case "agent-start": break;
   case "unmarked-agent-start": break;

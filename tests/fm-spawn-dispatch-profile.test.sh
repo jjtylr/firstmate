@@ -752,8 +752,10 @@ test_pi_signed_threads_shared_pi_profile_and_preserves_identity() {
     "pi-signed launch lost the canonical typed launch-brief envelope"
   assert_present "$HOME_DIR/state/$id.pi-ext.ts" "pi-signed launch did not install Pi's turn-end extension"
   assert_present "$HOME_DIR/state/$id.busy-gen" "pi-signed spawn did not arm the busy-state contract"
-  assert_contains "$(cat "$HOME_DIR/state/$id.busy-state")" "state=busy source=pi-ext event=launch-agent-start" \
-    "pi-signed spawn reported success without the launch agent_start receipt"
+  assert_contains "$(cat "$HOME_DIR/state/$id.busy-state")" "state=busy source=pi-ext event=launch-message-start" \
+    "pi-signed spawn reported success without the launch message_start receipt"
+  [ "$(cat "$HOME_DIR/state/$id.pi-ready")" = "$(cat "$HOME_DIR/state/$id.busy-gen")" ] ||
+    fail "pi-signed spawn did not bind readiness to the current busy generation"
   pass "pi-signed shares Pi launch semantics while preserving its configured and recorded identity"
 }
 
