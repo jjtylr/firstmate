@@ -210,7 +210,8 @@ EOF
   mkdir -p "$worktree/.pi"
   printf '{}\n' >"$worktree/.pi/settings.json"
   git -C "$worktree" add .pi/settings.json
-  git -C "$worktree" commit -qm fixture
+  git -C "$worktree" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' \
+    commit -qm fixture
   : >"$case_dir/launch.log"
   : >"$case_dir/enter.log"
   : >"$case_dir/control.log"
