@@ -2,6 +2,7 @@
 
 The combined contract is genuine: Pi and the signed wrapper expose the same verified CLI and TUI behavior.
 Verified on 2026-07-27 with Pi and Pi-signed 0.82.0 unless a fact gives another version.
+The current project-trust verification entry points and installed-version evidence are in `../../../docs/verification/runtime-backends.md`.
 
 ## Operating facts
 
@@ -30,9 +31,10 @@ The router's Detection section owns how launch markers and ancestry select betwe
 Keep the instructions as one positional argument.
 Multiple positional arguments become separate queued messages; the spawn template already preserves the one-argument shape.
 
-A project trust dialog can appear on the first Pi run in any not-yet-trusted directory, including a clean worktree.
-Accept it with Enter and verify the instructions begin processing.
-The decision persists per path in `~/.pi/agent/trust.json`, so later spawns in the same pooled slot skip it.
+`../../../bin/fm-spawn.sh` owns per-launch trust and bounded processing verification for Pi and Pi-signed ship/scout launches in isolated copies that share Git repository identity with the exact clone named by exactly one valid project-registry entry.
+It grants trust with `--approve` for that process without changing Pi's saved trust decisions, and requires a lifecycle receipt causally bound to the unique token in the delivered launch prompt before reporting success.
+Use the canonical `--harness pi` or `--harness pi-signed` launch; raw Pi worker commands are refused.
+Secondmate trust handling remains manual: accept its project trust selector with Enter and verify that the instructions begin processing.
 
 ## Worker turn-end extension
 

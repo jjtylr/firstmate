@@ -50,6 +50,7 @@ assert_not_contains_local() {  # <haystack> <needle> <msg>
 command -v herdr >/dev/null 2>&1 || { echo "skip: herdr not found"; exit 0; }
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found (required by the herdr adapter)"; exit 0; }
 command -v treehouse >/dev/null 2>&1 || { echo "skip: treehouse not found (required by fm-spawn.sh)"; exit 0; }
+command -v node >/dev/null 2>&1 || { echo "skip: node not found (required by the Pi fixture)"; exit 0; }
 
 # shellcheck source=tests/herdr-test-safety.sh
 . "$ROOT/tests/herdr-test-safety.sh"
@@ -87,7 +88,7 @@ fm_backend_source herdr || fail "fm_backend_source herdr failed"
 # This test asserts the per-home FLAT workspace shape, so both homes opt out of
 # the default-on presentation projection rather than depending on that default.
 PRIMARY_HOME="$TMP_ROOT/primary-home"
-mkdir -p "$PRIMARY_HOME/state" "$PRIMARY_HOME/data/cm1" "$PRIMARY_HOME/config"
+mkdir -p "$PRIMARY_HOME/state" "$PRIMARY_HOME/data/cm1" "$PRIMARY_HOME/config" "$PRIMARY_HOME/projects"
 printf 'off\n' > "$PRIMARY_HOME/config/herdr-presentation-spaces"
 cat > "$PRIMARY_HOME/data/cm1/brief.md" <<'EOF'
 # Task
@@ -113,6 +114,10 @@ Exercise secondmate-owned Herdr placement.
 Verify the crewmate uses its secondmate home's workspace.
 EOF
 
+FAKEBIN="$TMP_ROOT/fakebin"
+mkdir -p "$FAKEBIN"
+ln -s "$ROOT/tests/fake-pi-worker.sh" "$FAKEBIN/pi"
+
 make_scratch_project() {  # <dir>
   local dir=$1
   mkdir -p "$dir"
@@ -124,14 +129,16 @@ make_scratch_project() {  # <dir>
   git -C "$dir" remote add origin "file://$dir.origin.git"
 }
 
-PROJ1="$TMP_ROOT/scratch-project-1"; make_scratch_project "$PROJ1"
-PROJ2="$TMP_ROOT/scratch-project-2"; make_scratch_project "$PROJ2"
+PROJ1="$PRIMARY_HOME/projects/scratch-project-1"; make_scratch_project "$PROJ1"
+PROJ2="$SM_HOME/projects/scratch-project-2"; make_scratch_project "$PROJ2"
+printf '%s\n' '- scratch-project-1 [local-only] - backend fixture (added 2026-09-18)' > "$PRIMARY_HOME/data/projects.md"
+printf '%s\n' '- scratch-project-2 [local-only] - backend fixture (added 2026-09-18)' > "$SM_HOME/data/projects.md"
 
 # --- 1. primary-shaped home: a crewmate spawns into the "firstmate" space ---
 
 CM1_OUT="$TMP_ROOT/cm1.out"; CM1_ERR="$TMP_ROOT/cm1.err"
-FM_SPAWN_NO_GUARD=1 FM_HOME="$PRIMARY_HOME" FM_ROOT_OVERRIDE="$ROOT" \
-  "$ROOT/bin/fm-spawn.sh" cm1 "$PROJ1" "sh -c 'echo primary-crew-ok'" --mode no-mistakes --yolo off --backend herdr \
+FM_SPAWN_NO_GUARD=1 FM_HOME="$PRIMARY_HOME" FM_ROOT_OVERRIDE="$ROOT" PATH="$FAKEBIN:$PATH" \
+  "$ROOT/bin/fm-spawn.sh" cm1 "$PROJ1" --harness pi --mode no-mistakes --yolo off --backend herdr \
   >"$CM1_OUT" 2>"$CM1_ERR"
 rc=$?
 [ "$rc" -eq 0 ] || fail "primary-shaped crewmate spawn failed"$'\n'"--- stdout ---"$'\n'"$(cat "$CM1_OUT")"$'\n'"--- stderr ---"$'\n'"$(cat "$CM1_ERR")"
@@ -146,7 +153,7 @@ pass "real herdr E2E: a primary-shaped home spawns a crewmate on the herdr backe
 
 sleep 1
 CM1_CAPTURE=$(fm_backend_herdr_capture "$SESSION:$CM1_PANE" 30) || fail "capture failed on cm1's pane"
-assert_contains_local "$CM1_CAPTURE" "primary-crew-ok" "cm1's raw launch command did not run in its herdr pane"
+assert_contains_local "$CM1_CAPTURE" "verified-pi-worker" "cm1's canonical Pi fixture did not run in its herdr pane"
 
 CM1_WSID=$(herdr pane get "$CM1_PANE" --session "$SESSION" 2>/dev/null | jq -r '.result.pane.workspace_id // empty')
 [ -n "$CM1_WSID" ] || fail "could not read cm1's pane workspace_id"
@@ -159,8 +166,8 @@ pass "real herdr E2E: the primary-shaped home's crewmate landed in the 'firstmat
 # exactly this call - AGENTS.md task herdr-sm-spaces-k4, requirement 3.)
 
 SM_OUT="$TMP_ROOT/sm.out"; SM_ERR="$TMP_ROOT/sm.err"
-FM_SPAWN_NO_GUARD=1 FM_HOME="$PRIMARY_HOME" FM_ROOT_OVERRIDE="$ROOT" \
-  "$ROOT/bin/fm-spawn.sh" e2esm1 "$SM_HOME" "sh -c 'echo secondmate-launch-ok'" --secondmate --backend herdr \
+FM_SPAWN_NO_GUARD=1 FM_HOME="$PRIMARY_HOME" FM_ROOT_OVERRIDE="$ROOT" PATH="$FAKEBIN:$PATH" \
+  "$ROOT/bin/fm-spawn.sh" e2esm1 "$SM_HOME" --harness pi --secondmate --backend herdr \
   >"$SM_OUT" 2>"$SM_ERR"
 rc=$?
 [ "$rc" -eq 0 ] || fail "the primary's --secondmate spawn of e2esm1 failed"$'\n'"--- stdout ---"$'\n'"$(cat "$SM_OUT")"$'\n'"--- stderr ---"$'\n'"$(cat "$SM_ERR")"
@@ -185,8 +192,8 @@ pass "real herdr E2E: a --secondmate spawn by the PRIMARY lands in the SECONDMAT
 # secondmate workspace (this exact path has never run before this test) -----
 
 CM2_OUT="$TMP_ROOT/cm2.out"; CM2_ERR="$TMP_ROOT/cm2.err"
-FM_SPAWN_NO_GUARD=1 FM_HOME="$SM_HOME" FM_ROOT_OVERRIDE="$ROOT" \
-  "$ROOT/bin/fm-spawn.sh" cm2 "$PROJ2" "sh -c 'echo sm-crew-ok'" --mode no-mistakes --yolo off --backend herdr \
+FM_SPAWN_NO_GUARD=1 FM_HOME="$SM_HOME" FM_ROOT_OVERRIDE="$ROOT" PATH="$FAKEBIN:$PATH" \
+  "$ROOT/bin/fm-spawn.sh" cm2 "$PROJ2" --harness pi --mode no-mistakes --yolo off --backend herdr \
   >"$CM2_OUT" 2>"$CM2_ERR"
 rc=$?
 [ "$rc" -eq 0 ] || fail "a crewmate spawned FROM the secondmate-shaped home failed"$'\n'"--- stdout ---"$'\n'"$(cat "$CM2_OUT")"$'\n'"--- stderr ---"$'\n'"$(cat "$CM2_ERR")"
@@ -201,7 +208,7 @@ pass "real herdr E2E: a crewmate spawns successfully FROM a secondmate-shaped ho
 
 sleep 1
 CM2_CAPTURE=$(fm_backend_herdr_capture "$SESSION:$CM2_PANE" 30) || fail "capture failed on cm2's pane"
-assert_contains_local "$CM2_CAPTURE" "sm-crew-ok" "cm2's raw launch command did not run in its herdr pane"
+assert_contains_local "$CM2_CAPTURE" "verified-pi-worker" "cm2's canonical Pi fixture did not run in its herdr pane"
 
 CM2_WSID=$(herdr pane get "$CM2_PANE" --session "$SESSION" 2>/dev/null | jq -r '.result.pane.workspace_id // empty')
 [ "$CM2_WSID" = "$SM_WSID" ] || fail "a crewmate spawned FROM the secondmate home should land in the SAME workspace as the secondmate's own task ($SM_WSID), got '$CM2_WSID'"

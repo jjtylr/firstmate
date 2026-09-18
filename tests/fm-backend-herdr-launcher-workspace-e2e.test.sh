@@ -38,6 +38,7 @@ assert_contains_local() {  # <haystack> <needle> <msg>
 command -v herdr >/dev/null 2>&1 || { echo "skip: herdr not found"; exit 0; }
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found (required by the herdr adapter)"; exit 0; }
 command -v treehouse >/dev/null 2>&1 || { echo "skip: treehouse not found (required by fm-spawn.sh)"; exit 0; }
+command -v node >/dev/null 2>&1 || { echo "skip: node not found (required by the Pi fixture)"; exit 0; }
 
 # shellcheck source=tests/herdr-test-safety.sh
 . "$ROOT/tests/herdr-test-safety.sh"
@@ -47,6 +48,9 @@ command -v treehouse >/dev/null 2>&1 || { echo "skip: treehouse not found (requi
 herdr_forget_inherited_pane
 
 TMP_ROOT=$(mktemp -d "$(cd "${TMPDIR:-/tmp}" && pwd -P)/fm-herdr-launcher-e2e.XXXXXX")
+FAKEBIN="$TMP_ROOT/fakebin"
+mkdir -p "$FAKEBIN"
+ln -s "$ROOT/tests/fake-pi-worker.sh" "$FAKEBIN/pi"
 HERDR_LAB_HELPER="$ROOT/bin/fm-herdr-lab.sh"
 HERDR_LAB_SESSION=$("$HERDR_LAB_HELPER" name fm-herdr-launcher-ws) || {
   rm -rf "$TMP_ROOT"
@@ -129,13 +133,13 @@ spawn_from_launcher() {
   if [ -n "$pane" ]; then
     env HERDR_ENV=1 HERDR_PANE_ID="$pane" HERDR_SESSION="$HERDR_LAB_SESSION" \
       HERDR_SOCKET_PATH="$LAB_SOCKET" \
-      FM_SPAWN_NO_GUARD=1 FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
-      "$ROOT/bin/fm-spawn.sh" "$id" "$proj" "sh -c 'echo launcher-ws-ok'" --backend herdr "$@" \
+      FM_SPAWN_NO_GUARD=1 FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" PATH="$FAKEBIN:$PATH" \
+      "$ROOT/bin/fm-spawn.sh" "$id" "$proj" --harness pi --backend herdr "$@" \
       >"$SPAWN_OUT" 2>"$SPAWN_ERR"
   else
     env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SOCKET_PATH HERDR_SESSION="$HERDR_LAB_SESSION" \
-      FM_SPAWN_NO_GUARD=1 FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
-      "$ROOT/bin/fm-spawn.sh" "$id" "$proj" "sh -c 'echo launcher-ws-ok'" --backend herdr "$@" \
+      FM_SPAWN_NO_GUARD=1 FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" PATH="$FAKEBIN:$PATH" \
+      "$ROOT/bin/fm-spawn.sh" "$id" "$proj" --harness pi --backend herdr "$@" \
       >"$SPAWN_OUT" 2>"$SPAWN_ERR"
   fi
   SPAWN_RC=$?
@@ -158,7 +162,7 @@ LAB_SOCKET=$(lab session list --json 2>/dev/null \
 # Presentation spaces are on by default, so every home that asserts the FLAT
 # layout below opts out explicitly rather than depending on that default.
 PRIMARY_HOME="$TMP_ROOT/primary-home"
-mkdir -p "$PRIMARY_HOME/state" "$PRIMARY_HOME/config"
+mkdir -p "$PRIMARY_HOME/state" "$PRIMARY_HOME/config" "$PRIMARY_HOME/projects"
 printf 'off\n' > "$PRIMARY_HOME/config/herdr-presentation-spaces"
 SM_ID="lwsm1"
 SM_HOME="$TMP_ROOT/secondmate-home"
@@ -180,7 +184,7 @@ printf 'trivial e2e secondmate charter: nothing to do.\n' > "$SM2_HOME/data/char
 # historical empty opt-in file, so the default-on migration is exercised against
 # real Herdr while the opted-out homes above assert the flat layout in isolation.
 PRES_HOME="$TMP_ROOT/presentation-home"
-mkdir -p "$PRES_HOME/state" "$PRES_HOME/config"
+mkdir -p "$PRES_HOME/state" "$PRES_HOME/config" "$PRES_HOME/projects"
 : > "$PRES_HOME/config/herdr-presentation-spaces"
 
 write_ship_brief() {  # <file> <id>
@@ -204,6 +208,10 @@ mkdir -p "$PRIMARY_HOME/data/$SM2_ID"
 printf 'trivial secondmate charter brief: nothing to do.\n' > "$PRIMARY_HOME/data/$SM2_ID/brief.md"
 
 PROJ="$TMP_ROOT/scratch-project"; make_scratch_project "$PROJ"
+for home in "$PRIMARY_HOME" "$SM_HOME" "$PRES_HOME"; do
+  ln -s "$PROJ" "$home/projects/$(basename "$PROJ")"
+  printf '%s\n' '- scratch-project [local-only] - backend fixture (added 2026-09-18)' > "$home/data/projects.md"
+done
 
 # One unrelated workspace, kept FOCUSED throughout, so every placement result
 # below is also evidence that the globally focused workspace is never the target.
@@ -291,8 +299,8 @@ WS_PRIMARY_TABS_BEFORE=$(tab_labels_of_workspace "$WS_PRIMARY")
 cat > "$TMP_ROOT/spawn-in-pane.sh" <<SPAWN
 #!/usr/bin/env bash
 set -u
-FM_SPAWN_NO_GUARD=1 FM_HOME="$PRIMARY_HOME" FM_ROOT_OVERRIDE="$ROOT" \\
-  "$ROOT/bin/fm-spawn.sh" dupC "$PROJ" "sh -c 'echo launcher-ws-ok'" --mode no-mistakes --yolo off --backend herdr \\
+FM_SPAWN_NO_GUARD=1 FM_HOME="$PRIMARY_HOME" FM_ROOT_OVERRIDE="$ROOT" PATH="$FAKEBIN:$PATH" \\
+  "$ROOT/bin/fm-spawn.sh" dupC "$PROJ" --harness pi --mode no-mistakes --yolo off --backend herdr \\
   > "$TMP_ROOT/dupC.out" 2> "$TMP_ROOT/dupC.err"
 echo \$? > "$TMP_ROOT/dupC.rc"
 SPAWN

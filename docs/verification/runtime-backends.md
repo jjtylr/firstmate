@@ -393,6 +393,28 @@ Removing the `--force` arm makes the forced generic case refuse; honoring `--for
 Restoring `fm_backend_orca_kill`'s swallowed tool check makes the CLI-absent adapter case report success.
 Dropping the retention-is-not-durable line makes the refusal claim a retention teardown does not own.
 
+## Pi-family project trust and launch readiness
+
+`bin/fm-spawn.sh` owns the Pi and Pi-signed ship/scout guarantee: grant `--approve` only through the canonical launch template after the source resolves to the exact registered clone and the isolated copy passes repository-identity validation, then require the `pi-ext` lifecycle receipt causally matched to the unique token in the delivered launch prompt.
+Pi secondmates retain the manual trust contract in the [Pi adapter reference](../../.agents/skills/harness-adapters/references/harness/pi.md); this ship/scout guarantee does not cover them.
+Readiness uses the shared durable state reader, independent of terminal width, conversation text, Pi version strings, and viewport-capture support on tmux, Herdr, Zellij, Orca, or cmux.
+
+Installed Pi 0.85.1 source reviewed on 2026-09-18 resolves the explicit trust override before saved denials or `defaultProjectTrust` and does not persist that override.
+The token-free installed-CLI guard below exercises that boundary for fresh paths, saved denials, and `defaultProjectTrust="never"`.
+Each arm first proves that a CLI extension loads while a project extension remains disabled, then proves `--approve` loads the project extension without changing `trust.json`, and finally proves a subsequent unapproved launch is still untrusted.
+It runs each installed Pi-family identity with an isolated agent directory, prints its exact version, and reports absent identities without crediting them.
+No model prompts or credentials are used.
+
+```sh
+bash tests/fm-pi-trust-readiness.test.sh
+FM_PI_TRUST_READINESS_LIVE=1 bash tests/fm-pi-trust-readiness-live-e2e.test.sh
+```
+
+The portable regression executes the emitted launch command and generated lifecycle extension through a fake backend.
+It covers ship/scout approval for both Pi identities, started and already-settled turns, unavailable viewport capture, quoted trust-dialog text, missing processing, stale callbacks, stale records, incorrect event sources, endpoint cleanup, raw-command refusal, and isolation refusal before approval.
+A passing installed-CLI arm reports `<identity> <version>: <fresh|denied|never> project trust is granted only by per-launch --approve`.
+Run the installed-CLI guard after Pi-family upgrades; it has no selector classifier or version allowlist to maintain.
+
 ## Claude workspace trust
 
 Verified 2026-09-03 on Claude Code 2.1.259.

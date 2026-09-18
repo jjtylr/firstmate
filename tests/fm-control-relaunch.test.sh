@@ -93,6 +93,16 @@ case "${1:-}" in
         'export TRACEPARENT='*)
           [ -z "${FM_FAKE_TRACE_EXPORTED:-}" ] || : > "$FM_FAKE_TRACE_EXPORTED"
           ;;
+        Enter)
+          if [ -n "${FM_FAKE_PI_ID:-}" ] && [ "$(cat "$D/command")" = pi ]; then
+            "$FM_FAKE_BUSY_EVENT" apply "$FM_HOME/state" "$FM_FAKE_PI_ID" busy \
+              --current-gen --source pi-ext --event launch-message-start >/dev/null
+            gen=$(cat "$FM_HOME/state/$FM_FAKE_PI_ID.busy-gen")
+            printf '%s\n' "$gen" > "$FM_HOME/state/$FM_FAKE_PI_ID.pi-ready.tmp.$$"
+            mv -f "$FM_HOME/state/$FM_FAKE_PI_ID.pi-ready.tmp.$$" \
+              "$FM_HOME/state/$FM_FAKE_PI_ID.pi-ready"
+          fi
+          ;;
       esac
     fi
     exit 0 ;;
@@ -193,6 +203,7 @@ run_control() {  # <case-dir> <args...>
     FM_FAKE_TRACE_RELEASE="${FM_FAKE_TRACE_RELEASE:-}" \
     FM_FAKE_META_WRITER_READY="${FM_FAKE_META_WRITER_READY:-}" \
     FM_FAKE_TRACE_EXPORTED="${FM_FAKE_TRACE_EXPORTED:-}" \
+    FM_FAKE_PI_ID="${FM_FAKE_PI_ID:-}" FM_FAKE_BUSY_EVENT="$ROOT/bin/fm-busy-event.sh" \
     "$CONTROL" "$@" 2>&1
 }
 
@@ -683,6 +694,10 @@ test_native_ultra_relaunch_preserves_profile_and_rejects_before_stop() {
   local dir out rc id=rl-ultra
   dir=$(new_case native-ultra "$id")
   add_ship_task "$dir" "$id" pi
+  mkdir -p "$dir/home/projects"
+  ln -s "$dir/proj" "$dir/home/projects/proj"
+  printf '%s\n' '- proj [no-mistakes] - relaunch fixture (added 2026-09-18)' \
+    > "$dir/home/data/projects.md"
   printf pi > "$dir/fake/command"
   printf pi > "$dir/fake/becomes"
   printf '#!/usr/bin/env bash\nprintf "Options: --tui-mode\\n"\n' > "$dir/fakebin/pi"
@@ -695,7 +710,8 @@ test_native_ultra_relaunch_preserves_profile_and_rejects_before_stop() {
   assert_contains "$out" "ultra effort requires pi or pi-signed" "model-aware relaunch refusal missing"
   [ "$(cat "$dir/fake/command")" = pi ] || fail "invalid Ultra relaunch stopped the running agent"
   [ ! -s "$dir/fake/literal" ] || fail "invalid Ultra relaunch sent lifecycle input"
-  out=$(run_control "$dir" "$id" relaunch --note "preserve explicit native effort"); rc=$?
+  out=$(FM_FAKE_PI_ID="$id" run_control "$dir" "$id" relaunch \
+    --note "preserve explicit native effort"); rc=$?
   expect_code 0 "$rc" "native Ultra relaunch failed: $out"
   [ "$(meta_field "$dir" "$id" effort)" = ultra ] || fail "relaunch lost Ultra metadata"
   [ "$(meta_field "$dir" "$id" model)" = codex-native/gpt-6-astra ] || fail "relaunch lost native model"
@@ -1035,9 +1051,8 @@ test_promoted_scout_relaunch_receives_the_current_delivery_contract() {
   pass "fm-promote/fm-spawn --relaunch: the current ship contract supersedes stale scout delivery text"
 }
 
-# fm-spawn arms per-task wiring on harness PREFIXES, because a task launched
-# from a raw command records that command's basename rather than the exact
-# adapter name. Retirement must resolve the same way, or a task recorded as
+# Historical task records can hold a raw command's basename rather than the
+# exact adapter name. Retirement must resolve the same way, or a task recorded as
 # `grok-2` would have its turn-end token and hook pointer armed and never
 # retired - leaving a registry entry that outlives the agent that owned it.
 test_prefixed_prior_harness_wiring_is_still_retired() {

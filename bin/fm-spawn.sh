@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Spawn a direct report: a crewmate in a treehouse or Orca worktree, or a
 # secondmate in its isolated firstmate home.
-# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
-#        fm-spawn.sh <task-id> <project-dir> --scout [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
-#        fm-spawn.sh <task-id> [<firstmate-home>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] --secondmate
+# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--harness <name>|harness] [--model <name>] [--effort <level>] [--backend <name>]
+#        fm-spawn.sh <task-id> <project-dir> --scout [--harness <name>|harness] [--model <name>] [--effort <level>] [--backend <name>]
+#        fm-spawn.sh <task-id> [<firstmate-home>] [--harness <name>|harness] [--model <name>] [--effort <level>] [--backend <name>] --secondmate
 #   --mode and --yolo are this task's delivery contract, REQUIRED for every ship
 #   spawn and refused on --scout and --secondmate spawns. Firstmate resolves both
 #   per task at intake (AGENTS.md section 7); data/projects.md holds the captain's
@@ -135,15 +135,23 @@
 #   profile consultation. A --secondmate spawn is exempt and resolves the SECONDMATE
 #   harness (config/secondmate-harness -> config/crew-harness -> own), so the
 #   secondmate-vs-crewmate split is DURABLE across every respawn (recovery,
-#   /updatefirstmate, restart). A bare adapter name (claude|codex|opencode|pi|pi-signed|grok|kimi|cursor|gemini|muse|rovo|omp|agy)
-#   overrides it for this spawn (either kind). A non-flag string containing
-#   whitespace is treated as a RAW launch command - the escape hatch for verifying
-#   new adapters. For pi and pi-signed, fm-spawn resolves the selected executable
+#   /updatefirstmate, restart). An exact verified adapter name
+#   (claude|codex|opencode|pi|pi-signed|grok|kimi|cursor|gemini|muse|rovo|omp|agy)
+#   overrides it for this spawn (either kind).
+#   For pi and pi-signed, fm-spawn resolves the selected executable
 #   name from PATH once, probes that concrete path with --help, and launches the
 #   same path. It adds --tui-mode regular only when that help advertises the flag;
 #   a failed or inconclusive probe omits it so older Pi versions remain launchable.
 #   A missing selected executable refuses before endpoint creation, and pi-signed
-#   never falls back to pi.
+#   never falls back to pi. Ship and scout launches require the canonical Pi
+#   template, which grants per-launch project trust with --approve only after
+#   the source is the exact clone named by exactly one valid registry entry and the
+#   isolated copy is proven to share that clone's Git repository identity.
+#   The grant does not change Pi's saved trust store.
+#   Spawn reports success only after the per-task Pi extension matches the unique
+#   token in the delivered prompt and records its ensuing lifecycle event.
+#   Missing processing evidence within the bounded readiness window fails the
+#   launch and closes the worker endpoint instead of reporting `spawned`.
 #   For omp (Oh My Pi), fm-spawn resolves the `omp` executable from PATH once and
 #   refuses when it is absent. Every omp launch clears the foreign harness
 #   markers (omp publishes none of its own), sets the Firstmate-owned
@@ -168,8 +176,8 @@
 #   config/secondmate-harness may also carry an optional model and effort as extra
 #   whitespace-separated tokens ("<harness> [<model>] [<effort>]"). For a
 #   --secondmate spawn, those tokens apply only when this spawn also resolves its
-#   harness from config/secondmate-harness. An explicit per-spawn --harness,
-#   positional harness arg, or raw launch command starts with clean model/effort
+#   harness from config/secondmate-harness. An explicit per-spawn --harness or
+#   positional harness arg starts with clean model/effort
 #   defaults unless the caller also passes explicit --model/--effort flags. When
 #   the file governs the spawn, its model/effort tokens are re-resolved on every
 #   respawn exactly like the harness axis, and explicit --model/--effort flags
@@ -230,7 +238,7 @@
 #   $vars and silently breaks ad-hoc `for ... in $pairs` loops).
 # Launch environment (config/launch-env-allowlist):
 #   Absent means unchanged ambient inheritance. A present readable regular file
-#   opts every launch (ship, scout, secondmate, raw command, and relaunch) into
+#   opts every launch (ship, scout, secondmate, and relaunch) into
 #   /usr/bin/env -i followed by /bin/sh -c of the existing launch command.
 #   Each line is one POSIX environment name, never a value or shell expression;
 #   blank lines and lines beginning with # are ignored. Invalid input refuses
@@ -246,8 +254,9 @@
 #   ZELLIJ ZELLIJ_SESSION_NAME ZELLIJ_PANE_ID FM_ZELLIJ_SESSION, plus the task
 #   marker FM_TASK_ID that ship and scout panes receive above.
 #   An enabled task trace also retains TRACEPARENT. Explicit Firstmate launch
-#   assignments still apply inside the filtered environment. Raw commands must
-#   be POSIX sh compatible under this opt-in; the absent-file path is unchanged.
+#   assignments still apply inside the filtered environment. Harness selection
+#   accepts only an exact verified canonical adapter token; executable command
+#   strings are refused before launch. The absent-file path is unchanged.
 #   This is an exec environment boundary, not a sandbox for the pane's startup
 #   shell, credential files, same-user processes, or later shell initialization.
 #   See docs/configuration.md for provider/Git setup and supported limits.
@@ -798,7 +807,7 @@ spawn_remote_secondmate() {
   *)
     fm_lock_release "$registry_lock" || true
     fm_lock_release "$SPAWN_TASK_LOCK" || true
-    echo "error: remote secondmate spawn requires a verified harness adapter, not a raw launch command: $harness" >&2
+    echo "error: remote secondmate spawn requires an exact verified canonical adapter token: $harness" >&2
     return 1
     ;;
   esac
@@ -1050,6 +1059,7 @@ SPAWN_META_LOCK=
 SPAWN_META_LOCK_HELD=0
 SPAWN_META_PUBLISH_STARTED=0
 SPAWN_FRESH_COMMIT_PENDING=0
+SPAWN_PI_DELIVERY_PENDING=0
 SPAWN_TASK_SET_LOCK=
 SPAWN_TASK_SET_LOCK_HELD=0
 SPAWN_TREEHOUSE_PROJECT_LOCK=
@@ -1092,6 +1102,11 @@ parse_orca_worktree_result() {
 
 spawn_abort_cleanup() {
   local status=$?
+  if [ "$SPAWN_PI_DELIVERY_PENDING" = 1 ]; then
+    if ! pi_delivery_cleanup; then
+      status=1
+    fi
+  fi
   if [ "$RELAUNCH_REPLACEMENT_PENDING" = 1 ] &&
     [ "$SPAWN_META_PUBLISH_STARTED" = 1 ] &&
     [ -n "$SPAWN_META_TMP" ] &&
@@ -1246,8 +1261,7 @@ spawn_herdr_presentation_order_lock_acquire() {
 
 clear_relaunch_harness_wiring() {
   local harness=$1 wt=$2 state=$3 id=$4 token_path token auth_path path
-  # The wiring arms above match on harness PREFIXES, because a task launched
-  # from a raw command records that command's basename rather than the exact
+  # Older task records can hold a raw command's basename rather than the exact
   # adapter name. The retirement tables are keyed by the exact adapter, so the
   # recorded value is resolved to its adapter first; otherwise a task recorded
   # as, say, `grok-2` would have wiring armed and never retired. An
@@ -1451,7 +1465,7 @@ SPAWN_TASK_LOCK_HELD=1
 PROJ=
 ARG3=
 FIRSTMATE_HOME=
-RAW_LAUNCH=0
+PI_LAUNCH_TOKEN=
 
 # --relaunch adoption: every identity axis comes from the task's own validated
 # durable record, never from the command line, so a relaunch can only ever
@@ -1729,7 +1743,7 @@ launch_template() {
     if [ "$kind" = secondmate ]; then
       printf '%s' ' __MODELFLAG____EFFORTFLAG__-e __PITURNEND__ -e __PIWATCH__ "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
     else
-      printf '%s' ' __MODELFLAG____EFFORTFLAG__-e __PIEXT__ "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
+      printf '%s' ' __MODELFLAG____EFFORTFLAG__-e __PIEXT__ --approve "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
     fi
     ;;
   # omp (Oh My Pi), a Pi fork. Same one-positional-brief, --model, --thinking,
@@ -1896,18 +1910,6 @@ launch_template() {
 }
 
 case "$ARG3" in
-*' '*) # raw launch command (unverified-adapter escape hatch)
-  RAW_LAUNCH=1
-  LAUNCH=$ARG3
-  HARNESS=""
-  for word in $LAUNCH; do
-    case "$word" in [A-Za-z_]*=*) continue ;; *)
-      HARNESS=$(basename "$word")
-      break
-      ;;
-    esac
-  done
-  ;;
 '')
   # No explicit harness: resolve from config. A secondmate AGENT launches on the
   # secondmate harness (config/secondmate-harness -> config/crew-harness -> own);
@@ -1929,14 +1931,14 @@ case "$ARG3" in
     harness_src='config/crew-harness'
   fi
   LAUNCH=$(launch_template "$HARNESS" "$KIND") || {
-    echo "error: no launch template for harness '$HARNESS' (from $harness_src or detection); pass a raw launch command to use an unverified adapter" >&2
+    echo "error: no launch template for harness '$HARNESS' (from $harness_src or detection); select an exact verified canonical adapter token" >&2
     exit 1
   }
   ;;
 *)
   HARNESS=$ARG3
   LAUNCH=$(launch_template "$HARNESS" "$KIND") || {
-    echo "error: unknown harness '$HARNESS'; pass a raw launch command to use an unverified adapter" >&2
+    echo "error: unknown or executable harness '$HARNESS'; select an exact verified canonical adapter token" >&2
     exit 1
   }
   ;;
@@ -2018,7 +2020,7 @@ esac
 
 # config/secondmate-harness may carry optional model/effort tokens alongside the
 # harness ("<harness> [<model>] [<effort>]"). They apply only when this is a
-# --secondmate spawn and no explicit per-spawn harness/raw launch was supplied, so
+# --secondmate spawn and no explicit per-spawn harness was supplied, so
 # the harness itself came from the secondmate config fallback chain. Resolving
 # here on every spawn makes the pin durable across respawns. Precedence: explicit
 # --model/--effort flags still win over the file's tokens.
@@ -2041,10 +2043,6 @@ fi
 # Validate the fully resolved profile before worktree or endpoint provisioning.
 if [ "$EFFORT" = ultra ]; then
   "$SCRIPT_DIR/fm-harness.sh" validate-native-effort "$HARNESS" "$MODEL" "$EFFORT" || exit 1
-  [ "$RAW_LAUNCH" = 0 ] || {
-    echo "error: --effort ultra requires the canonical --harness pi or pi-signed launch so its native flag cannot be omitted" >&2
-    exit 1
-  }
 fi
 if [ "$HARNESS" = omp ]; then
   omp_model_validate "$OMP_BIN" "$MODEL" || exit 1
@@ -2361,6 +2359,23 @@ resolve_project_dir_arg() {
   esac
 }
 
+validate_pi_registered_project() {
+  local project=$1 name registered project_real registered_real
+  name=$(basename "$project")
+  if ! FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" \
+    "$FM_ROOT/bin/fm-project-mode.sh" --strict "$name" >/dev/null; then
+    echo "error: Pi worker trust requires exactly one valid registry entry for project $name" >&2
+    return 1
+  fi
+  registered="$PROJECTS/$name"
+  project_real=$(cd "$project" 2>/dev/null && pwd -P) || project_real=
+  registered_real=$(cd "$registered" 2>/dev/null && pwd -P) || registered_real=
+  [ -n "$project_real" ] && [ "$project_real" = "$registered_real" ] || {
+    echo "error: Pi worker trust requires the exact registered clone $registered; refusing project $project" >&2
+    return 1
+  }
+}
+
 path_is_ancestor_of() {
   local ancestor=$1 path=$2
   [ -n "$ancestor" ] || return 1
@@ -2541,6 +2556,10 @@ else
   WT=""
   BRIEF="$DATA/$ID/brief.md"
 fi
+if [ "$KIND" != secondmate ] && { [ "$HARNESS" = pi ] || [ "$HARNESS" = pi-signed ]; }; then
+  validate_pi_registered_project "$PROJ_ABS" || exit 1
+  PI_LAUNCH_TOKEN="fm-pi-launch-$ID-${BASHPID:-$$}-$RANDOM-$(date +%s)"
+fi
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   SPAWN_TREEHOUSE_PROJECT_LOCK=$(fm_treehouse_project_lock_path "$PROJ_ABS") || {
     echo "error: could not resolve the shared Treehouse project lock for $PROJ_ABS" >&2
@@ -2592,6 +2611,9 @@ if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
       cat "$SOURCE_BRIEF" &&
       if [ "$KIND" = ship ] && [ "$MODE" = no-mistakes ]; then
         fm_brief_intent_overlay "$CAPTAIN_INTENT"
+      fi &&
+      if [ -n "$PI_LAUNCH_TOKEN" ]; then
+        printf '\n<firstmate-launch-token>%s</firstmate-launch-token>\n' "$PI_LAUNCH_TOKEN"
       fi
   } >"$BRIEF_TMP" || {
     rm -f -- "$BRIEF_TMP"
@@ -2674,7 +2696,8 @@ real_path_or_raw() { # <path>
 
 # True when <path> is an isolated worktree of the spawning project: a real
 # directory that is its own worktree root, is not the spawning project itself,
-# and does not share the project repository's common git dir. SPAWN_WT_TOP is
+# has its own worktree git dir, and shares the spawning project's common git
+# dir. SPAWN_WT_TOP is
 # left holding the worktree root the check read, and SPAWN_WT_REASON a short
 # phrase naming why a rejected path failed, both for the refusal messages.
 #
@@ -2689,7 +2712,7 @@ real_path_or_raw() { # <path>
 SPAWN_WT_TOP=
 SPAWN_WT_REASON=
 spawn_worktree_isolated() { # <path>
-  local path=$1 wt_real wt_top_real wt_git_dir proj_common
+  local path=$1 wt_real wt_top_real wt_git_dir wt_common proj_common
   SPAWN_WT_TOP=
   SPAWN_WT_REASON=
   wt_real=
@@ -2726,13 +2749,19 @@ spawn_worktree_isolated() { # <path>
   # dir, so comparing only the two working directories cannot protect primary.
   wt_git_dir=$(git -C "$path" rev-parse --absolute-git-dir 2>/dev/null) &&
     wt_git_dir=$(cd "$wt_git_dir" 2>/dev/null && pwd -P) || wt_git_dir=
+  wt_common=$(git -C "$path" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) &&
+    wt_common=$(cd "$wt_common" 2>/dev/null && pwd -P) || wt_common=
   proj_common=$(git -C "$PROJ_ABS" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) &&
     proj_common=$(cd "$proj_common" 2>/dev/null && pwd -P) || proj_common=
-  if [ -z "$wt_git_dir" ] || [ -z "$proj_common" ]; then
+  if [ -z "$wt_git_dir" ] || [ -z "$wt_common" ] || [ -z "$proj_common" ]; then
     SPAWN_WT_REASON="its git directory could not be resolved"
     return 1
   fi
-  if [ "$wt_git_dir" = "$proj_common" ]; then
+  if [ "$wt_common" != "$proj_common" ]; then
+    SPAWN_WT_REASON="it belongs to a different Git repository"
+    return 1
+  fi
+  if [ "$wt_git_dir" = "$wt_common" ]; then
     SPAWN_WT_REASON="it is the repository's primary checkout (its git dir is the spawning project's common git dir)"
     return 1
   fi
@@ -2742,7 +2771,7 @@ spawn_worktree_isolated() { # <path>
 validate_spawn_worktree() { # <source> <inspect-target>
   local source=$1 inspect_target=$2
   if ! spawn_worktree_isolated "$WT"; then
-    echo "error: $source did not yield an isolated worktree (resolved '$WT'; worktree root '${SPAWN_WT_TOP:-none}'; spawning project '$PROJ_ABS'); refusing to launch to avoid tangling the primary checkout. Inspect target $inspect_target" >&2
+    echo "error: $source did not yield an isolated worktree (resolved '$WT'; worktree root '${SPAWN_WT_TOP:-none}'; spawning project '$PROJ_ABS'; reason: $SPAWN_WT_REASON); refusing to launch. Inspect target $inspect_target" >&2
     exit 1
   fi
 }
@@ -3266,6 +3295,125 @@ spawn_send_key() { # <target> <key>
   esac
 }
 
+# The launch seed is intentionally not readiness evidence. The loaded Pi
+# extension writes this generation-bound receipt only when message_start carries
+# the token-bearing launch user message itself.
+pi_brief_processing_began() {
+  local receipt current recorded
+  receipt="$STATE_REAL/$ID.pi-ready"
+  [ -f "$receipt" ] && [ ! -L "$receipt" ] || return 1
+  current=$(fm_busy_current_gen "$STATE_REAL" "$ID" 2>/dev/null) || return 1
+  [ "$current" = "$BUSY_GEN" ] || return 1
+  IFS= read -r recorded <"$receipt" 2>/dev/null || return 1
+  [ "$recorded" = "$BUSY_GEN" ]
+}
+
+pi_wait_for_brief_processing() {
+  local i=0 max=${FM_PI_READY_POLLS:-60} interval=${FM_PI_POLL_INTERVAL:-0.5}
+  PI_READY_FAILURE_DETAIL="$HARNESS did not start processing its launch brief within the bounded readiness window"
+  while [ "$i" -lt "$max" ]; do
+    if pi_brief_processing_began; then
+      return 0
+    fi
+    i=$((i + 1))
+    [ "$i" -ge "$max" ] || sleep "$interval"
+  done
+  return 1
+}
+
+pi_relaunch_delivery_cleanup() {
+  local state key repeat clear i=0 max=${FM_PI_STOP_POLLS:-20}
+  local interval=${FM_PI_STOP_INTERVAL:-0.1} composer cmd verdict
+  state=$(fm_backend_agent_state "$BACKEND" "$T")
+  case "$state" in
+    dead) ;;
+    alive)
+      key=$(fm_control_interrupt_key "$HARNESS") || return 1
+      repeat=$(fm_control_interrupt_repeat "$HARNESS") || return 1
+      clear=$(fm_control_interrupt_clear_key "$HARNESS") || return 1
+      fm_control_backend_supports_key "$BACKEND" "$key" || return 1
+      [ -z "$clear" ] || fm_control_backend_supports_key "$BACKEND" "$clear" || return 1
+      while [ "$i" -lt "$repeat" ]; do
+        fm_backend_send_key "$BACKEND" "$T" "$key" "$W" || return 1
+        i=$((i + 1))
+        [ "$i" -ge "$repeat" ] || sleep "$interval"
+      done
+      [ -z "$clear" ] || fm_backend_send_key "$BACKEND" "$T" "$clear" "$W" || return 1
+      i=0
+      while [ "$i" -lt "$max" ]; do
+        state=$(fm_backend_agent_state "$BACKEND" "$T")
+        case "$state" in
+          dead) break ;;
+          alive)
+            composer=$(fm_backend_composer_state "$BACKEND" "$T" "$W" 2>/dev/null) || composer=unknown
+            [ "$composer" != empty ] || break
+            ;;
+          *)
+            echo "warning: task $ID's endpoint reads '$state' while stopping its failed Pi relaunch" >&2
+            return 1
+            ;;
+        esac
+        i=$((i + 1))
+        [ "$i" -ge "$max" ] || sleep "$interval"
+      done
+      if [ "$state" = alive ]; then
+        [ "$composer" = empty ] || {
+          echo "warning: task $ID's Pi composer did not become empty after interrupt; the failed relaunch remains registered for recovery" >&2
+          return 1
+        }
+        cmd=$(fm_control_exit_command "$HARNESS") || return 1
+        if ! verdict=$(fm_backend_send_text_submit "$BACKEND" "$T" "$cmd" 3 "$interval" 0 "$W"); then
+          echo "warning: task $ID's Pi exit command could not be sent after its failed relaunch" >&2
+          return 1
+        fi
+        [ "$verdict" != send-failed ] || {
+          echo "warning: task $ID's Pi exit command could not be sent after its failed relaunch" >&2
+          return 1
+        }
+        i=0
+        while [ "$i" -lt "$max" ]; do
+          state=$(fm_backend_agent_state "$BACKEND" "$T")
+          [ "$state" != alive ] || {
+            i=$((i + 1))
+            [ "$i" -ge "$max" ] || sleep "$interval"
+            continue
+          }
+          break
+        done
+      fi
+      ;;
+    *)
+      echo "warning: task $ID's endpoint reads '$state' while stopping its failed Pi relaunch" >&2
+      return 1
+      ;;
+  esac
+  [ "$state" = dead ] || {
+    echo "warning: task $ID's Pi process did not stop after its failed relaunch; the endpoint and task record were preserved" >&2
+    return 1
+  }
+  if [ -n "${BUSY_GEN:-}" ] &&
+    ! "$FM_ROOT/bin/fm-busy-event.sh" retire "$STATE_REAL" "$ID" --gen "$BUSY_GEN" >/dev/null 2>&1; then
+    echo "warning: task $ID's stopped Pi relaunch left a busy generation that could not be retired" >&2
+    return 1
+  fi
+  return 0
+}
+
+pi_delivery_cleanup() {
+  SPAWN_PI_DELIVERY_PENDING=0
+  if [ "$RELAUNCH" -eq 1 ]; then
+    pi_relaunch_delivery_cleanup
+  else
+    rovo_endpoint_cleanup
+  fi
+}
+
+pi_spawn_fail() { # <detail>
+  printf 'failed: %s\n' "$1" >>"$STATE/$ID.status"
+  echo "error: $1; inspect window $T" >&2
+  pi_delivery_cleanup || true
+}
+
 kimi_capture() {
   fm_backend_capture "$BACKEND" "$T" 120 "$W" 2>/dev/null || true
 }
@@ -3608,12 +3756,9 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   #
   # A single read that already looks isolated is not proof the pane settled
   # there: on some tmux/WSL setups a brand-new window's pane_current_path
-  # transiently reports an unrelated stale path (seen live as another real git
-  # checkout entirely) before the shell catches up with treehouse get's cd. That
-  # stale path passes spawn_worktree_isolated too (it resolves to a real,
-  # distinct worktree top-level), so accepting it on one read alone silently
-  # records the wrong worktree= in state/<id>.meta. Require two consecutive
-  # reads to agree on the same isolated path before accepting it; a mismatch
+  # transiently reports a stale path before the shell catches up with treehouse
+  # get's cd.
+  # Require two consecutive reads to agree on the same isolated path before accepting it; a mismatch
   # just becomes the new candidate rather than resetting the wait, so a pane
   # that is already settled by the first real read only costs the one existing
   # inter-poll sleep as confirmation, not a whole extra cycle on top.
@@ -3792,13 +3937,11 @@ if [ "$KIND" != secondmate ]; then
     [ "$RELAUNCH" -ne 1 ] || RELAUNCH_REPLACEMENT_BUSY_GEN=$BUSY_GEN
     ;;
   gemini)
-    if [ "$RAW_LAUNCH" -eq 0 ]; then
-      BUSY_GEN=$("$FM_ROOT/bin/fm-busy-event.sh" arm "$STATE_REAL" "$ID") || {
-        echo "error: failed to arm the busy-state contract for $ID" >&2
-        exit 1
-      }
-      [ "$RELAUNCH" -ne 1 ] || RELAUNCH_REPLACEMENT_BUSY_GEN=$BUSY_GEN
-    fi
+    BUSY_GEN=$("$FM_ROOT/bin/fm-busy-event.sh" arm "$STATE_REAL" "$ID") || {
+      echo "error: failed to arm the busy-state contract for $ID" >&2
+      exit 1
+    }
+    [ "$RELAUNCH" -ne 1 ] || RELAUNCH_REPLACEMENT_BUSY_GEN=$BUSY_GEN
     ;;
   kimi*)
     # Standalone Kimi stays unknown until fm_busy_kimi_verified opens on a
@@ -3835,38 +3978,36 @@ EOF
     exclude_path '.claude/settings.local.json'
     ;;
   gemini)
-    if [ "$RAW_LAUNCH" -eq 0 ]; then
-      # Semantic busy-state hooks (bin/fm-busy-lib.sh): BeforeAgent opens a
-      # turn and AfterAgent closes it, with SessionEnd closing on process
-      # shutdown so an abnormal end can never leave a stale busy record.
-      # Verified live on gemini-cli 0.58.0 as a clean open/close pair:
-      # mid-turn only BeforeAgent had fired, and AfterAgent followed at turn
-      # end. AfterAgent ALSO fires on a manual Escape interrupt (carrying
-      # prompt_response "[no response text]"), so unlike Claude a cancelled
-      # gemini turn closes its own record instead of leaving it busy.
-      # SessionEnd was observed firing TWICE for one /quit; the busy writer is
-      # idempotent for a repeated idle event, so the duplicate is harmless and
-      # deliberately not de-duplicated here.
-      # These are written into a FIRSTMATE-OWNED settings file under state/,
-      # reached through GEMINI_CLI_SYSTEM_SETTINGS_PATH on the launch command,
-      # never into the worktree's own .gemini/settings.json - that path is the
-      # PROJECT's committed settings file, so writing it would clobber a
-      # project's configuration and retiring it would delete a tracked file.
-      # Hook arrays MERGE across gemini's settings layers rather than
-      # overriding, so a project's own hooks still run alongside these.
-      # AfterAgent keeps the turn-ended NOTIFICATION touch for the watcher.
-      # Every hook command tolerates a refused event (|| true) so a stale-gen
-      # writer can never break gemini's own lifecycle, and each prints the
-      # empty JSON object gemini's hook contract requires on stdout.
-      busy_cmd_prefix="$(shell_quote "$FM_ROOT/bin/fm-busy-event.sh") apply $(shell_quote "$STATE_REAL") $(shell_quote "$ID")"
-      busy_suffix="--gen $(shell_quote "$BUSY_GEN") --source gemini-hook"
-      g_before=$(json_escape "$busy_cmd_prefix busy $busy_suffix --event before-agent >/dev/null 2>&1 || true; printf '{}'")
-      g_after=$(json_escape "touch $(shell_quote "$TURNEND"); $busy_cmd_prefix idle $busy_suffix --event after-agent >/dev/null 2>&1 || true; printf '{}'")
-      g_sessionend=$(json_escape "$busy_cmd_prefix idle $busy_suffix --event session-end >/dev/null 2>&1 || true; printf '{}'")
-      cat >"$STATE_REAL/$ID.gemini-settings.json" <<EOF
+    # Semantic busy-state hooks (bin/fm-busy-lib.sh): BeforeAgent opens a
+    # turn and AfterAgent closes it, with SessionEnd closing on process
+    # shutdown so an abnormal end can never leave a stale busy record.
+    # Verified live on gemini-cli 0.58.0 as a clean open/close pair:
+    # mid-turn only BeforeAgent had fired, and AfterAgent followed at turn
+    # end. AfterAgent ALSO fires on a manual Escape interrupt (carrying
+    # prompt_response "[no response text]"), so unlike Claude a cancelled
+    # gemini turn closes its own record instead of leaving it busy.
+    # SessionEnd was observed firing TWICE for one /quit; the busy writer is
+    # idempotent for a repeated idle event, so the duplicate is harmless and
+    # deliberately not de-duplicated here.
+    # These are written into a FIRSTMATE-OWNED settings file under state/,
+    # reached through GEMINI_CLI_SYSTEM_SETTINGS_PATH on the launch command,
+    # never into the worktree's own .gemini/settings.json - that path is the
+    # PROJECT's committed settings file, so writing it would clobber a
+    # project's configuration and retiring it would delete a tracked file.
+    # Hook arrays MERGE across gemini's settings layers rather than
+    # overriding, so a project's own hooks still run alongside these.
+    # AfterAgent keeps the turn-ended NOTIFICATION touch for the watcher.
+    # Every hook command tolerates a refused event (|| true) so a stale-gen
+    # writer can never break gemini's own lifecycle, and each prints the
+    # empty JSON object gemini's hook contract requires on stdout.
+    busy_cmd_prefix="$(shell_quote "$FM_ROOT/bin/fm-busy-event.sh") apply $(shell_quote "$STATE_REAL") $(shell_quote "$ID")"
+    busy_suffix="--gen $(shell_quote "$BUSY_GEN") --source gemini-hook"
+    g_before=$(json_escape "$busy_cmd_prefix busy $busy_suffix --event before-agent >/dev/null 2>&1 || true; printf '{}'")
+    g_after=$(json_escape "touch $(shell_quote "$TURNEND"); $busy_cmd_prefix idle $busy_suffix --event after-agent >/dev/null 2>&1 || true; printf '{}'")
+    g_sessionend=$(json_escape "$busy_cmd_prefix idle $busy_suffix --event session-end >/dev/null 2>&1 || true; printf '{}'")
+    cat >"$STATE_REAL/$ID.gemini-settings.json" <<EOF
 {"hooks":{"BeforeAgent":[{"hooks":[{"type":"command","command":"$g_before"}]}],"AfterAgent":[{"hooks":[{"type":"command","command":"$g_after"}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"$g_sessionend"}]}]}}
 EOF
-    fi
     ;;
   opencode*)
     mkdir -p "$WT/.opencode/plugins"
@@ -3925,6 +4066,7 @@ EOF
     # Written OUTSIDE the worktree: pi's project-trust gate fires on any extension
     # loaded from inside the project (verified live), but an explicit -e path
     # elsewhere loads without a dialog. Lives in state/, cleaned by teardown.
+    rm -f -- "$STATE_REAL/$ID.pi-ready" "$STATE_REAL/$ID.pi-ready.tmp."*
     cat >"$STATE/$ID.pi-ext.ts" <<EOF
 // Firstmate semantic busy-state events + turn-end notification; written by
 // fm-spawn under the contract owned by bin/fm-busy-lib.sh.
@@ -3933,18 +4075,43 @@ EOF
 // continue automatically - auto-retries, auto-compaction retries, tool
 // loops, and queued continuations all keep the run un-settled, and a settle
 // that raced another extension's fresh run keeps state busy via isIdle().
+// A user message carrying the launch token writes the separate readiness
+// receipt; ordinary busy tracking remains independent across every run.
 // "turn_end" fires at every inner turn boundary (one LLM response plus its
 // tool calls) and stays a wake NOTIFICATION touch for the watcher, never
 // current-state truth.
 import { execFile } from "node:child_process";
+import { rename, unlink, writeFile } from "node:fs/promises";
 const busyEvent = (state: string, event: string) =>
-  new Promise<void>((resolve) => {
+  new Promise<boolean>((resolve) => {
     execFile("$FM_ROOT/bin/fm-busy-event.sh", [
       "apply", "$STATE_REAL", "$ID", state,
       "--gen", "$BUSY_GEN", "--source", "pi-ext", "--event", event,
-    ], () => resolve());
+    ], (error) => resolve(error === null));
   });
 export default function (pi: any) {
+  const launchMarker = "<firstmate-launch-token>$PI_LAUNCH_TOKEN</firstmate-launch-token>";
+  const readinessReceipt = "$STATE_REAL/$ID.pi-ready";
+  const readinessTmp = readinessReceipt + ".tmp." + process.pid;
+  const userMessageText = (message: any) => {
+    if (message?.role !== "user") return "";
+    if (typeof message.content === "string") return message.content;
+    if (!Array.isArray(message.content)) return "";
+    return message.content
+      .filter((part: any) => part?.type === "text" && typeof part.text === "string")
+      .map((part: any) => part.text)
+      .join("\n");
+  };
+  pi.on("message_start", async (event: any) => {
+    if (!userMessageText(event?.message).includes(launchMarker)) return;
+    if (!(await busyEvent("busy", "launch-message-start"))) return;
+    try {
+      await writeFile(readinessTmp, "$BUSY_GEN\n", { mode: 0o600 });
+      await rename(readinessTmp, readinessReceipt);
+    } catch {
+      await unlink(readinessTmp).catch(() => {});
+    }
+  });
   pi.on("agent_start", () => busyEvent("busy", "agent-start"));
   pi.on("agent_settled", (_event: any, ctx: any) => {
     if (ctx && typeof ctx.isIdle === "function" && !ctx.isIdle()) return;
@@ -4498,7 +4665,16 @@ if [ "${HERDR_PROJECTED:-0}" -eq 1 ]; then
   HERDR_PROJECTION_ABORT_CLEANUP=0
   spawn_herdr_presentation_order_lock_release
 fi
+if { [ "$HARNESS" = pi ] || [ "$HARNESS" = pi-signed ]; } && [ "$KIND" != secondmate ]; then
+  SPAWN_PI_DELIVERY_PENDING=1
+fi
 spawn_send_key "$T" Enter
+if [ "$SPAWN_PI_DELIVERY_PENDING" = 1 ]; then
+  if ! pi_wait_for_brief_processing; then
+    pi_spawn_fail "$PI_READY_FAILURE_DETAIL"
+    exit 1
+  fi
+fi
 if [ "$HARNESS" = kimi ]; then
   if ! kimi_wait_for_ready; then
     kimi_spawn_fail "$KIMI_READY_FAILURE_DETAIL"
@@ -4594,11 +4770,13 @@ SPAWN_BACKLOG_COMMIT_STATUS=0
 FM_TASKS_AXI_TIMEOUT=${FM_TASKS_AXI_TIMEOUT:-30}
 if spawn_commit_backlog_transition; then
   SPAWN_FRESH_COMMIT_PENDING=0
+  SPAWN_PI_DELIVERY_PENDING=0
 else
   SPAWN_BACKLOG_COMMIT_STATUS=$?
   if spawn_commit_backlog_transition; then
     SPAWN_BACKLOG_COMMIT_STATUS=0
     SPAWN_FRESH_COMMIT_PENDING=0
+    SPAWN_PI_DELIVERY_PENDING=0
   fi
 fi
 if [ "$SPAWN_BACKLOG_COMMIT_STATUS" -ne 0 ]; then

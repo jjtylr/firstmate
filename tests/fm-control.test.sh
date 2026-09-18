@@ -261,8 +261,8 @@ test_interrupt_sends_each_harness_verified_key() {
   pass "fm-control interrupt: every verified harness gets its own verified key and repeat count"
 }
 
-# A recorded harness can carry a raw launch command's basename, so the tables
-# are reached through one prefix rule rather than an exact string match.
+# Older task records can carry a raw launch command's basename, so the tables
+# retain one prefix rule for lifecycle recovery.
 test_harness_family_resolution() {
   local pair recorded want got
   for pair in claude:claude claude-latest:claude codex:codex codex-cli:codex \

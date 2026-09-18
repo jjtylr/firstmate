@@ -9,7 +9,8 @@
 # bin/fm-brief.sh, bin/fm-spawn.sh, and bin/fm-promote.sh (AGENTS.md section 7).
 # The consumers are bin/fm-fleet-sync.sh (skip local-only clones),
 # bin/fm-home-seed.sh (refuse local-only seeding, run no-mistakes init), and
-# bin/fm-spawn.sh's advisory registry-deviation notice.
+# bin/fm-spawn.sh (advisory registry-deviation notice plus strict registration
+# validation before granting Pi-family worker trust).
 #
 # Registry line format (data/projects.md):
 #   - <name> - <desc> (added <date>)                  -> no-mistakes off  (legacy default)
@@ -31,10 +32,12 @@
 #
 # --raw prints the registered annotation unmapped, so a caller that must tell a
 # conditional policy apart from a flat mode sees "no-mistakes-prod-only" itself.
+# --strict requires a safe registry and exactly one valid matching entry instead
+# of applying the advisory fallback behavior.
 #
-# An unknown/missing project or unknown mode falls back to "no-mistakes off" and warns
-# to stderr, so a typo never silently drops the gate.
-# Usage: fm-project-mode.sh [--raw] <project-name>
+# Without --strict, an unknown or missing project or unknown mode falls back to
+# "no-mistakes off" and warns to stderr, so a typo never silently drops the gate.
+# Usage: fm-project-mode.sh [--raw] [--strict] <project-name>
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -43,47 +46,106 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 REG="$DATA/projects.md"
 RAW=0
-if [ "${1:-}" = "--raw" ]; then
-  RAW=1
-  shift
-fi
-NAME=${1:?usage: fm-project-mode.sh [--raw] <project-name>}
+STRICT=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+  --raw) RAW=1; shift ;;
+  --strict) STRICT=1; shift ;;
+  --*) echo "error: unknown option: $1" >&2; exit 2 ;;
+  *) break ;;
+  esac
+done
+NAME=${1:?usage: fm-project-mode.sh [--raw] [--strict] <project-name>}
+[ "$#" -eq 1 ] || {
+  echo "error: usage: fm-project-mode.sh [--raw] [--strict] <project-name>" >&2
+  exit 2
+}
 
-if [ ! -f "$REG" ]; then
+if [ "$STRICT" -eq 1 ]; then
+  # shellcheck source=bin/fm-backlog-transition-lib.sh disable=SC1091
+  . "$SCRIPT_DIR/fm-backlog-transition-lib.sh"
+  if ! fm_backlog_record_present "$REG" "project registry" "$DATA"; then
+    echo "error: $FM_BACKLOG_TRANSITION_ERROR" >&2
+    exit 1
+  fi
+elif [ ! -f "$REG" ]; then
   echo "warn: no registry at $REG; defaulting $NAME to no-mistakes off" >&2
   echo "no-mistakes off"
   exit 0
 fi
 
-# awk emits "<mode> <yolo>" (one line) or nothing if the project is absent.
+# awk emits "<count> <valid> <mode> <yolo>" or nothing if the project is absent.
+# The mode and yolo fields always come from the first match, preserving the
+# established advisory behavior when strict validation is not requested.
 parsed=$(awk -v n="$NAME" '
   $1=="-" && $2==n {
-    mode="no-mistakes"; yolo="off";
-    if ($3 ~ /^\[/) {
-      s="";
-      for (i=3; i<=NF; i++) { s = s (s==""?"":" ") $i; if ($i ~ /\]$/) break }
-      gsub(/^\[|\]$/, "", s);           # strip the surrounding brackets
-      k = split(s, a, " ");
-      if (a[1] != "" && a[1] != "+yolo") mode = a[1];
-      for (j=1; j<=k; j++) if (a[j]=="+yolo") yolo="on";
+    count++;
+    if (count == 1) {
+      mode="no-mistakes"; yolo="off"; valid=0;
+      if ($3 ~ /^\[/) {
+        s=""; close_at=0;
+        for (i=3; i<=NF; i++) {
+          s = s (s==""?"":" ") $i;
+          if ($i ~ /\]$/) { close_at=i; break }
+        }
+        if (s ~ /^\[(no-mistakes|direct-PR|local-only|no-mistakes-prod-only)( \+yolo)?\]$/ &&
+            close_at > 0 && close_at + 1 < NF && $(close_at + 1) == "-") valid=1;
+        gsub(/^\[|\]$/, "", s);
+        k = split(s, a, " ");
+        if (a[1] != "" && a[1] != "+yolo") mode = a[1];
+        for (j=1; j<=k; j++) if (a[j]=="+yolo") yolo="on";
+      } else if ($3 == "-" && NF > 3) valid=1;
     }
-    print mode, yolo; exit
   }
+  END { if (count > 0) print count, valid, mode, yolo }
 ' "$REG")
 
 if [ -z "$parsed" ]; then
+  if [ "$STRICT" -eq 1 ]; then
+    echo "error: project \"$NAME\" is not registered in $REG" >&2
+    exit 1
+  fi
   echo "warn: project \"$NAME\" not in registry; defaulting to no-mistakes off" >&2
   echo "no-mistakes off"
   exit 0
 fi
 
+count=${parsed%% *}
+parsed=${parsed#* }
+valid=${parsed%% *}
+parsed=${parsed#* }
 mode=${parsed%% *}
 yolo=${parsed##* }
+if [ "$STRICT" -eq 1 ] && [ "$count" -ne 1 ]; then
+  echo "error: project \"$NAME\" has $count registry entries in $REG; expected exactly one" >&2
+  exit 1
+fi
+if [ "$STRICT" -eq 1 ] && [ "$valid" -ne 1 ]; then
+  echo "error: project \"$NAME\" has a malformed registry entry in $REG; expected one valid mode with optional +yolo" >&2
+  exit 1
+fi
 case "$mode" in
   no-mistakes|direct-PR|local-only|no-mistakes-prod-only) ;;
-  *) echo "warn: unknown mode \"$mode\" for $NAME; defaulting to no-mistakes off" >&2; mode=no-mistakes; yolo=off ;;
+  *)
+    if [ "$STRICT" -eq 1 ]; then
+      echo "error: unknown mode \"$mode\" for $NAME in $REG" >&2
+      exit 1
+    fi
+    echo "warn: unknown mode \"$mode\" for $NAME; defaulting to no-mistakes off" >&2
+    mode=no-mistakes
+    yolo=off
+    ;;
 esac
-case "$yolo" in on|off) ;; *) yolo=off ;; esac
+case "$yolo" in
+on|off) ;;
+*)
+  if [ "$STRICT" -eq 1 ]; then
+    echo "error: unknown yolo posture \"$yolo\" for $NAME in $REG" >&2
+    exit 1
+  fi
+  yolo=off
+  ;;
+esac
 # A conditional policy is not a task mode. Mechanical callers get its most
 # rigorous leg; --raw callers get the annotation itself (see the header).
 if [ "$RAW" -eq 0 ] && [ "$mode" = no-mistakes-prod-only ]; then

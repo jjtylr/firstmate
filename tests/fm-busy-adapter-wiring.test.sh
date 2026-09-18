@@ -21,10 +21,11 @@ make_spawn_case() {  # <name> <harness> <id>
   local name=$1 harness=$2 id=$3 case_dir home proj wt fakebin
   case_dir="$TMP_ROOT/$name"
   home="$case_dir/home"
-  proj="$case_dir/project"
+  proj="$home/projects/project"
   wt="$case_dir/wt"
   fakebin=$(make_spawn_fakebin "$case_dir/fake" pi opencode claude codex gemini)
   fm_test_spawn_home "$home" "$harness"
+  printf '%s\n' '- project [no-mistakes] - busy fixture (added 2026-09-18)' > "$home/data/projects.md"
   fm_git_worktree "$proj" "$wt" "wt-$name"
   fm_test_spawn_brief "$home" "$id"
   printf '%s\n' "$case_dir|$home|$proj|$wt|$fakebin"
@@ -34,9 +35,15 @@ run_spawn() {  # <home> <wt> <fakebin> <spawn-args...>
   # Every case here is a ship spawn, which carries an explicit delivery contract
   # (AGENTS.md section 7); these tests are about busy-state wiring, so they pass a
   # fixed valid one.
-  local home=$1 wt=$2 fakebin=$3
+  local home=$1 wt=$2 fakebin=$3 id marker
   shift 3
+  id=${1:-}
+  marker="$home/state/.fake-pi-launched-$id"
+  rm -f "$marker"
   GROK_HOME="$home/grok-home" \
+    FM_FAKE_PI_LAUNCH_MARKER="$marker" \
+    FM_FAKE_PI_STATE_DIR="$home/state" FM_FAKE_PI_ID="$id" \
+    FM_FAKE_BUSY_EVENT="$ROOT/bin/fm-busy-event.sh" \
     fm_test_run_spawn "$home" "$wt" "$fakebin" "$@" --mode no-mistakes --yolo off
 }
 
@@ -53,17 +60,32 @@ classify() {  # <harness> <id> <state-dir>
 
 # drive_pi_ext <ext-path> <mode>: load the generated Pi extension in a plain
 # Node host and fire one lifecycle handler. Modes: agent-start, settle-idle,
-# settle-continuing, turn-end.
+# settle-continuing, unmarked-agent-start, unmarked-settle-idle, turn-end.
 drive_pi_ext() {
-  EXT_PATH="$1" MODE="$2" node --input-type=module 2>&1 <<'EOF'
+  local ext=$1 mode=$2 state id prompt
+  state=${ext%/*}
+  id=${ext##*/}
+  id=${id%.pi-ext.ts}
+  prompt="${state%/state}/data/$id/launch-brief.md"
+  EXT_PATH="$ext" MODE="$mode" PROMPT_PATH="$prompt" node --input-type=module 2>&1 <<'EOF'
 import { pathToFileURL } from "node:url";
+import { readFileSync } from "node:fs";
 const mod = await import(pathToFileURL(process.env.EXT_PATH).href);
 const handlers = {};
 mod.default({ on: (name, fn) => { handlers[name] = fn; }, events: { on: (name, fn) => { handlers[name] = fn; } } });
 const ctx = { isIdle: () => process.env.MODE !== "settle-continuing" };
+const prompt = process.env.MODE.startsWith("unmarked-")
+  ? "later prompt after extension reload"
+  : readFileSync(process.env.PROMPT_PATH, "utf8");
+await handlers["agent_start"]({}, ctx);
+await handlers["message_start"]({
+  message: { role: "user", content: [{ type: "text", text: prompt }] },
+}, ctx);
 switch (process.env.MODE) {
-  case "agent-start": await handlers["agent_start"]({}, ctx); break;
+  case "agent-start": break;
+  case "unmarked-agent-start": break;
   case "settle-idle": await handlers["agent_settled"]({}, ctx); break;
+  case "unmarked-settle-idle": await handlers["agent_settled"]({}, ctx); break;
   case "settle-continuing": await handlers["agent_settled"]({}, ctx); break;
   case "settle-then-start":
     await handlers["agent_settled"]({}, ctx);
@@ -90,18 +112,18 @@ test_pi_extension_semantic_lifecycle() {
   assert_present "$ext" "pi spawn did not write the per-task extension"
 
   out=$(classify pi "$id" "$state")
-  [ "$out" = "busy fm-spawn" ] || fail "seed after spawn must be 'busy fm-spawn', got '$out'"
+  [ "$out" = "busy pi-ext" ] || fail "successful spawn must carry the launch agent_start receipt, got '$out'"
 
   rm -f "$state/$id.turn-ended"
   out=$(drive_pi_ext "$ext" progress) || fail "native progress drive failed: $out"
   [ -f "$state/$id.progress" ] || fail "native progress did not write its separate marker"
   [ ! -e "$state/$id.turn-ended" ] || fail "native progress fabricated a completed turn"
   out=$(classify pi "$id" "$state")
-  [ "$out" = "busy fm-spawn" ] || fail "native progress changed semantic state: $out"
+  [ "$out" = "busy pi-ext" ] || fail "native progress changed semantic state: $out"
   out=$(drive_pi_ext "$ext" turn-end) || fail "turn_end drive failed: $out"
   [ -f "$state/$id.turn-ended" ] || fail "turn_end no longer touches the notification marker"
   out=$(classify pi "$id" "$state")
-  [ "$out" = "busy fm-spawn" ] || fail "turn_end must stay a notification, not a state edge, got '$out'"
+  [ "$out" = "busy pi-ext" ] || fail "turn_end must stay a notification, not a state edge, got '$out'"
 
   out=$(drive_pi_ext "$ext" settle-idle) || fail "agent_settled drive failed: $out"
   out=$(classify pi "$id" "$state")
@@ -118,7 +140,18 @@ test_pi_extension_semantic_lifecycle() {
   out=$(drive_pi_ext "$ext" settle-idle) || fail "final settle drive failed: $out"
   out=$(classify pi "$id" "$state")
   [ "$out" = "idle pi-ext" ] || fail "the final settle must classify idle, got '$out'"
-  pass "pi extension reports agent_start busy, settles idle only via ctx.isIdle(), and keeps turn_end a notification"
+
+  out=$(drive_pi_ext "$ext" unmarked-agent-start) || fail "post-reload agent_start drive failed: $out"
+  out=$(classify pi "$id" "$state")
+  [ "$out" = "busy pi-ext" ] || fail "a reloaded extension dropped a later agent_start: $out"
+  assert_grep 'event=agent-start' "$state/$id.busy-state" \
+    "a reloaded extension did not preserve the ordinary busy event"
+  out=$(drive_pi_ext "$ext" unmarked-settle-idle) || fail "post-reload agent_settled drive failed: $out"
+  out=$(classify pi "$id" "$state")
+  [ "$out" = "idle pi-ext" ] || fail "a reloaded extension dropped a later agent_settled: $out"
+  assert_grep 'event=agent-settled' "$state/$id.busy-state" \
+    "a reloaded extension did not preserve the ordinary idle event"
+  pass "pi extension tracks initial readiness and later lifecycle events across reloads"
 }
 
 test_pi_extension_serializes_settle_before_next_start() {
@@ -378,20 +411,6 @@ test_gemini_hooks_stale_incarnation_harmless() {
   pass "gemini hook events from a superseded incarnation are rejected without breaking the hook"
 }
 
-test_raw_gemini_launch_has_no_semantic_wiring() {
-  local rec id=busy-gm-raw out state
-  rec=$(make_spawn_case gemini-raw gemini "$id")
-  read_case_record "$rec"
-  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR" 'gemini --debug')
-  expect_code 0 $? "raw gemini spawn should succeed: $out"
-  state="$HOME_DIR/state"
-  assert_absent "$state/$id.busy-gen" "raw gemini launch must not arm a busy generation"
-  assert_absent "$state/$id.gemini-settings.json" "raw gemini launch must not write hook settings"
-  out=$(classify gemini "$id" "$state")
-  [ "$out" = "unknown missing" ] || fail "raw gemini launch must classify unknown, got '$out'"
-  pass "raw gemini launch remains unwired and classifies unknown"
-}
-
 test_gemini_is_refused_as_a_secondmate() {
   local rec id=busy-gm-3 out
   rec=$(make_spawn_case gemini-secondmate gemini "$id")
@@ -431,7 +450,6 @@ test_claude_hooks_semantic_lifecycle
 test_claude_hooks_stale_incarnation_harmless
 test_gemini_hooks_semantic_lifecycle
 test_gemini_hooks_stale_incarnation_harmless
-test_raw_gemini_launch_has_no_semantic_wiring
 test_gemini_is_refused_as_a_secondmate
 test_codex_unverified_until_a_semantic_source_exists
 
