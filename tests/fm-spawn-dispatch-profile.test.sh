@@ -85,15 +85,20 @@ make_seeded_secondmate_home() {
 }
 
 run_spawn() {
-  local home=$1 wt=$2 fakebin=$3 launchlog=$4
+  local home=$1 wt=$2 fakebin=$3 launchlog=$4 id
   shift 4
+  id=${1:-}
   : > "$launchlog"
+  rm -f "$home/state/.fake-pi-launched-$id"
   # CLAUDE_CONFIG_DIR is forwarded onto claude launches by fm-spawn, so pin it
   # explicitly (empty by default) instead of leaking the invoking shell's value,
   # which would make launch assertions depend on the developer's environment.
   # A test opts in to the set case via FM_TEST_CLAUDE_CONFIG_DIR.
   CLAUDE_CONFIG_DIR="${FM_TEST_CLAUDE_CONFIG_DIR:-}" \
     FM_FAKE_LAUNCH_LOG="$launchlog" FM_FAKE_PI_VERSION="${FM_TEST_PI_VERSION:-0.84.0}" \
+    FM_FAKE_PI_LAUNCH_MARKER="$home/state/.fake-pi-launched-$id" \
+    FM_FAKE_PI_STATE_DIR="$home/state" FM_FAKE_PI_ID="$id" \
+    FM_FAKE_BUSY_EVENT="$ROOT/bin/fm-busy-event.sh" \
     FM_FAKE_CURSOR_MODELS="${FM_TEST_CURSOR_MODELS:-}" \
     FM_FAKE_CURSOR_LIST_STATUS="${FM_TEST_CURSOR_LIST_STATUS:-0}" \
     GROK_HOME="$home/grok-home" \
@@ -746,8 +751,8 @@ test_pi_signed_threads_shared_pi_profile_and_preserves_identity() {
     "pi-signed launch lost the canonical typed launch-brief envelope"
   assert_present "$HOME_DIR/state/$id.pi-ext.ts" "pi-signed launch did not install Pi's turn-end extension"
   assert_present "$HOME_DIR/state/$id.busy-gen" "pi-signed spawn did not arm the busy-state contract"
-  assert_contains "$(cat "$HOME_DIR/state/$id.busy-state")" "state=busy source=fm-spawn" \
-    "pi-signed spawn did not seed the busy-state record from the launch brief"
+  assert_contains "$(cat "$HOME_DIR/state/$id.busy-state")" "state=busy source=pi-ext event=agent-start" \
+    "pi-signed spawn reported success without the launch agent_start receipt"
   local ext gen
   ext=$(cat "$HOME_DIR/state/$id.pi-ext.ts")
   gen=$(cat "$HOME_DIR/state/$id.busy-gen")

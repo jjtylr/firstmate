@@ -34,9 +34,15 @@ run_spawn() {  # <home> <wt> <fakebin> <spawn-args...>
   # Every case here is a ship spawn, which carries an explicit delivery contract
   # (AGENTS.md section 7); these tests are about busy-state wiring, so they pass a
   # fixed valid one.
-  local home=$1 wt=$2 fakebin=$3
+  local home=$1 wt=$2 fakebin=$3 id marker
   shift 3
+  id=${1:-}
+  marker="$home/state/.fake-pi-launched-$id"
+  rm -f "$marker"
   GROK_HOME="$home/grok-home" \
+    FM_FAKE_PI_LAUNCH_MARKER="$marker" \
+    FM_FAKE_PI_STATE_DIR="$home/state" FM_FAKE_PI_ID="$id" \
+    FM_FAKE_BUSY_EVENT="$ROOT/bin/fm-busy-event.sh" \
     fm_test_run_spawn "$home" "$wt" "$fakebin" "$@" --mode no-mistakes --yolo off
 }
 
@@ -90,18 +96,18 @@ test_pi_extension_semantic_lifecycle() {
   assert_present "$ext" "pi spawn did not write the per-task extension"
 
   out=$(classify pi "$id" "$state")
-  [ "$out" = "busy fm-spawn" ] || fail "seed after spawn must be 'busy fm-spawn', got '$out'"
+  [ "$out" = "busy pi-ext" ] || fail "successful spawn must carry the launch agent_start receipt, got '$out'"
 
   rm -f "$state/$id.turn-ended"
   out=$(drive_pi_ext "$ext" progress) || fail "native progress drive failed: $out"
   [ -f "$state/$id.progress" ] || fail "native progress did not write its separate marker"
   [ ! -e "$state/$id.turn-ended" ] || fail "native progress fabricated a completed turn"
   out=$(classify pi "$id" "$state")
-  [ "$out" = "busy fm-spawn" ] || fail "native progress changed semantic state: $out"
+  [ "$out" = "busy pi-ext" ] || fail "native progress changed semantic state: $out"
   out=$(drive_pi_ext "$ext" turn-end) || fail "turn_end drive failed: $out"
   [ -f "$state/$id.turn-ended" ] || fail "turn_end no longer touches the notification marker"
   out=$(classify pi "$id" "$state")
-  [ "$out" = "busy fm-spawn" ] || fail "turn_end must stay a notification, not a state edge, got '$out'"
+  [ "$out" = "busy pi-ext" ] || fail "turn_end must stay a notification, not a state edge, got '$out'"
 
   out=$(drive_pi_ext "$ext" settle-idle) || fail "agent_settled drive failed: $out"
   out=$(classify pi "$id" "$state")

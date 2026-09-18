@@ -355,7 +355,8 @@ family_for_basename() {
     fm-herdr-pi-stale-registration-live-e2e.test.sh|\
     fm-opencode-primary-live-e2e.test.sh|fm-pi-branch-live-e2e.test.sh|\
     fm-pi-branch-responsiveness-live-e2e.test.sh|\
-    fm-pi-primary-live-e2e.test.sh|fm-pi-codex-native.test.sh|fm-omp-primary-live-e2e.test.sh|\
+    fm-pi-primary-live-e2e.test.sh|fm-pi-trust-readiness-live-e2e.test.sh|\
+    fm-pi-codex-native.test.sh|fm-omp-primary-live-e2e.test.sh|\
     fm-pr-state-live-e2e.test.sh|\
     fm-sessionstart-hook-live-e2e.test.sh|fm-sessionstart-instruction-refresh-live-e2e.test.sh|\
     fm-quota-array-dispatch-live-e2e.test.sh|fm-send-secondmate-marker-herdr-e2e.test.sh|\
@@ -369,7 +370,7 @@ family_for_basename() {
     fm-control.test.sh|fm-control-relaunch.test.sh|\
     fm-herdr-session-cleanup.test.sh|fm-send-resolve-key.test.sh|fm-send-strict.test.sh|\
     fm-send-inbox.test.sh|fm-spawn-batch.test.sh|\
-    fm-spawn-dispatch-profile.test.sh|fm-claude-trust.test.sh|\
+    fm-spawn-dispatch-profile.test.sh|fm-pi-trust-readiness.test.sh|fm-claude-trust.test.sh|\
     fm-trace-context-spawn.test.sh|fm-spawn-worktree-settle.test.sh|\
     fm-teardown-endpoint-safety.test.sh)
       printf '%s\n' backend-dispatch
@@ -755,6 +756,8 @@ tests/fm-pi-branch-live-e2e.test.sh 72
 tests/fm-pi-branch-responsiveness-live-e2e.test.sh 13121
 tests/fm-pi-codex-native.test.sh 46
 tests/fm-pi-primary-live-e2e.test.sh 47
+tests/fm-pi-trust-readiness-live-e2e.test.sh 102
+tests/fm-pi-trust-readiness.test.sh 55068
 tests/fm-pi-watch-extension.test.sh 50637
 tests/fm-pi-windows-shell-invocation.test.sh 5121
 tests/fm-pr-check-security.test.sh 226546

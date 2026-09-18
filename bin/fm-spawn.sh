@@ -143,7 +143,18 @@
 #   same path. It adds --tui-mode regular only when that help advertises the flag;
 #   a failed or inconclusive probe omits it so older Pi versions remain launchable.
 #   A missing selected executable refuses before endpoint creation, and pi-signed
-#   never falls back to pi.
+#   never falls back to pi. A ship or scout also requires a verified viewport-only
+#   capture before endpoint creation. After launch, spawn recognizes Pi 0.85.1's
+#   complete project-trust selector only when its selected `Trust` row names the
+#   exact validated isolated copy, submits that choice once, and keeps trust text
+#   from any ready verdict until it disappears. Partial, changed, wrong-path, and
+#   unsupported-version selectors are never answered. Whether trust was freshly
+#   accepted or remembered for a reused pool slot, spawn reports success only
+#   after the per-task Pi extension has durably replaced the launch seed with an
+#   `agent_start` or `agent_settled` event, proving the positional brief began.
+#   Capture failure, a trust selector that does not clear, or a missing lifecycle
+#   event within the bounded readiness window fails the launch and closes the
+#   worker endpoint instead of reporting `spawned`.
 #   For omp (Oh My Pi), fm-spawn resolves the `omp` executable from PATH once and
 #   refuses when it is absent. Every omp launch clears the foreign harness
 #   markers (omp publishes none of its own), sets the Firstmate-owned
@@ -1974,6 +1985,12 @@ pi | pi-signed)
     echo "error: $HARNESS executable not found on PATH; install it or select a different verified harness" >&2
     exit 1
   }
+  if [ "$KIND" != secondmate ]; then
+    fm_backend_visible_capture_supported "$BACKEND" || {
+      echo "error: refusing $HARNESS spawn because backend '$BACKEND' has no verified viewport-bounded capture; a fresh Pi worktree can stop at a project-trust selector that is safe to answer only from a scrollback-free read of the live pane" >&2
+      exit 1
+    }
+  fi
   PI_TUI_MODE=
   if pi_supports_tui_mode "$PI_BIN"; then
     PI_TUI_MODE=' --tui-mode regular'
@@ -3266,6 +3283,172 @@ spawn_send_key() { # <target> <key>
   esac
 }
 
+# Pi 0.85.1's project-trust selector is a rendered vendor surface, so its
+# positive classifier is deliberately version-bound. A remembered trust entry
+# does not need this classifier and remains launchable after an upgrade: only a
+# selector that actually appears must match a version whose complete shape was
+# live-verified. The opt-in guard named in docs/verification/runtime-backends.md
+# is the refresh path for extending this list.
+PI_TRUST_DIALOG_VERIFIED_VERSIONS='0.85.1'
+PI_TRUST_VERSION=
+PI_TRUST_VERSION_READ=0
+
+pi_trust_version_read() {
+  if [ "$PI_TRUST_VERSION_READ" -eq 0 ]; then
+    PI_TRUST_VERSION_READ=1
+    PI_TRUST_VERSION=$("$PI_BIN" --version 2>/dev/null | sed -n '1p') || PI_TRUST_VERSION=
+  fi
+}
+
+pi_trust_version_is_verified() {
+  local version
+  pi_trust_version_read
+  version=$PI_TRUST_VERSION
+  case " $PI_TRUST_DIALOG_VERIFIED_VERSIONS " in
+    *" $version "*) [ -n "$version" ] ;;
+    *) return 1 ;;
+  esac
+}
+
+# Trust decisions read the visible viewport only. A history-backed capture can
+# retain the selector after it clears and would turn its old selected row into a
+# blind Enter against the live worker. There is no fallback: unsupported
+# backends refuse before endpoint creation and a failed read fails readiness.
+pi_visible_capture() {
+  fm_backend_visible_capture "$BACKEND" "$T" "$W"
+}
+
+# Match the complete 0.85.1 selector independently of its path and version so a
+# changed install or a selector for another directory gets a precise refusal,
+# never the Enter reserved for the one validated task copy. Tokens from the
+# footer are separate because narrow panes may wrap that row.
+pi_trust_dialog_shape_is_complete() { # <plain-pane-capture>
+  local pane=$1
+  case "$pane" in *'Trust project folder?'*) ;; *) return 1 ;; esac
+  case "$pane" in *'This allows pi to load .pi settings and resources'*) ;; *) return 1 ;; esac
+  case "$pane" in *'install missing project'*) ;; *) return 1 ;; esac
+  case "$pane" in *'packages, and execute project extensions.'*) ;; *) return 1 ;; esac
+  printf '%s\n' "$pane" | grep -Eq '^[[:space:]]*→ Trust[[:space:]]*$' || return 1
+  case "$pane" in *'Trust parent folder'*) ;; *) return 1 ;; esac
+  case "$pane" in *'Trust (this session only)'*) ;; *) return 1 ;; esac
+  case "$pane" in *'Do not trust'*) ;; *) return 1 ;; esac
+  case "$pane" in *'Do not trust (this session only)'*) ;; *) return 1 ;; esac
+  case "$pane" in *'↑↓'*navigate*) ;; *) return 1 ;; esac
+  case "$pane" in *enter*select*) ;; *) return 1 ;; esac
+  case "$pane" in *'escape/ctrl+c'*cancel*) ;; *) return 1 ;; esac
+}
+
+pi_trust_dialog_path_matches() { # <plain-pane-capture>
+  local compact expected
+  compact=$(printf '%s' "$1" | tr -d '\r\n')
+  expected=$(printf '%s' "$WT" | tr -d '\r\n')
+  case "$compact" in *"$expected"*) return 0 ;; esac
+  return 1
+}
+
+# One marker is enough to withhold success but never enough to authorize Enter.
+# This catches partial redraws and future wording drift while the durable
+# agent_start receipt below independently prevents a pre-dialog startup frame
+# from passing readiness.
+pi_trust_marker_is_present() { # <plain-pane-capture>
+  case "$1" in
+    *'Trust project folder?'* | *'This allows pi to load .pi settings'* | \
+      *'Trust parent folder'* | *'Trust (this session only)'* | \
+      *'Do not trust'*) return 0 ;;
+  esac
+  return 1
+}
+
+# The launch seed is intentionally not readiness evidence. Only an event written
+# by the loaded Pi extension proves that the positional brief reached Pi's agent
+# loop. A very short turn may already be settled by the first read, so both the
+# opening and closing events qualify.
+pi_brief_processing_began() {
+  local record state source event seq
+  record=$(fm_busy_record_read "$STATE_REAL" "$ID" 2>/dev/null) || return 1
+  read -r state source event seq <<EOF
+$record
+EOF
+  case "$state:$source:$event" in
+    busy:pi-ext:agent-start | idle:pi-ext:agent-settled) ;;
+    *) return 1 ;;
+  esac
+  case "$seq" in '' | *[!0-9]*) return 1 ;; esac
+  [ "$seq" -ge 2 ]
+}
+
+pi_wait_for_brief_processing() {
+  local pane capture_rc i=0 max=${FM_PI_READY_POLLS:-60} interval=${FM_PI_POLL_INTERVAL:-0.5}
+  local answer_submitted=0 trust_seen=0 trust_still_visible=0 markers_pending=0
+  local wrong_path=0 unsupported_version=0 dialog_free=0
+  PI_READY_FAILURE_DETAIL="$HARNESS did not start processing its launch brief within the bounded readiness window"
+  while [ "$i" -lt "$max" ]; do
+    capture_rc=0
+    pane=$(pi_visible_capture) || capture_rc=$?
+    if [ "$capture_rc" -ne 0 ]; then
+      PI_READY_FAILURE_DETAIL="$HARNESS readiness could not read the visible viewport of backend '$BACKEND' (viewport capture exited $capture_rc), so project trust and brief processing could not be verified"
+      return 1
+    fi
+    if [ -z "$pane" ]; then
+      dialog_free=0
+      i=$((i + 1))
+      [ "$i" -ge "$max" ] || sleep "$interval"
+      continue
+    fi
+    if pi_trust_dialog_shape_is_complete "$pane"; then
+      trust_seen=1
+      trust_still_visible=1
+      markers_pending=0
+      dialog_free=0
+      if ! pi_trust_dialog_path_matches "$pane"; then
+        wrong_path=1
+      elif ! pi_trust_version_is_verified; then
+        unsupported_version=1
+      elif [ "$answer_submitted" -eq 0 ]; then
+        if ! spawn_send_key "$T" Enter; then
+          PI_READY_FAILURE_DETAIL="$HARNESS project-trust selector for the exact isolated copy was seen, but its preselected Trust choice could not be submitted"
+          return 1
+        fi
+        answer_submitted=1
+      fi
+    elif pi_trust_marker_is_present "$pane"; then
+      trust_still_visible=1
+      markers_pending=1
+      dialog_free=0
+    else
+      trust_still_visible=0
+      markers_pending=0
+      dialog_free=1
+      if pi_brief_processing_began; then
+        return 0
+      fi
+    fi
+    i=$((i + 1))
+    [ "$i" -ge "$max" ] || sleep "$interval"
+  done
+  if [ "$wrong_path" -eq 1 ]; then
+    PI_READY_FAILURE_DETAIL="$HARNESS project-trust selector did not name the exact validated isolated copy '$WT', so it was not answered"
+  elif [ "$unsupported_version" -eq 1 ]; then
+    pi_trust_version_read
+    PI_READY_FAILURE_DETAIL="$HARNESS $PI_TRUST_VERSION showed a project-trust selector whose rendered contract is not verified (verified: $PI_TRUST_DIALOG_VERIFIED_VERSIONS), so it was not answered"
+  elif [ "$answer_submitted" -eq 1 ] && [ "$trust_still_visible" -eq 1 ]; then
+    PI_READY_FAILURE_DETAIL="$HARNESS project-trust selector did not clear after its preselected Trust choice was submitted for the exact isolated copy '$WT'"
+  elif [ "$markers_pending" -eq 1 ]; then
+    PI_READY_FAILURE_DETAIL="$HARNESS project-trust text stayed on screen without the complete verified selector, so the pane was never safe to answer"
+  elif [ "$trust_seen" -eq 1 ]; then
+    PI_READY_FAILURE_DETAIL="$HARNESS project trust cleared, but its per-task lifecycle extension never proved that the launch brief began processing"
+  elif [ "$dialog_free" -eq 1 ]; then
+    PI_READY_FAILURE_DETAIL="$HARNESS showed no project-trust selector, but its per-task lifecycle extension never proved that the launch brief began processing"
+  fi
+  return 1
+}
+
+pi_spawn_fail() { # <detail>
+  printf 'failed: %s\n' "$1" >>"$STATE/$ID.status"
+  echo "error: $1; inspect window $T" >&2
+  rovo_endpoint_cleanup
+}
+
 kimi_capture() {
   fm_backend_capture "$BACKEND" "$T" 120 "$W" 2>/dev/null || true
 }
@@ -4499,6 +4682,12 @@ if [ "${HERDR_PROJECTED:-0}" -eq 1 ]; then
   spawn_herdr_presentation_order_lock_release
 fi
 spawn_send_key "$T" Enter
+if { [ "$HARNESS" = pi ] || [ "$HARNESS" = pi-signed ]; } && [ "$KIND" != secondmate ]; then
+  if ! pi_wait_for_brief_processing; then
+    pi_spawn_fail "$PI_READY_FAILURE_DETAIL"
+    exit 1
+  fi
+fi
 if [ "$HARNESS" = kimi ]; then
   if ! kimi_wait_for_ready; then
     kimi_spawn_fail "$KIMI_READY_FAILURE_DETAIL"
