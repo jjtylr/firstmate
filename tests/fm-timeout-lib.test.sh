@@ -97,7 +97,7 @@ test_the_bound_replaces_the_calling_shell() {
     rm -f "$dir/caller" "$dir/parent"
     (
       . "$ROOT/bin/fm-timeout-lib.sh"
-      printf '%s\n' "$BASHPID" > "$dir/caller"
+      perl -e 'print getppid()' > "$dir/caller"
       PATH=$path fm_exec_timed 5 1 bash -c 'echo "$PPID" > "$1"' _ "$dir/parent"
     ) || fail "the bounded probe failed under PATH=$path"
     caller=$(cat "$dir/caller")
@@ -106,6 +106,24 @@ test_the_bound_replaces_the_calling_shell() {
       || fail "the command's parent $parent is not the replaced caller $caller under PATH=$path"
   done
   pass "fm_exec_timed replaces the calling shell instead of wrapping it"
+}
+
+# Stock macOS /bin/bash 3.2 has no BASHPID at all, unlike every other shell
+# fm-timeout-lib.sh runs under. The owner check must tolerate that under this
+# file's own "set -u" instead of dying with "BASHPID: unbound variable".
+test_owner_check_tolerates_a_shell_with_no_bashpid() {
+  local dir out rc=0
+  dir="$TMP_ROOT/no-bashpid"
+  mkdir -p "$dir"
+  # shellcheck disable=SC2016
+  out=$(bash -c '
+    unset BASHPID
+    . "$1"
+    PATH=$2 fm_exec_timed 5 1 bash -c "echo ok"
+  ' _ "$ROOT/bin/fm-timeout-lib.sh" "$PERL_ONLY" 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || fail "fm_exec_timed failed with no BASHPID (rc=$rc): $out"
+  [ "$out" = "ok" ] || fail "fm_exec_timed with no BASHPID produced unexpected output: $out"
+  pass "fm_exec_timed's owner check tolerates a shell with no BASHPID"
 }
 
 # The regression a direct-child watchdog had: the command dies at the bound
@@ -199,7 +217,7 @@ test_an_owner_that_dies_during_startup_ends_the_command() {
   PATH=$PERL_ONLY bash -c '
     . "$1/bin/fm-timeout-lib.sh"
     (
-      echo "$BASHPID" > "$2/watchdog"
+      perl -e "print getppid()" > "$2/watchdog"
       while kill -0 "$$" 2>/dev/null; do sleep 0.05; done
       fm_exec_timed 60 1 bash -c "exec sleep 300"
     ) >/dev/null 2>&1 &
@@ -304,6 +322,7 @@ test_passes_the_command_status_and_output_through
 test_term_ends_a_cooperative_command_at_the_bound
 test_kill_ends_a_term_ignoring_command_after_the_grace
 test_the_bound_replaces_the_calling_shell
+test_owner_check_tolerates_a_shell_with_no_bashpid
 test_a_descendant_holding_the_output_cannot_outlast_the_bound
 test_a_signal_to_the_bounding_process_reaches_the_command
 test_a_named_owner_that_is_gone_ends_the_command
