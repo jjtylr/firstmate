@@ -1,0 +1,10 @@
+Scenario: fm_exec_timed on stock macOS Bash 3.2 without BASHPID
+GNU bash, version 3.2.57(1)-release (arm64-apple-darwin26)
+
+BASE a2af1220:
+/bin/bash: line 209: BASHPID: unbound variable
+base_exit=1
+
+TARGET a3dc73cd:
+TARGET_OK
+target_exit=0
