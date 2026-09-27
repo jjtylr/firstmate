@@ -28,12 +28,9 @@
 # --model <provider>/<id>, and that provider must be declared; Firstmate never
 # guesses a provider for an unqualified model. The canonical launch also
 # passes --provider <that provider>, because without it Pi may resolve a
-# provider-prefixed model under another authenticated provider. A raw Pi
-# launch command is launched verbatim and cannot receive that flag, so a home
-# with config/pi-account refuses raw Pi launches. A raw Claude launch command
-# runs after the pinned root and shed credentials are applied, so its own
-# leading CLAUDE_CONFIG_DIR or shed-credential assignment would override the
-# pin; a home with config/claude-account refuses such a command.
+# provider-prefixed model under another authenticated provider. Public spawn
+# and relaunch routes accept only canonical adapter tokens, so executable
+# harness strings cannot bypass those provider and credential controls.
 #
 # The sign-in check asks the runner itself, with only HOME, PATH, TMPDIR,
 # USER, LOGNAME, and the selected root in its environment, so a credential
@@ -217,14 +214,15 @@ fm_worker_account_check() {
   return 0
 }
 
-# fm_worker_account_select <harness> <config-dir> <model> <executable> [<raw-command>]
+# fm_worker_account_select <harness> <config-dir> <model> <executable> [<legacy-raw-command>]
 # The whole launch-time decision. Prints nothing for an unpinned runner, so
 # the caller keeps today's launch unchanged. For a pinned one prints
 # "declared<TAB>root<TAB>provider", where provider is the Pi launch model's
 # own (empty for Claude), after the model guard and the sign-in check pass. On
-# refusal prints one error and returns 1. bin/fm-spawn.sh runs it before any
-# endpoint exists, and bin/fm-control.sh before a relaunch stops the live
-# agent.
+# refusal prints one error and returns 1. The optional final argument keeps the
+# selector fail-closed for legacy direct callers; current spawn and relaunch
+# routes pass canonical profiles only. bin/fm-spawn.sh runs it before any
+# endpoint exists, and bin/fm-control.sh before a relaunch stops the live agent.
 fm_worker_account_select() {
   local harness=$1 config=$2 model=$3 executable=$4 raw=${5:-} selection declared root providers word provider=
   selection=$(fm_worker_account_resolve "$harness" "$config") || return 1
