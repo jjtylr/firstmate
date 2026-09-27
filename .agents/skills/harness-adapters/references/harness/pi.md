@@ -10,9 +10,10 @@ The current project-trust verification entry points and installed-version eviden
 |---|---|
 | Busy state | The Firstmate-owned extension's `agent_start` marks busy and `agent_settled`, confirmed by `ctx.isIdle()`, marks idle; this covers retries, compaction, tool loops, and queued continuations. |
 | Exit command | `/quit`. |
+| Resume | `--session <path-or-id>` resumes that exact session, and creates it at that path when the file is gone. `../../../bin/fm-spawn.sh` passes it on a relaunch so a Herdr pane's already-bound status authority keeps applying (`../../../bin/fm-control-lib.sh`'s `fm_control_relaunch_resume_flag`; `../../../docs/herdr-backend.md` "Agent status authority and relaunch"). There is still no `resume` control verb. |
 | Interrupt | Single Escape. |
 | Skill invocation | No separate verified form beyond normal command behavior; use natural language when the exact command is uncertain. |
-| Model flag | `--model <model>`. |
+| Model flag | `--model <model>`; under a home's worker account pin the model must be `<provider>/<id>` and Firstmate also passes `--provider <provider>` (`../../../docs/configuration.md` "Worker account pin"). |
 | Effort flag | `--thinking <low\|medium\|high\|xhigh\|max>`; both identities expose the same levels and completed the same model-qualified max-thinking smoke. |
 | Model discovery | Run the selected executable as `<executable> --list-models [search]`; Pi's installed `docs/models.md` owns how built-in, extension-registered, and custom provider/model entries reach that list. |
 
@@ -30,6 +31,9 @@ The router's Detection section owns how launch markers and ancestry select betwe
 
 Keep the instructions as one positional argument.
 Multiple positional arguments become separate queued messages; the spawn template already preserves the one-argument shape.
+
+A project trust dialog can appear on the first Pi run in any not-yet-trusted directory, including a clean worktree.
+The decision persists per path in `~/.pi/agent/trust.json`, or in the pinned root's `trust.json` under a worker account pin, so later spawns in the same pooled slot under that root skip it.
 
 `../../../bin/fm-spawn.sh` owns per-launch trust and bounded processing verification for Pi and Pi-signed ship/scout launches in isolated copies that share Git repository identity with the exact clone named by exactly one valid project-registry entry.
 It grants trust with `--approve` for that process without changing Pi's saved trust decisions, and requires a lifecycle receipt causally bound to the unique token in the delivered launch prompt before reporting success.

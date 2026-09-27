@@ -142,6 +142,15 @@ case "${1:-}" in
       if [ "$prev" = -l ]; then literal=$arg; break; fi
       prev=$arg
     done
+    # A spawn types a short line sourcing its staged launch file, so resolve
+    # that file to the launch command the pane would really run.
+    case "$literal" in
+      ". '"*"'")
+        staged=${literal#". '"}
+        staged=${staged%"'"}
+        [ ! -f "$staged" ] || literal=$(cat "$staged")
+        ;;
+    esac
     if [ -n "$literal" ]; then
       case "$literal" in
         *FM_PI_HARNESS=pi*) printf '%s\n' "$literal" >"$FM_FAKE_LAUNCH_LOG" ;;
@@ -536,7 +545,7 @@ test_failed_final_commit_cleans_launched_pi() {
   cat >"$FAKEBIN_DIR/tasks-axi" <<'SH'
 #!/usr/bin/env bash
 case "${1:-}:${2:-}" in
-  --version:*) printf '%s\n' 'tasks-axi 0.2.4' ;;
+  --version:*) printf '%s\n' 'tasks-axi 0.2.6' ;;
   update:--help) printf '%s\n' 'usage: tasks-axi update --archive-body' ;;
   mv:--help) printf '%s\n' 'usage: tasks-axi mv [<id>...] --to <path-or-dir>' ;;
   show:*) printf '%s\n' '  state: queued' '  held: no' '  blocked: no' '  hold_kind: -' ;;
