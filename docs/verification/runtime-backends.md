@@ -411,7 +411,7 @@ FM_PI_TRUST_READINESS_LIVE=1 bash tests/fm-pi-trust-readiness-live-e2e.test.sh
 ```
 
 The portable regression executes the emitted launch command and generated lifecycle extension through a fake backend.
-It covers ship/scout approval for both Pi identities, started and already-settled turns, unavailable viewport capture, quoted trust-dialog text, missing processing, stale callbacks, stale records, incorrect event sources, endpoint cleanup, a raw Pi launch command failing the readiness gate without ever reaching the trust grant, and isolation refusal before approval.
+It covers ship/scout approval for both Pi identities, started and already-settled turns, unavailable viewport capture, quoted trust-dialog text, missing processing, stale callbacks, stale records, incorrect event sources, endpoint cleanup, raw-command refusal, and isolation refusal before approval.
 A passing installed-CLI arm reports `<identity> <version>: <fresh|denied|never> project trust is granted only by per-launch --approve`.
 Run the installed-CLI guard after Pi-family upgrades; it has no selector classifier or version allowlist to maintain.
 

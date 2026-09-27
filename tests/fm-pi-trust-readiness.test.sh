@@ -396,17 +396,10 @@ test_invalid_processing_evidence_fails() {
   pass "launch seeds, stale callbacks, stale records, and other sources cannot prove Pi readiness"
 }
 
-# The raw launch command stays the escape hatch for verifying an adapter that
-# has no template yet, and --approve lives only in the canonical Pi template, so
-# a raw command the spawn still recognizes as Pi can never obtain the per-launch
-# trust grant: it fails the bounded readiness gate and closes its endpoint
-# instead of launching a worker whose trust nothing established. A raw command
-# that reaches Pi through a wrapper records that wrapper's basename instead, so
-# it is an unverified adapter under Pi's own trust dialog and never a launch this
-# fleet granted trust to either.
-test_raw_pi_commands_never_receive_launch_trust() {
-  local raw id rec out rc n=0 expected
-  for raw in 'pi --offline' 'pi-signed --offline'; do
+test_executable_harness_strings_refuse() {
+  local raw id rec out rc n=0
+  for raw in 'pi --offline' 'pi-signed --offline' 'env PI_OFFLINE=1 pi' \
+    "bash -lc 'pi --offline'" "p=pi; \"\$p\"" 'custom-agent --flag'; do
     n=$((n + 1))
     id="raw-harness-$n-$$"
     rec=$(make_case "raw-harness-$n" "$id")
@@ -414,20 +407,14 @@ test_raw_pi_commands_never_receive_launch_trust() {
     rc=0
     out=$(run_spawn "$CASE_DIR" "$HOME_DIR" "$PROJECT_DIR" "$WORKTREE_DIR" "$FAKEBIN_DIR" \
       "$id" started "$raw") || rc=$?
-    [ "$rc" -ne 0 ] || fail "raw Pi command reported a successful spawn: $raw"
-    case "$raw" in *pi-signed*) expected=pi-signed ;; *) expected=pi ;; esac
-    assert_not_contains "$out" "spawned $id" "raw Pi command reported a successful spawn: $raw"
-    assert_absent "$HOME_DIR/state/$id.meta" "raw Pi command kept provisional endpoint metadata"
-    assert_grep "failed: $expected did not start processing its launch brief" \
-      "$HOME_DIR/state/$id.status" "raw Pi command left no concrete failure record: $raw"
-    assert_grep 'kill-window' "$CASE_DIR/tmux-calls.log" \
-      "raw Pi command did not close the launched endpoint: $raw"
-    assert_no_grep '--approve' "$CASE_DIR/args.log" \
-      "raw Pi command reached the per-launch trust grant: $raw"
-    assert_absent "$HOME_DIR/state/$id.pi-ready" \
-      "raw Pi command left a readiness receipt it never earned"
+    [ "$rc" -ne 0 ] || fail "executable harness string should refuse: $raw"
+    assert_contains "$out" 'select an exact verified canonical adapter token' \
+      "executable harness refusal lacked its actionable requirement"
+    [ ! -s "$CASE_DIR/launch.log" ] || fail "executable harness string was sent to the endpoint: $raw"
+    assert_no_grep 'new-window' "$CASE_DIR/tmux-calls.log" "executable harness string created an endpoint: $raw"
+    assert_absent "$HOME_DIR/state/$id.meta" "executable harness refusal published task metadata"
   done
-  pass "a raw Pi launch command cannot obtain the per-launch trust grant"
+  pass "only exact verified canonical adapter tokens reach worker launch"
 }
 
 test_pi_trust_requires_the_exact_registered_project() {
@@ -587,7 +574,7 @@ test_processing_receipt_is_independent_of_viewport
 test_conversation_trust_words_do_not_veto_processing
 test_readiness_requires_the_matching_launch_prompt
 test_invalid_processing_evidence_fails
-test_raw_pi_commands_never_receive_launch_trust
+test_executable_harness_strings_refuse
 test_pi_trust_requires_the_exact_registered_project
 test_primary_path_never_receives_approval
 test_unrelated_repository_never_receives_approval

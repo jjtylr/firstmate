@@ -424,7 +424,7 @@ All remote secondmates on one host share `fm-remote` and retain separate `2ndmat
 - An existing remote endpoint recorded in another Herdr session, including `default`, is classified as unverified and left untouched.
   Launch, liveness recovery, control, and retirement refuse it until an operator explicitly migrates it, instead of attempting a live cutover.
 - A launch after a host has drifted out of readiness fails with the doctor's own gap text instead of leaving a half-created endpoint.
-- Raw launch commands are not accepted for remote secondmates.
+- Remote secondmate launch requires an exact verified canonical adapter token.
 - Backends that already refuse secondmate launch, currently Orca and cmux, remain unsupported on the remote host.
 
 ### Liveness recovery

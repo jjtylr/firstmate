@@ -37,7 +37,7 @@ The decision persists per path in `~/.pi/agent/trust.json`, or in the pinned roo
 
 `../../../bin/fm-spawn.sh` owns per-launch trust and bounded processing verification for Pi and Pi-signed ship/scout launches in isolated copies that share Git repository identity with the exact clone named by exactly one valid project-registry entry.
 It grants trust with `--approve` for that process without changing Pi's saved trust decisions, and requires a lifecycle receipt causally bound to the unique token in the delivered launch prompt before reporting success.
-That grant lives only in the canonical `--harness pi` or `--harness pi-signed` template, so a raw Pi launch command never reaches it and fails the readiness gate instead.
+Use the canonical `--harness pi` or `--harness pi-signed` launch; raw Pi worker commands are refused.
 Secondmate trust handling remains manual: accept its project trust selector with Enter and verify that the instructions begin processing.
 
 ## Worker turn-end extension

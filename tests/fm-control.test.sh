@@ -405,8 +405,8 @@ test_devin_stuck_picker_refuses_and_exit_types_nothing() {
   pass "fm-control Devin: an open revert picker refuses every typed command"
 }
 
-# A recorded harness can carry a raw launch command's basename, so the tables
-# are reached through one prefix rule rather than an exact string match.
+# Historical task records can carry a raw launch command's basename, so the
+# tables are reached through one prefix rule rather than an exact string match.
 test_harness_family_resolution() {
   local pair recorded want got
   for pair in claude:claude claude-latest:claude codex:codex codex-cli:codex \
