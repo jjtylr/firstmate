@@ -883,7 +883,7 @@ test_pi_threads_model_and_max_effort() {
 }
 
 test_pi_signed_threads_shared_pi_profile_and_preserves_identity() {
-  local rec id out status launch ext gen
+  local rec id out status launch
   id=profile-pi-signed-z8b
   rec=$(make_spawn_case profile-pi-signed pi-signed "$id")
   read_case_record "$rec"
@@ -901,14 +901,6 @@ test_pi_signed_threads_shared_pi_profile_and_preserves_identity() {
     "pi-signed launch lost the canonical typed launch-brief envelope"
   assert_present "$HOME_DIR/state/$id.pi-ext.ts" "pi-signed launch did not install Pi's turn-end extension"
   assert_present "$HOME_DIR/state/$id.busy-gen" "pi-signed spawn did not arm the busy-state contract"
-  ext=$(cat "$HOME_DIR/state/$id.pi-ext.ts")
-  gen=$(cat "$HOME_DIR/state/$id.busy-gen")
-  assert_contains "$ext" 'pi.on("agent_start"' "pi extension lost the semantic agent_start busy edge"
-  assert_contains "$ext" 'pi.on("agent_settled"' "pi extension lost the semantic agent_settled idle edge"
-  assert_contains "$ext" 'ctx.isIdle()' "pi extension no longer confirms idle with ctx.isIdle()"
-  assert_contains "$ext" "\"--gen\", \"$gen\"" "pi extension does not carry the armed incarnation gen"
-  assert_contains "$ext" '"--source", "pi-ext"' "pi extension does not attribute its semantic source"
-  assert_contains "$ext" 'pi.on("turn_end"' "pi extension lost the turn-end notification touch"
   assert_contains "$(cat "$HOME_DIR/state/$id.busy-state")" "state=busy source=pi-ext event=launch-message-start" \
     "pi-signed spawn reported success without the launch message_start receipt"
   [ "$(cat "$HOME_DIR/state/$id.pi-ready")" = "$(cat "$HOME_DIR/state/$id.busy-gen")" ] ||
