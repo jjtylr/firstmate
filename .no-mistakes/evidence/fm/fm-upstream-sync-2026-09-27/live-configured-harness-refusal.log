@@ -1,0 +1,4 @@
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/josh/.no-mistakes/worktrees/4ecf35ccebba/01M3GYJBT9X50B2SHYMD65DWYB/.nm-live-validation/home
+error: no launch template for harness 'custom-agent--flag' (from config/crew-harness or detection); select an exact verified canonical adapter token
+exit=1
+OBSERVATION=CONFIGURED_EXECUTABLE_REFUSED_BEFORE_METADATA

@@ -1,0 +1,31 @@
+CASE 1 harness=pi --offline
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/josh/.no-mistakes/worktrees/4ecf35ccebba/01M3GYJBT9X50B2SHYMD65DWYB/.nm-live-validation/home
+error: unknown or executable harness 'pi --offline'; select an exact verified canonical adapter token
+exit=1
+OBSERVATION=REFUSED_BEFORE_METADATA
+CASE 2 harness=pi-signed --offline
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/josh/.no-mistakes/worktrees/4ecf35ccebba/01M3GYJBT9X50B2SHYMD65DWYB/.nm-live-validation/home
+error: unknown or executable harness 'pi-signed --offline'; select an exact verified canonical adapter token
+exit=1
+OBSERVATION=REFUSED_BEFORE_METADATA
+CASE 3 harness=env PI_OFFLINE=1 pi
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/josh/.no-mistakes/worktrees/4ecf35ccebba/01M3GYJBT9X50B2SHYMD65DWYB/.nm-live-validation/home
+error: unknown or executable harness 'env PI_OFFLINE=1 pi'; select an exact verified canonical adapter token
+exit=1
+OBSERVATION=REFUSED_BEFORE_METADATA
+CASE 4 harness=bash -lc 'pi --offline'
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/josh/.no-mistakes/worktrees/4ecf35ccebba/01M3GYJBT9X50B2SHYMD65DWYB/.nm-live-validation/home
+error: unknown or executable harness 'bash -lc 'pi --offline''; select an exact verified canonical adapter token
+exit=1
+OBSERVATION=REFUSED_BEFORE_METADATA
+CASE 5 harness=p=pi; "$p"
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/josh/.no-mistakes/worktrees/4ecf35ccebba/01M3GYJBT9X50B2SHYMD65DWYB/.nm-live-validation/home
+error: unknown or executable harness 'p=pi; "$p"'; select an exact verified canonical adapter token
+exit=1
+OBSERVATION=REFUSED_BEFORE_METADATA
+CASE 6 harness=custom-agent --flag
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/josh/.no-mistakes/worktrees/4ecf35ccebba/01M3GYJBT9X50B2SHYMD65DWYB/.nm-live-validation/home
+error: unknown or executable harness 'custom-agent --flag'; select an exact verified canonical adapter token
+exit=1
+OBSERVATION=REFUSED_BEFORE_METADATA
+SUMMARY cases=6 failures=0 metadata=absent
