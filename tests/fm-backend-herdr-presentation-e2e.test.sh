@@ -15,7 +15,6 @@ pass() { printf 'ok - %s\n' "$1"; }
 command -v herdr >/dev/null 2>&1 || { echo "skip: herdr not found"; exit 0; }
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
 command -v treehouse >/dev/null 2>&1 || { echo "skip: treehouse not found"; exit 0; }
-command -v node >/dev/null 2>&1 || { echo "skip: node not found (required by the Pi fixture)"; exit 0; }
 [ -x "$HERDR_LAB_HELPER" ] || { echo "skip: Herdr lab helper not executable at $HERDR_LAB_HELPER"; exit 0; }
 
 REAL_HERDR=$(command -v herdr)
@@ -262,7 +261,6 @@ exit "$status"
 SH
 chmod +x "$FAKEBIN/herdr" "$FAKEBIN/treehouse"
 chmod +x "$FAKEBIN/herdr-workspace-mover"
-ln -s "$ROOT/tests/fake-pi-worker.sh" "$FAKEBIN/pi"
 export PATH="$FAKEBIN:$PATH"
 export FM_BACKEND_HERDR_WORKSPACE_MOVER="$FAKEBIN/herdr-workspace-mover"
 
@@ -411,7 +409,7 @@ EOF
 spawn_task() {  # <id> <home> <project>
   local id=$1 home=$2 project=$3
   FM_GATE_REFUSE_BYPASS=1 FM_SPAWN_NO_GUARD=1 FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
-    "$ROOT/bin/fm-spawn.sh" "$id" "$project" --harness pi --mode no-mistakes --yolo off --backend herdr
+    "$ROOT/bin/fm-spawn.sh" "$id" "$project" "sh -c 'while :; do sleep 60; done'" --mode no-mistakes --yolo off --backend herdr
 }
 
 finish_concurrent_spawn() {  # <id> <status> <stdout> <stderr>
@@ -436,7 +434,7 @@ finish_concurrent_expected_abort() {  # <id> <status> <stdout> <stderr>
 spawn_secondmate_task() {
   local id=$1 home=$2
   FM_GATE_REFUSE_BYPASS=1 FM_SPAWN_NO_GUARD=1 FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$ROOT" \
-    "$ROOT/bin/fm-spawn.sh" "$id" "$home" --harness pi --secondmate --backend herdr
+    "$ROOT/bin/fm-spawn.sh" "$id" "$home" "sh -c 'while :; do sleep 60; done'" --secondmate --backend herdr
 }
 
 teardown_task() {  # <id> <home>
@@ -464,7 +462,6 @@ normalize_meta() {  # <meta>
     -e 's|^herdr_workspace_id=.*$|herdr_workspace_id=<herdr-container-id>|' \
     -e 's|^herdr_tab_id=.*$|herdr_tab_id=<herdr-container-id>|' \
     -e 's|^herdr_pane_id=.*$|herdr_pane_id=<herdr-container-id>|' \
-    -e 's|^busy_gen=.*$|busy_gen=<spawn-incarnation>|' \
     -e 's|^spawn_gen=.*$|spawn_gen=<spawn-incarnation>|' \
     "$1"
 }
@@ -535,13 +532,6 @@ write_ship_brief "$HOME_DIR" lock-contended 'Projection lock contention fixture.
 write_ship_brief "$HOME_DIR" default-on 'Projection default-on fixture.'
 make_project "$PROJECT_DIR"
 make_project "$RECOVERY_PROJECT_DIR"
-mkdir -p "$HOME_DIR/projects"
-ln -s "$PROJECT_DIR" "$HOME_DIR/projects/$(basename "$PROJECT_DIR")"
-ln -s "$RECOVERY_PROJECT_DIR" "$HOME_DIR/projects/$(basename "$RECOVERY_PROJECT_DIR")"
-printf '%s\n' \
-  '- project [local-only] - backend fixture (added 2026-09-18)' \
-  '- recovery-project [local-only] - backend fixture (added 2026-09-18)' \
-  > "$HOME_DIR/data/projects.md"
 
 # Keep one ordinary primary task live so the durable firstmate workspace is
 # first and remains present while disposable workers are projected around it.
@@ -995,15 +985,6 @@ git -C "$SECOND_HOME_A" add .gitignore
 git -C "$SECOND_HOME_B" add .gitignore
 git -C "$SECOND_HOME_A" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm init
 git -C "$SECOND_HOME_B" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm init
-for home in "$SECOND_HOME_A" "$SECOND_HOME_B"; do
-  mkdir -p "$home/projects"
-  ln -s "$PROJECT_DIR" "$home/projects/$(basename "$PROJECT_DIR")"
-  ln -s "$RECOVERY_PROJECT_DIR" "$home/projects/$(basename "$RECOVERY_PROJECT_DIR")"
-  printf '%s\n' \
-    '- project [local-only] - backend fixture (added 2026-09-18)' \
-    '- recovery-project [local-only] - backend fixture (added 2026-09-18)' \
-    > "$home/data/projects.md"
-done
 mkdir -p "$SECOND_HOME_A/bin"
 printf '# Firstmate secondmate fixture\n' > "$SECOND_HOME_A/AGENTS.md"
 printf 'Secondmate alpha charter.\n' > "$SECOND_HOME_A/data/charter.md"

@@ -273,6 +273,7 @@ run_spawn() {  # <case-dir> <args...>
     PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" \
     HOME="$dir/user-home" CLAUDE_CONFIG_DIR='' \
     FM_SPAWN_NO_GUARD=1 GROK_HOME="$dir/grokhome" \
+    FM_FAKE_PI_ID="${FM_FAKE_PI_ID:-}" FM_FAKE_BUSY_EVENT="$ROOT/bin/fm-busy-event.sh" \
     "$SPAWN" "$@" 2>&1
 }
 
@@ -1179,8 +1180,9 @@ test_promoted_scout_relaunch_receives_the_current_delivery_contract() {
   pass "fm-promote/fm-spawn --relaunch: the current ship contract supersedes stale scout delivery text"
 }
 
-# Historical task records can hold a raw command's basename rather than the
-# exact adapter name. Retirement must resolve the same way, or a task recorded as
+# fm-spawn arms per-task wiring on harness PREFIXES, because a task launched
+# from a raw command records that command's basename rather than the exact
+# adapter name. Retirement must resolve the same way, or a task recorded as
 # `grok-2` would have its turn-end token and hook pointer armed and never
 # retired - leaving a registry entry that outlives the agent that owned it.
 test_prefixed_prior_harness_wiring_is_still_retired() {
@@ -2029,7 +2031,21 @@ case "${1:-} ${2:-}" in
     case "$payload" in
       *'encode launch-brief'* | *'Firstmate operational input waiting: read'*)
         printf '%s\n' "$payload" > "$D/launched-command"
-        : > "$D/herdr-agent-live" ;;
+        : > "$D/herdr-agent-live"
+        # A Pi launch proves it is processing its brief through the extension's
+        # own receipt, so a case that relaunches Pi opts in with FM_FAKE_PI_ID
+        # and this stub writes the same public receipt a real extension emits.
+        if [ -n "${FM_FAKE_PI_ID:-}" ] && [ -n "${FM_FAKE_BUSY_EVENT:-}" ]; then
+          "$FM_FAKE_BUSY_EVENT" apply "$FM_HOME/state" "$FM_FAKE_PI_ID" busy \
+            --current-gen --source pi-ext --event launch-message-start >/dev/null 2>&1
+          gen=$(cat "$FM_HOME/state/$FM_FAKE_PI_ID.busy-gen" 2>/dev/null) || gen=
+          if [ -n "$gen" ]; then
+            printf '%s\n' "$gen" > "$FM_HOME/state/$FM_FAKE_PI_ID.pi-ready.tmp.$$" &&
+              mv -f "$FM_HOME/state/$FM_FAKE_PI_ID.pi-ready.tmp.$$" \
+                "$FM_HOME/state/$FM_FAKE_PI_ID.pi-ready"
+          fi
+        fi
+        ;;
     esac
     exit 0 ;;
   'workspace list')
@@ -2140,11 +2156,19 @@ test_herdr_relaunch_resumes_only_the_registered_pi_session() {
     dir=$HERDR_CASE_DIR
     rm -f "$dir/fake/herdr-stopped"
     sed -i 's/^harness=claude$/harness=pi/' "$dir/home/state/resume-$registered.meta"
+    # A Pi ship launch is granted per-launch project trust only from the exact
+    # clone named by one valid registry entry, so this case registers its
+    # fixture project the same way a real home would.
+    mkdir -p "$dir/home/projects"
+    ln -sfn "$dir/proj" "$dir/home/projects/proj"
+    printf '%s\n' '- proj [no-mistakes] - relaunch fixture (added 2026-09-18)' \
+      > "$dir/home/data/projects.md"
     # Keep the pane's status authority registered to an existing Pi session,
     # while process-info proves that its previous agent has exited.
     printf '{"result":{"agent":{"agent":"%s","agent_status":"idle","agent_session":{"kind":"path","value":"/tmp/pi-bound-session.jsonl"}}}}\n' \
       "$registered" > "$dir/fake/herdr-agent-registration"
-    out=$(run_spawn "$dir" "resume-$registered" --relaunch --harness pi) || rc=$?
+    out=$(FM_FAKE_PI_ID="resume-$registered" \
+      run_spawn "$dir" "resume-$registered" --relaunch --harness pi) || rc=$?
     expect_code 0 "$rc" "Herdr Pi relaunch should complete ($registered registration)"$'\n'"$out"
     command=$(cat "$dir/fake/launched-command")
     if [ "$registered" = pi ]; then
