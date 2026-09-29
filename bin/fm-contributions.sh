@@ -41,10 +41,12 @@
 # dependent waves: core, six independent reads, then the closing head read;
 # an issue has two waves. Before starting a URL, poll reserves the smaller of
 # the effective budget and 15 seconds for those waves. URLs needing forge
-# reads are sorted by URL and rotated by the current five-minute epoch bucket
-# modulo their count, without stored scheduling state or freshness-based
-# reordering. Terminal URLs settle separately before the forge budget starts
-# and consume no rotation slots.
+# reads are sorted by URL and start just after the last URL a poll attempted,
+# recorded in state/.contributions-cursor, so rotation follows actual polling
+# progress rather than the clock and no URL starves however polls are spaced.
+# An absent or unreadable cursor starts at the first URL; there is no
+# freshness-based reordering. Terminal URLs settle separately before the
+# forge budget starts and consume no rotation slots.
 # A deliberately smaller configured budget remains bounded and may be
 # unmeasured, rather than being mislabeled unavailable. Each distinct URL is
 # attempted at most once per poll and its observation applied to every owner.
@@ -345,8 +347,18 @@ settle_final() { # canonical-url task... : copy the URL's final observation to e
   done
 }
 
+# Persist the URL a poll is about to attempt, so the next poll starts after it.
+record_cursor() { # url
+  local device staged
+  device=$(fm_pr_file_device "$STATE")
+  fm_pr_regular_destination_on_device_or_absent "$STATE/.contributions-cursor" "$device" || fail 'unsafe rotation cursor destination'
+  staged=$(umask 077; mktemp "$STATE/.contributions-cursor.XXXXXX")
+  printf '%s\n' "$1" > "$staged"
+  mv -f -- "$staged" "$STATE/.contributions-cursor"
+}
+
 poll() {
-  local task url old kind error observed
+  local task url old kind error observed cursor
   local -a row
   acquire
   get_input
@@ -370,14 +382,18 @@ poll() {
       (IFS=$'\t'; printf '%s\n' "${row[*]}") >> "$TMP/live.tsv"
     fi
   done < "$TMP/known.tsv"
-  jq -Rnr --argjson bucket "$((EPOCH / 300))" '
-    [inputs] | if length == 0 then . else ($bucket % length) as $offset | .[$offset:] + .[:$offset] end
-    | .[]' < "$TMP/live.tsv" > "$TMP/known.tsv"
+  cursor=
+  [ ! -f "$STATE/.contributions-cursor" ] || [ -L "$STATE/.contributions-cursor" ] \
+    || IFS= read -r cursor < "$STATE/.contributions-cursor" || true
+  jq -Rnr --arg cursor "$cursor" '
+    [inputs] | ([.[] | split("\t")[0]] | map(. > $cursor) | index(true) // 0) as $offset
+    | .[$offset:] + .[:$offset] | .[]' < "$TMP/live.tsv" > "$TMP/known.tsv"
   DEADLINE=$(( $(date +%s) + BUDGET ))
   OBSERVATION_RESERVE=$((BUDGET < 15 ? BUDGET : 15))
   while IFS=$'\t' read -r -a row; do
     [ $((DEADLINE - $(date +%s))) -ge "$OBSERVATION_RESERVE" ] || break
     url=${row[0]}
+    record_cursor "$url"
     observed=0
     observe "$url" || observed=$?
     [ "$BUDGET_EXHAUSTED" -eq 0 ] || continue

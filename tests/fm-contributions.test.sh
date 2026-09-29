@@ -862,7 +862,9 @@ test_unmeasured_url_does_not_starve_the_tail() {
     [ "$elapsed" -le 23 ] || fail "poll exceeded its elapsed budget: $elapsed seconds"
     if [ "$cycle" -eq 0 ]; then
       [ "$elapsed" -ge 8 ] || fail 'the slow head did not consume its core and parallel-wave budget'
-      if grep -Eq '^api repos/o/r/pulls/(9|10)$' "$home/forge/calls"; then
+      # Whatever URL the rotation starts at, none may begin after the slow head.
+      if awk '/^api repos\/o\/r\/pulls\/8$/ { slow = 1; next }
+        slow && /^api repos\/o\/r\/pulls\/(9|10)$/ { found = 1 } END { exit !found }' "$home/forge/calls"; then
         fail 'a tail PR began without its observation reserve'
       fi
     fi
@@ -921,6 +923,32 @@ test_unmeasured_url_does_not_starve_the_tail() {
   done
   [ ! -s "$home/state/.wake-queue" ] || fail 'slow successful reads enqueued a wake'
   pass 'rotation preserves timed-out records and refreshes every slow PR on successive cycles'
+}
+
+# Polls that land an even number of five-minute buckets apart (0, 610, 1220
+# seconds) must still reach every live URL when only one observation fits per
+# poll, so the starting URL follows actual polling progress, not the clock.
+test_uneven_poll_spacing_does_not_starve_a_url() {
+  local home at offset task
+  home=$(new_home uneven-spacing)
+  forge_home "$home"
+  wrap_forge "$home"
+  record "$home" second 9 open mergeable
+  for task in delivery second; do
+    mutate_record "$home" "$task" '.records[0].checked_at="2026-09-16T07:00:00Z"'
+  done
+  printf 'latency\n' > "$home/forge/fault"
+  for offset in 0 610 1220; do
+    at=$(jq -nr --arg now "$NOW" --argjson offset "$offset" '(($now | fromdateiso8601) + $offset) | todateiso8601')
+    with_home "$home" env FM_CONTRIBUTIONS_NOW="$at" FM_CONTRIBUTIONS_BUDGET=20 FORGE_LATENCY=3 \
+      "$ROOT/bin/fm-contributions.sh" poll >/dev/null || fail "uneven-spacing poll at $at failed"
+  done
+  for task in delivery second; do
+    jq -e '.records[0] | .error == null and .checked_at != "2026-09-16T07:00:00Z"' \
+      "$home/data/$task/contributions.json" >/dev/null \
+      || fail "polls spaced an even number of buckets apart starved $task"
+  done
+  pass 'polls spaced an even number of rotation buckets apart still reach every live URL'
 }
 
 test_budget_is_cut_down_to_the_watcher_check_bound() {
@@ -1029,7 +1057,7 @@ test_late_owner_keeps_failure_episode_suppressed() {
 }
 
 failures=0
-for test_name in test_actor_coverage test_stale_verdict test_unchecked_is_not_silence test_newest_check_has_no_verdict test_comment_wake test_review_wake test_inline_wake test_ready_issue_wake test_fresh_issue_requires_maintainer test_missing_lane_remains_missing test_partial_freshness_keeps_measured_rows test_malformed_record_cannot_prove_silence test_issue_timeline_and_exact_ack test_verdict_retains_judged_head test_observed_replacement_refreshes_verdict test_unobserved_head_leaves_verdict_unknown test_away_yolo_is_fleet_work test_away_yolo_cross_home_is_fleet_work test_retired_and_unsupported_coverage test_unsupported_forge_is_not_fleet_work test_held_unsupported_forge_is_not_captain_work test_shared_contribution_signal_wakes_once test_watcher_keeps_diagnostics_separate_from_contribution_wakes test_expired_child_unsupported_forge_stays_unmeasured test_watcher_surfaces_new_contribution_once test_home_summary_coverage test_unreadable_pending_is_not_empty test_record_task_identity_matches_dirname_basename test_read_only_views_create_no_state test_budget_refusal_between_calls test_budget_bounded_call_timeout test_genuine_failure_near_deadline_is_unavailable test_shared_url_observed_once test_terminal_contribution_settles test_late_owner_inherits_terminal_observation test_done_task_open_pr_still_observed test_reservation_defers_later_url_when_fifteen_seconds_do_not_remain test_three_second_pr_reads_complete_fresh_in_one_cycle test_slow_read_deadline_kill_is_budget_refusal test_unmeasured_url_does_not_starve_the_tail test_budget_is_cut_down_to_the_watcher_check_bound test_arm_plumbs_a_configured_budget_into_the_check_shim test_unavailable_forge_records_error_and_wakes_once_per_episode test_late_owner_keeps_failure_episode_suppressed; do
+for test_name in test_actor_coverage test_stale_verdict test_unchecked_is_not_silence test_newest_check_has_no_verdict test_comment_wake test_review_wake test_inline_wake test_ready_issue_wake test_fresh_issue_requires_maintainer test_missing_lane_remains_missing test_partial_freshness_keeps_measured_rows test_malformed_record_cannot_prove_silence test_issue_timeline_and_exact_ack test_verdict_retains_judged_head test_observed_replacement_refreshes_verdict test_unobserved_head_leaves_verdict_unknown test_away_yolo_is_fleet_work test_away_yolo_cross_home_is_fleet_work test_retired_and_unsupported_coverage test_unsupported_forge_is_not_fleet_work test_held_unsupported_forge_is_not_captain_work test_shared_contribution_signal_wakes_once test_watcher_keeps_diagnostics_separate_from_contribution_wakes test_expired_child_unsupported_forge_stays_unmeasured test_watcher_surfaces_new_contribution_once test_home_summary_coverage test_unreadable_pending_is_not_empty test_record_task_identity_matches_dirname_basename test_read_only_views_create_no_state test_budget_refusal_between_calls test_budget_bounded_call_timeout test_genuine_failure_near_deadline_is_unavailable test_shared_url_observed_once test_terminal_contribution_settles test_late_owner_inherits_terminal_observation test_done_task_open_pr_still_observed test_reservation_defers_later_url_when_fifteen_seconds_do_not_remain test_three_second_pr_reads_complete_fresh_in_one_cycle test_slow_read_deadline_kill_is_budget_refusal test_unmeasured_url_does_not_starve_the_tail test_uneven_poll_spacing_does_not_starve_a_url test_budget_is_cut_down_to_the_watcher_check_bound test_arm_plumbs_a_configured_budget_into_the_check_shim test_unavailable_forge_records_error_and_wakes_once_per_episode test_late_owner_keeps_failure_episode_suppressed; do
   ( "$test_name" ) || failures=$((failures + 1))
 done
 [ "$failures" -eq 0 ] || fail "$failures contribution regressions"
