@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { runCommandAsync } from "./fm-async-exec.ts";
 
 // Shared wake-dispatch handshake between the Pi watcher extension (the
@@ -20,8 +21,8 @@ import { runCommandAsync } from "./fm-async-exec.ts";
 //
 // Postures (docs/pi-supervision-branch.md "Postures"). The away-posture record
 // state/.afk-contract (owner: bin/fm-afk-contract.sh) is the posture; it is
-// read as a file at every routing decision, never inferred from chat. While
-// it exists the branch takes EVERY actionable row - check rows, decision-owned
+// read at every routing decision, never inferred from chat. While
+// it records away the branch takes EVERY actionable row - check rows, decision-owned
 // rows, and heartbeat rows included - and main is offered nothing the branch
 // can take. The two vetoes that describe a broken queue stay vetoes in both
 // postures, and such a wake, like every watcher-failure alarm, still falls
@@ -31,15 +32,25 @@ import { runCommandAsync } from "./fm-async-exec.ts";
 export const FM_BRANCH_DISPATCH_EVENT = "fm-branch-supervision:dispatch";
 
 // The away-posture record's state-relative filename, exactly as
-// bin/fm-afk-contract.sh writes it. Presence is the only fact read here; the
-// guarded scripts validate the record themselves (bin/fm-lease-lib.sh).
+// bin/fm-afk-contract.sh writes it.
 export const AFK_CONTRACT_FILE = ".afk-contract";
 
 export function afkPostureRecordPresent(state: string): boolean {
+  const path = join(state, AFK_CONTRACT_FILE);
   try {
-    return statSync(join(state, AFK_CONTRACT_FILE)).isFile();
+    if (!statSync(path).isFile()) return false;
   } catch {
     return false;
+  }
+  try {
+    const root = process.env.FM_ROOT_OVERRIDE || fileURLToPath(new URL("../../../", import.meta.url));
+    return execFileSync("bash", [join(root, "bin/fm-afk-contract.sh"), "mode", "--path", path], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 5000,
+    }).trim() !== "quiet";
+  } catch {
+    return true;
   }
 }
 

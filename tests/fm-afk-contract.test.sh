@@ -622,6 +622,60 @@ test_away_entry_over_quiet_mode_becomes_away_and_quiet_never_masks_away() {
   pass "an away entry over quiet mode records away, and a quiet entry never masks a standing away record"
 }
 
+test_pi_dispatch_uses_the_record_posture() {
+  local home out status
+  home=$(make_home pi-posture)
+  LIB="$ROOT/.pi/extensions/lib/fm-branch-dispatch.ts" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
+    FM_STATE_OVERRIDE="$home/state" NODE_NO_WARNINGS=1 node --input-type=module > "$TMP_ROOT/pi-posture-output" 2>&1 <<'EOF'
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+const { afkPostureRecordPresent, branchOfferForWake } = await import(pathToFileURL(process.env.LIB).href);
+const root = process.env.FM_ROOT_OVERRIDE;
+const state = process.env.FM_STATE_OVERRIDE;
+const record = `${state}/.afk-contract`;
+const contract = (args, mode = "away") => execFileSync("bash", [`${root}/bin/fm-afk-contract.sh`, ...args], {
+  env: { ...process.env, FM_AFK_MODE: mode },
+  encoding: "utf8",
+});
+writeFileSync(`${state}/worker.meta`, `project=${process.env.FM_HOME}/project\nwindow=worker\n`);
+writeFileSync(`${state}/.wake-queue`,
+  "1\t1\tcheck\tmain-only\tcheck: review ready\n" +
+  "2\t2\tsignal\tworker.status\tneeds-decision: review scope\n");
+const checkPosture = (away, label) => {
+  const actual = afkPostureRecordPresent(state);
+  assert.equal(actual, away, `${label}: away predicate`);
+  for (const wake of ["check: review ready", "signal: worker.status"]) {
+    assert.equal(branchOfferForWake(state, wake, actual).eligible, away, `${label}: ${wake}`);
+  }
+};
+checkPosture(false, "no record");
+contract(["enter", "--words", "keep routine updates quiet"], "quiet");
+assert.equal(existsSync(`${state}/.afk`), false, "entry has not started the daemon");
+checkPosture(false, "quiet record without daemon");
+delete process.env.FM_ROOT_OVERRIDE;
+checkPosture(false, "quiet record using the extension code root");
+process.env.FM_ROOT_OVERRIDE = `${process.env.FM_HOME}/missing-root`;
+checkPosture(true, "unavailable record owner preserves holds");
+process.env.FM_ROOT_OVERRIDE = root;
+checkPosture(false, "restored owner recognizes quiet");
+contract(["enter", "--words", "mode: quiet"]);
+checkPosture(true, "away record with quiet words");
+const awayRecord = readFileSync(record, "utf8");
+writeFileSync(record, `mode: damaged\n${awayRecord}`);
+checkPosture(true, "invalid mode remains away");
+writeFileSync(record, awayRecord);
+contract(["archive"]);
+checkPosture(false, "archived record");
+EOF
+  status=$?
+  out=$(cat "$TMP_ROOT/pi-posture-output")
+  expect_code 0 "$status" "Pi must route quiet and away records using their owner: $out"
+  pass "Pi leaves quiet decisions on main and preserves away holds"
+}
+
 test_readback_renders_words_verbatim_with_the_record_scalars
 test_words_preserve_final_newline_shape
 test_enter_writes_a_v2_record_in_one_step_and_announces_hold_for_return
@@ -642,3 +696,4 @@ test_version_1_record_is_replaced_by_a_version_2_record
 test_record_changes_refuse_while_a_reader_holds_the_lock
 test_quiet_record_reads_as_a_present_captain_holding_nothing
 test_away_entry_over_quiet_mode_becomes_away_and_quiet_never_masks_away
+test_pi_dispatch_uses_the_record_posture
