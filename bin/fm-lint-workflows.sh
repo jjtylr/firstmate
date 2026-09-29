@@ -124,8 +124,12 @@ fi
 # fm-lint.sh owns ShellCheck of the canonical shell set. Disable actionlint's
 # extra shell and Python subprocess linters so this gate is the named workflow
 # linter, not a second shell lint of `run:` blocks.
+# Pass the repository's actionlint config explicitly: actionlint only finds it
+# by walking up to a .git directory, which a copied tree may not have.
+CONFIG_ARGS=()
+[ ! -f "$ROOT/.github/actionlint.yaml" ] || CONFIG_ARGS=(-config-file "$ROOT/.github/actionlint.yaml")
 set +e
-"$ACTIONLINT_BIN" -no-color -shellcheck= -pyflakes= -- "${FILES[@]}"
+"$ACTIONLINT_BIN" -no-color -shellcheck= -pyflakes= ${CONFIG_ARGS[@]+"${CONFIG_ARGS[@]}"} -- "${FILES[@]}"
 rc=$?
 set -e
 

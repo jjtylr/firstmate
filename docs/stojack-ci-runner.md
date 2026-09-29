@@ -22,7 +22,7 @@ Memory is 8 GiB rather than the 4 GiB other CI VMs use, because full ShellCheck 
 ## Inside the VM
 
 Apt packages: `git`, `jq`, `curl`, `ca-certificates`, `tar`, `xz-utils`, `unzip`, `zip`, `python3`, `python-is-python3`, `perl`, `ruby`, `tmux`, `zsh`, `build-essential`, `lsof`, `sqlite3`, `file`, `procps`, `psmisc`, `openssl`, `gnupg`, and `gh` from GitHub's apt repository.
-Node 22 is installed from the nodejs.org tarball into `/usr/local`, because Ubuntu's `nodejs` is 18.
+Node 22 is installed from the nodejs.org tarball into `/usr/local`, because Ubuntu's `nodejs` is 18, and TypeScript 5 (`npm install -g --prefix /usr/local typescript@5`) provides the global `tsc` the Pi extension typecheck needs, as the hosted image did.
 The jobs install ShellCheck, actionlint, Herdr, Treehouse, tasks-axi, and the Pi package themselves.
 
 The runner (v2.337.0, labels `self-hosted, Linux, ARM64, stojack`) lives in `/home/runner/actions-runner` and runs as the no-sudo `runner` user under `actions.runner.jjtylr-firstmate.firstmate-stojack.service`, enabled at boot.
