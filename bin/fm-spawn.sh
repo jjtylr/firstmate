@@ -5317,6 +5317,8 @@ fi
 # across every step of the launch while firstmate's own git is unchanged.
 if [ "$KEEP_AI_TRAILERS" = 0 ]; then
   LAUNCH="export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=$(shell_quote "$GIT_HOOKS_DIR"); $LAUNCH"
+else
+  LAUNCH="if [ \"\${GIT_CONFIG_COUNT:-}\" = 1 ] && [ \"\${GIT_CONFIG_KEY_0:-}\" = core.hooksPath ] && [ \"\${GIT_CONFIG_VALUE_0:-}\" = $(shell_quote "$GIT_HOOKS_DIR") ]; then unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0; fi; $LAUNCH"
 fi
 # Every agent this fleet launches - crewmate, scout, and secondmate, on a fresh
 # spawn and on a relaunch alike - runs with the compact-adviser kill switch on.

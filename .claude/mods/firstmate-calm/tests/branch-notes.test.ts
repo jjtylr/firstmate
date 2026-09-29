@@ -46,6 +46,22 @@ const history: Row[] = [
 ];
 
 describe("supervision notes", () => {
+  test("reads and logs from the state override without consuming another home's outcomes", async ($, on) => {
+    const state = "/elsewhere/state";
+    const { clock, files, journal } = world(on, { env: { FM_STATE_OVERRIDE: state } });
+    files.set(TAIL, tail([{ seq: 1, task: "wrong-home", verdict: "captain", summary: "not this session" }]));
+    files.set(`${state}/.branch-outcomes-tail.jsonl`, tail(history));
+    files.set(`${state}/.branch-outcomes-cursor`, "3\n");
+    files.set(`${state}/.branch-outcomes-processed`, "1\n");
+    const before = [...files];
+    await $.session.start(sessionStart);
+    await clock.advance(POLL);
+    expect(journal.logs).toEqual(["⚓ [seq 3] fm-b: decision waiting", "⛵ fm-c: worker healthy"]);
+    expect(journal.fsReads).toContain(`${state}/.branch-outcomes-tail.jsonl`);
+    expect(journal.fsReads).not.toContain(TAIL);
+    expect([...files]).toEqual(before);
+  });
+
   test("session start replays unprocessed captain rows and unread visible routine rows with Calm off", async ($, on) => {
     const { files, journal } = world(on);
     files.set(TAIL, tail(history));

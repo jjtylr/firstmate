@@ -67,11 +67,12 @@ export const STOCK_TEXT = "STOCK-DRAWING";
 export function world(on: On, options: WorldOptions = {}): World {
   const home = "home" in options ? options.home : HOME;
   const functionHooks = "functionHooks" in options ? options.functionHooks : "1";
-  mock.env(on, {
+  const env: Record<string, string> = {
     ...(home === undefined ? {} : { FM_HOME: home }),
     ...(options.env ?? {}),
     ...(functionHooks === undefined ? {} : { CLAUDE_CODE_ENABLE_FUNCTION_HOOKS: functionHooks }),
-  });
+  };
+  on("env.get", async (_$, e) => ({ value: env[e.name] }));
   const clock = mock.clock(on);
   mock.store(on);
   let sessionId = "session-1";

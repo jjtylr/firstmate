@@ -1240,6 +1240,76 @@ test_keep_ai_trailers_omits_attribution_settings_and_strip_hooks() {
   pass "keep-ai-trailers omits Claude attribution settings and the pane strip hooks"
 }
 
+test_keep_ai_trailers_relaunch_clears_only_its_own_override() {
+  local rec id out status body
+  id=profile-keep-relaunch-z28
+  rec=$(make_spawn_case profile-keep-relaunch codex "$id")
+  read_case_record "$rec"
+  mkdir -p "$CASE_DIR/hooks" "$CASE_DIR/other-hooks"
+  git -C "$WT_DIR" config core.hooksPath "$CASE_DIR/hooks"
+  cat > "$CASE_DIR/hooks/commit-msg" <<'SH'
+#!/bin/sh
+printf 'project\n' >> "$FM_TEST_TRAILER_REPO/hooks.log"
+SH
+  cat > "$CASE_DIR/other-hooks/commit-msg" <<'SH'
+#!/bin/sh
+printf 'other\n' >> "$FM_TEST_TRAILER_REPO/hooks.log"
+SH
+  cat > "$FAKEBIN_DIR/codex" <<'SH'
+#!/bin/sh
+git -C "$FM_TEST_TRAILER_REPO" -c user.name=Tests -c user.email=tests@example.invalid \
+  commit -q --allow-empty -m 'probe: launch attribution' \
+  --trailer 'Co-authored-by: Cursor <cursoragent@cursor.com>'
+SH
+  chmod +x "$CASE_DIR/hooks/commit-msg" "$CASE_DIR/other-hooks/commit-msg" "$FAKEBIN_DIR/codex"
+
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  status=$?
+  expect_code 0 "$status" "initial stripping launch should succeed: $out"
+  cp "$LAUNCH_LOG" "$CASE_DIR/first-launch.sh"
+  : > "$HOME_DIR/config/keep-ai-trailers"
+  mv "$FAKEBIN_DIR/tmux" "$FAKEBIN_DIR/tmux-spawn"
+  cat > "$FAKEBIN_DIR/tmux" <<'SH'
+#!/bin/sh
+case "$*" in
+  *'#{pane_current_command}'*) printf 'bash\n'; exit 0 ;;
+esac
+exec "$(dirname "$0")/tmux-spawn" "$@"
+SH
+  chmod +x "$FAKEBIN_DIR/tmux"
+  out=$(FM_FAKE_DUPLICATE_WINDOW="fm-$id" \
+    run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" --relaunch)
+  status=$?
+  expect_code 0 "$status" "opted-in relaunch should succeed: $out"
+
+  out=$(env -i HOME="$HOME_DIR/user-home" PATH="$FAKEBIN_DIR:$PATH" \
+    GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 FM_TEST_TRAILER_REPO="$WT_DIR" \
+    /bin/sh -eu -c '
+      . "$1"
+      git -C "$FM_TEST_TRAILER_REPO" log -1 --format=%B > "$3/before.txt"
+      . "$2"
+      git -C "$FM_TEST_TRAILER_REPO" log -1 --format=%B > "$3/after.txt"
+      git -C "$FM_TEST_TRAILER_REPO" config --get core.hooksPath
+    ' _ "$CASE_DIR/first-launch.sh" "$LAUNCH_LOG" "$CASE_DIR" 2>&1)
+  status=$?
+  expect_code 0 "$status" "successive launches in the same pane shell should execute: $out"
+  assert_equals "$CASE_DIR/hooks" "$out" "relaunch should restore the repository's hooks"
+  assert_not_contains "$(cat "$CASE_DIR/before.txt")" 'Co-authored-by: Cursor' "initial launch should strip AI trailers"
+  body=$(cat "$CASE_DIR/after.txt")
+  assert_contains "$body" 'Co-authored-by: Cursor' "opted-in replacement still stripped AI trailers"
+  assert_equals $'project\nproject' "$(cat "$WT_DIR/hooks.log")" "both launches should run the repository hook"
+
+  out=$(env -i HOME="$HOME_DIR/user-home" PATH="$FAKEBIN_DIR:$PATH" \
+    GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 FM_TEST_TRAILER_REPO="$WT_DIR" \
+    GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0="$CASE_DIR/other-hooks" \
+    /bin/sh -eu -c '. "$1"; git -C "$FM_TEST_TRAILER_REPO" config --get core.hooksPath' _ "$LAUNCH_LOG" 2>&1)
+  status=$?
+  expect_code 0 "$status" "launch with an unrelated hook override should execute: $out"
+  assert_equals "$CASE_DIR/other-hooks" "$out" "opted-in launch cleared an override it does not own"
+  assert_equals $'project\nproject\nother' "$(cat "$WT_DIR/hooks.log")" "the unrelated hook should still run"
+  pass "keep-ai-trailers relaunch clears its earlier strip override and preserves unrelated hooks"
+}
+
 test_keep_ai_trailers_reaches_secondmate_crew_launches() {
   local rec sm_rec sm_id crew_id sm out status launch
   sm_id=profile-keep-attribution-sm-z26
@@ -1614,20 +1684,22 @@ SH
 # must both produce today's launch byte-for-byte, `auto` swaps only the
 # permission flag, and any other token refuses before endpoint or metadata.
 claude_settings_json_arg() {  # <launch>
-  local command=$1
-  while [[ "$command" == export\ *\;* ]]; do
-    command=${command#*; }
-  done
-  eval "set -- $command"
-  while [ "$#" -gt 0 ]; do
-    if [ "$1" = --settings ]; then
-      shift
-      printf '%s' "$1"
-      return 0
-    fi
+  local probe="$TMP_ROOT/settings-probe"
+  mkdir -p "$probe"
+  cat > "$probe/claude" <<'SH'
+#!/bin/sh
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = --settings ]; then
     shift
-  done
-  return 1
+    printf '%s' "$1"
+    exit 0
+  fi
+  shift
+done
+exit 1
+SH
+  chmod +x "$probe/claude"
+  PATH="$probe:$PATH" /bin/sh -c "$1"
 }
 
 claude_launch_brief_arg() {  # <launch>
@@ -1843,6 +1915,7 @@ test_claude_secondmate_launch_omits_task_control_channel_authority
 test_claude_long_launch_is_delivered_intact
 test_claude_crewmate_launch_carries_the_attribution_policy
 test_keep_ai_trailers_omits_attribution_settings_and_strip_hooks
+test_keep_ai_trailers_relaunch_clears_only_its_own_override
 test_keep_ai_trailers_reaches_secondmate_crew_launches
 test_claude_secondmate_launch_carries_the_attribution_policy
 test_active_dispatch_profile_does_not_block_secondmate_launch
