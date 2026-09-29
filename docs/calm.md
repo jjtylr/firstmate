@@ -240,9 +240,10 @@ A home whose outcome store predates the copy gains one at its next locked sessio
 On later reads, if the copy skips sequence numbers since the last seen outcome, one line counts the missing outcomes.
 The display copy's row and byte bounds are owned by [`fm-branch-outcome.sh`](../bin/fm-branch-outcome.sh); older outcomes and oversized rows cannot always be displayed by the mod, while the outcome store and main's delivery remain authoritative.
 Claude Code keeps each note in the session as a display-only entry and restores it on `claude --continue`, so the mod remembers in its own plugin store how far each session has followed the outcomes, and a resumed session replays only outcomes it has not shown.
+That replay suppression depends on a retained, writable session position; the bounded session history or a failed store write can cause still-due notes to replay on resume.
 Claude Code keys that store by plugin name, so a session that showed notes before the plugin was renamed from `firstmate-calm` to `fm` and is resumed afterwards replays its still-due notes once.
 The mod only reads outcome and host state: the drain owns off-Pi read-cursor advancement, and main explicitly acknowledges captain outcomes as processed.
-Only a home that runs the supervision host has outcomes to show.
+The shared outcome store can also contain notes from an earlier Pi primary; displaying them does not require the supervision host to be enabled.
 
 ### What Calm hides on Claude Code
 

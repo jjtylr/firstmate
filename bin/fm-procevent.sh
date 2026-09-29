@@ -175,11 +175,13 @@
 # go silent. An unhandled result stays eligible for bounded re-announcement on
 # every reconcile in both modes, exactly as before.
 #
-# Polling again is adapter-owned through the same kind of seam. An adapter that
-# answers exit 0 to `bin/fm-procevent-<adapter>.sh relisten` keeps this runner
-# and its claim across an empty result and across a capture, and the runner
-# polls the registration that claim still owns. It adopts a replacement
-# registration only when that same claim still owns it and the registered
+# Built-in adapters own polling again through the same kind of seam. An
+# adapter that answers exit 0 to `bin/fm-procevent-<adapter>.sh relisten` keeps
+# this runner and its claim after an empty wait (exit 75 with no output) or a
+# successfully auto-handled capture, and the runner polls the registration
+# that claim still owns. External extension adapters do not use this seam.
+# It adopts a replacement registration only when that same claim still owns
+# it and the registered
 # command is unchanged. A missing command, an error, or any other exit releases
 # the claim after that one result, exactly as before. The runner still does not
 # refresh the owner lease, so a home that has gone still ends the poll.

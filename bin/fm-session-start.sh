@@ -576,8 +576,10 @@ print_status_tail() {
 # a per-task backend liveness read that dies mid-read would otherwise take
 # every later stage with it. Isolation turns any death, hang, or nonzero
 # surprise in one task's read into that task's own endpoint line - never a
-# silently missing rest of digest. The inner bash re-sources fm-backend.sh
-# per read; that cost is a few milliseconds per task and buys the isolation.
+# silently missing rest of digest. Only timeout and signal-death statuses are
+# read errors; other nonzero statuses retain the probe's endpoint-gone verdict.
+# The inner bash re-sources fm-backend.sh per read; the child boundary keeps
+# a signal death out of the digest process.
 fm_session_start_endpoint_read() {  # <backend> <target> [expected-label]
   local backend=$1 target=$2 label=${3:-}
   # shellcheck disable=SC2016  # Positional parameters expand inside the child bash, not here.
