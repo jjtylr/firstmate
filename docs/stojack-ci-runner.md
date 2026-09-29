@@ -11,13 +11,13 @@ An OrbStack machine named `firstmate-ci`, Ubuntu 24.04 arm64:
 
 ```bash
 orb create --isolated --isolate-network --cpus 4 --memory 4G --disk 40G -a arm64 ubuntu:noble firstmate-ci
-orb config set machine.firstmate-ci.memory_mib 8192 && orb restart firstmate-ci
+orb config set machine.firstmate-ci.memory_mib 12288 && orb restart firstmate-ci
 ```
 
 `--isolated` removes the Mac filesystem mount and makes the `mac` command fail, and `--isolate-network` blocks the Mac's own services and the other OrbStack machines while the internet stays reachable.
 The LAN is still reachable; what keeps anything else safe is that the runner holds no credential.
 The CPU and memory values are per-machine ceilings; never change OrbStack's global settings to make room.
-Memory is 8 GiB rather than the 4 GiB other CI VMs use, because full ShellCheck analysis of the largest `bin/` scripts exceeded 4 GiB and was OOM-killed.
+Memory is 12 GiB rather than the 4 GiB other CI VMs use, because full ShellCheck analysis of the largest scripts (`bin/fm-teardown.sh`, `tests/fm-pending-reply.test.sh`) peaks near 9 GiB; hosted runners had 16 GiB.
 
 ## Inside the VM
 
