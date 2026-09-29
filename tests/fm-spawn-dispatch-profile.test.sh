@@ -1282,6 +1282,7 @@ SH
   status=$?
   expect_code 0 "$status" "opted-in relaunch should succeed: $out"
 
+  # shellcheck disable=SC2016
   out=$(env -i HOME="$HOME_DIR/user-home" PATH="$FAKEBIN_DIR:$PATH" \
     GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 FM_TEST_TRAILER_REPO="$WT_DIR" \
     /bin/sh -eu -c '
@@ -1299,6 +1300,7 @@ SH
   assert_contains "$body" 'Co-authored-by: Cursor' "opted-in replacement still stripped AI trailers"
   assert_equals $'project\nproject' "$(cat "$WT_DIR/hooks.log")" "both launches should run the repository hook"
 
+  # shellcheck disable=SC2016
   out=$(env -i HOME="$HOME_DIR/user-home" PATH="$FAKEBIN_DIR:$PATH" \
     GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 FM_TEST_TRAILER_REPO="$WT_DIR" \
     GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0="$CASE_DIR/other-hooks" \
