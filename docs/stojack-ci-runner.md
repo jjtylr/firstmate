@@ -11,11 +11,13 @@ An OrbStack machine named `firstmate-ci`, Ubuntu 24.04 arm64:
 
 ```bash
 orb create --isolated --isolate-network --cpus 4 --memory 4G --disk 40G -a arm64 ubuntu:noble firstmate-ci
+orb config set machine.firstmate-ci.memory_mib 8192 && orb restart firstmate-ci
 ```
 
 `--isolated` removes the Mac filesystem mount and makes the `mac` command fail, and `--isolate-network` blocks the Mac's own services and the other OrbStack machines while the internet stays reachable.
 The LAN is still reachable; what keeps anything else safe is that the runner holds no credential.
 The CPU and memory values are per-machine ceilings; never change OrbStack's global settings to make room.
+Memory is 8 GiB rather than the 4 GiB other CI VMs use, because full ShellCheck analysis of the largest `bin/` scripts exceeded 4 GiB and was OOM-killed.
 
 ## Inside the VM
 
@@ -24,6 +26,7 @@ Node 22 is installed from the nodejs.org tarball into `/usr/local`, because Ubun
 The jobs install ShellCheck, actionlint, Herdr, Treehouse, tasks-axi, and the Pi package themselves.
 
 The runner (v2.337.0, labels `self-hosted, Linux, ARM64, stojack`) lives in `/home/runner/actions-runner` and runs as the no-sudo `runner` user under `actions.runner.jjtylr-firstmate.firstmate-stojack.service`, enabled at boot.
+A drop-in (`oom.conf`) sets `OOMPolicy=continue` and `Restart=on-failure`, so an OOM-killed job fails that job instead of stopping the runner service.
 Its `.env` sets `TMPDIR`, a user-owned `NPM_CONFIG_PREFIX` so the jobs' `npm install -g` works without root, a `PATH` that includes that prefix, and `/home/runner/hooks/clean.sh` as the job-started and job-completed hook.
 The hook stops stray `tmux` and `herdr` servers the tests left behind and empties `TMPDIR` and the job's workspace.
 
