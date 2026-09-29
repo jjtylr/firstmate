@@ -1133,8 +1133,27 @@ done
   || fail "an unchanged active note re-rang the doorbell on every reconcile: $(cat "$RING_LOG")"
 [ -f "$HREDELIVER/state/worker-6.inbox/001.msg" ] \
   || fail "repeated reconciles dropped the still-active note from the inbox"
-mv "$HREDELIVER/state/worker-6.inbox/001.msg" \
-  "$HREDELIVER/state/worker-6.inbox/handled/001.msg"
+ACK_BIN=$(fm_fakebin "$TMP_ROOT/ack-during-enqueue-stub")
+cat > "$ACK_BIN/mkdir" <<'SH'
+#!/usr/bin/env bash
+set -eu
+if [ "$#" -eq 2 ] && [ "$1" = -p ] && [ "$2" = "$FM_ACK_INBOX/handled" ] \
+  && [ -f "$FM_ACK_INBOX/001.msg" ]; then
+  mv "$FM_ACK_INBOX/001.msg" "$FM_ACK_INBOX/handled/001.msg"
+fi
+exec "$FM_REAL_MKDIR" "$@"
+SH
+chmod +x "$ACK_BIN/mkdir"
+ACK_REAL_MKDIR=$(command -v mkdir)
+PATH="$ACK_BIN:$RING_BIN:$ADOPT_BIN:$PATH" FM_SEND_LOG="$RING_LOG" \
+  FM_ACK_INBOX="$HREDELIVER/state/worker-6.inbox" FM_REAL_MKDIR="$ACK_REAL_MKDIR" \
+  pe "$HREDELIVER" reconcile >/dev/null 2>&1 \
+  || fail "reconcile failed while the worker acknowledged its inbox note"
+[ -f "$HREDELIVER/state/worker-6.inbox/handled/001.msg" ] \
+  || fail "the racing acknowledgement did not move the note during enqueue"
+[ "$(wc -l < "$RING_LOG" | tr -d ' ')" = 1 ] \
+  || fail "acknowledgement racing enqueue rang the worker's empty inbox: $(cat "$RING_LOG")"
+pass "an acknowledgement during enqueue does not ring the worker's empty inbox"
 i=0
 while [ "$i" -lt 5 ]; do
   PATH="$RING_BIN:$ADOPT_BIN:$PATH" FM_SEND_LOG="$RING_LOG" pe "$HREDELIVER" reconcile >/dev/null 2>&1 || true

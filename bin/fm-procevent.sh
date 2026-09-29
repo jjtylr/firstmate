@@ -784,7 +784,7 @@ cmd_register_extension() {
 # and drains until `fm_procevent_mark_handled` records it.
 publish_result() {  # <result-file>
   local result=$1 id seq adapter line status=1 owner_task='' message='' record=''
-  local ring_backend ring_target ring_meta inbox_dir handled_dir pre_existing existing new_record
+  local ring_backend ring_target ring_meta write_result new_record=0
   id=$(fm_procevent_result_source_id "$result")
   seq=$(fm_procevent_result_sequence "$result")
   fm_procevent_source_id_valid "$id" || return 1
@@ -812,25 +812,10 @@ publish_result() {  # <result-file>
         unset FM_PROCEVENT_CAPTURE_SOURCE_LOCK_HELD
         message="Lavish review feedback is captured for task $owner_task at $result. Read it with bin/fm-procevent-lavish.sh read $result, apply the round, and re-arm the board with the reply."
       fi
-      # Snapshot the records that already exist (active and handled) before
-      # the idempotent write, so a dedup match - including one already
-      # acknowledged in handled/ - is never treated as new. Only a write
-      # that actually creates a fresh record rings; an already-acknowledged
-      # record is never moved back out of handled/, and re-delivery of a
-      # still-unacknowledged one is left to the inbox re-ring ladder.
-      inbox_dir=$(fm_task_inbox_dir "$STATE" "$owner_task")
-      handled_dir=$(fm_task_inbox_handled_dir "$STATE" "$owner_task")
-      pre_existing=$(printf '%s\n' "$inbox_dir"/*.msg "$handled_dir"/*.msg 2>/dev/null)
-      record=$(fm_task_inbox_write_idempotent "$STATE" "$owner_task" "$message" 2>/dev/null || true)
-      [ -n "$record" ] && status=0
-      new_record=0
-      if [ "$status" -eq 0 ]; then
-        new_record=1
-        while IFS= read -r existing; do
-          [ "$existing" = "$record" ] && { new_record=0; break; }
-        done <<EOF
-$pre_existing
-EOF
+      if write_result=$(fm_task_inbox_write_idempotent "$STATE" "$owner_task" "$message" '' --report-created 2>/dev/null); then
+        new_record=${write_result%%$'\t'*}
+        record=${write_result#*$'\t'}
+        status=0
       fi
       fm_procevent_source_lock_release "$id"
       if [ "$new_record" -eq 1 ]; then
