@@ -18,6 +18,7 @@ orb config set machine.firstmate-ci.memory_mib 12288 && orb restart firstmate-ci
 The LAN is still reachable; what keeps anything else safe is that the runner holds no credential.
 The CPU and memory values are per-machine ceilings; never change OrbStack's global settings to make room.
 Memory is 12 GiB rather than the 4 GiB other CI VMs use, because full ShellCheck analysis of the largest scripts (`bin/fm-teardown.sh`, `tests/fm-pending-reply.test.sh`) peaks near 9 GiB; hosted runners had 16 GiB.
+The lint job also raises `FM_LINT_ROOT_MEMORY_KIB` to 16 GiB, because that ShellCheck on arm64 Linux needs more than the default 12 GiB of address space for `bin/fm-teardown.sh` while staying near 8.5 GiB resident.
 
 ## Inside the VM
 

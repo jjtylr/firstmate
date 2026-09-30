@@ -61,6 +61,9 @@ jobs:
           # bound (wall deadline or memory rlimit) cannot be enforced here.
           FM_LINT_REQUIRE_BOUNDS: '1'
           FM_LINT_JOBS: '1'
+          # The pinned ShellCheck on the arm64 stojack runner needs more than
+          # 12 GiB of address space (8.5 GiB resident) for bin/fm-teardown.sh.
+          FM_LINT_ROOT_MEMORY_KIB: '16777216'
         run: |
           set -eu
           mkdir -p "$RUNNER_TEMP/fm-lint"
