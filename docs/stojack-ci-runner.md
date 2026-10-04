@@ -1,0 +1,62 @@
+# stojack CI runner
+
+This fork's CI runs on one self-hosted runner, `firstmate-stojack`, inside a Linux VM on the stojack Mac mini.
+GitHub stopped starting hosted jobs over a billing limit, and hosted minutes are not wanted, so every `ci.yml` job targets `[self-hosted, linux, stojack]`.
+The setup copies the ripplez and edgez runners ([jjtylr/ripplez#81](https://github.com/jjtylr/ripplez/pull/81), [jjtylr/edgez#79](https://github.com/jjtylr/edgez/pull/79)).
+The runner holds no secrets.
+
+## The VM
+
+An OrbStack machine named `firstmate-ci`, Ubuntu 24.04 arm64:
+
+```bash
+orb create --isolated --isolate-network --cpus 4 --memory 4G --disk 40G -a arm64 ubuntu:noble firstmate-ci
+orb config set machine.firstmate-ci.memory_mib 12288 && orb restart firstmate-ci
+```
+
+`--isolated` removes the Mac filesystem mount and makes the `mac` command fail, and `--isolate-network` blocks the Mac's own services and the other OrbStack machines while the internet stays reachable.
+The LAN is still reachable; what keeps anything else safe is that the runner holds no credential.
+The CPU and memory values are per-machine ceilings; never change OrbStack's global settings to make room.
+Memory is 12 GiB rather than the 4 GiB other CI VMs use, because full ShellCheck analysis of the largest scripts (`bin/fm-teardown.sh`, `tests/fm-pending-reply.test.sh`) peaks near 9 GiB; hosted runners had 16 GiB.
+The lint job also raises `FM_LINT_ROOT_MEMORY_KIB` to 16 GiB, because that ShellCheck on arm64 Linux needs more than the default 12 GiB of address space for `bin/fm-teardown.sh` while staying near 8.5 GiB resident.
+
+## Inside the VM
+
+Apt packages: `git`, `jq`, `curl`, `ca-certificates`, `tar`, `xz-utils`, `unzip`, `zip`, `python3`, `python-is-python3`, `perl`, `ruby`, `tmux`, `zsh`, `build-essential`, `lsof`, `sqlite3`, `file`, `procps`, `psmisc`, `openssl`, `gnupg`, and `gh` from GitHub's apt repository.
+Node 22 is installed from the nodejs.org tarball into `/usr/local`, because Ubuntu's `nodejs` is 18, and TypeScript 5 (`npm install -g --prefix /usr/local typescript@5`) provides the global `tsc` the Pi extension typecheck needs, as the hosted image did.
+The jobs install ShellCheck, actionlint, Herdr, Treehouse, tasks-axi, and the Pi package themselves.
+
+The runner (v2.337.0, labels `self-hosted, Linux, ARM64, stojack`) lives in `/home/runner/actions-runner` and runs as the no-sudo `runner` user under `actions.runner.jjtylr-firstmate.firstmate-stojack.service`, enabled at boot.
+A drop-in (`oom.conf`) sets `OOMPolicy=continue` and `Restart=on-failure`, so an OOM-killed job fails that job instead of stopping the runner service.
+Its `.env` sets `TMPDIR`, a user-owned `NPM_CONFIG_PREFIX` so the jobs' `npm install -g` works without root, a `PATH` that includes that prefix, and `/home/runner/hooks/clean.sh` as the job-started and job-completed hook.
+The hook stops stray `tmux` and `herdr` servers the tests left behind and empties `TMPDIR` and the job's workspace.
+
+IPv6 is off (`/etc/sysctl.d/99-no-ipv6.conf`, applied at boot by `disable-ipv6.service`), because `--isolate-network` leaves an IPv6 default route with no egress.
+
+One runner takes one job at a time, so a CI run's jobs queue behind each other.
+
+## Dropped jobs
+
+The stock macOS Bash 3.2 job is dropped: stojack has no sandboxed macOS user, and a native runner would execute pull-request code as the Mac's own user.
+The manual Windows Herdr spike workflow and the no-mistakes PR-body compliance check are also removed.
+
+## Starting on boot
+
+The unit starts with the VM, the VM starts with OrbStack, and OrbStack starts at josh's login; stojack has no automatic login, so after a reboot nothing runs until someone logs in.
+
+## Operating it
+
+```bash
+ssh stojack '/opt/homebrew/bin/orb -m firstmate-ci -u root systemctl status actions.runner.jjtylr-firstmate.firstmate-stojack'
+ssh stojack '/opt/homebrew/bin/orb -m firstmate-ci -u root journalctl -u actions.runner.jjtylr-firstmate.firstmate-stojack -n 100'
+gh api repos/jjtylr/firstmate/actions/runners --jq '.runners[] | {name, status, busy}'
+```
+
+To re-register, mint a one-time token (it expires in an hour; no PAT goes on the machine):
+
+```bash
+TOKEN=$(gh api -X POST repos/jjtylr/firstmate/actions/runners/registration-token --jq .token)
+ssh stojack "/opt/homebrew/bin/orb -m firstmate-ci -u root bash -c 'cd /home/runner/actions-runner && ./svc.sh stop && sudo -u runner ./config.sh --unattended --replace --url https://github.com/jjtylr/firstmate --token $TOKEN --name firstmate-stojack --labels stojack --work _work && ./svc.sh start'"
+```
+
+To rebuild from nothing, `orb delete firstmate-ci` removes only this VM.

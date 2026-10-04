@@ -22,12 +22,49 @@ import {
 const sessionStart = { cwd: "/work", surface: "terminal" as const, isInteractive: true };
 
 describe("activation", () => {
+  test("startup, rendering, toggles, and polling never invoke external or prompt side effects", async ($, on) => {
+    const { clock, files, journal } = world(on);
+    const calls: string[] = [];
+    for (const event of [
+      "process.run", "http.fetch", "env.set", "tool.call",
+      "prompt.submit", "prompt.fill", "prompt.edit", "prompt.suggest",
+      "prompt.section", "prompt.context", "prompt.attachment",
+    ] as const) {
+      on(event, async () => {
+        calls.push(event);
+        return { deny: `Unexpected ${event}` };
+      });
+    }
+    files.set(
+      `${HOME}/state/.branch-outcomes-tail.jsonl`,
+      '{"seq":1,"epoch":0,"task":"fm-x","wake":"","verdict":"captain","summary":"PR ready","silent":false}\n',
+    );
+    await $.session.start(sessionStart);
+    for (let toggle = 0; toggle < 2; toggle += 1) {
+      await $.command.run(calmCommand());
+      await $.ui.render(spinner());
+      await $.ui.render(toolUse());
+      await $.ui.render(toolResult());
+      await $.ui.render(toolGroup());
+      await $.ui.render(userMessage(operational("watcher", "signal: x")));
+      await $.ui.render(assistantMessage("Working"));
+      await clock.advance(3000);
+    }
+    expect(journal.logs).toEqual(["⚓ [seq 1] fm-x: PR ready"]);
+    expect(files.get(PREFERENCE)).toBe("off\n");
+    expect(calls).toEqual([]);
+  });
+
   async function expectInert($: Engine, on: Parameters<typeof world>[0], functionHooks: string | undefined) {
-    const { clock, journal } = world(on, {
+    const { clock, files, journal } = world(on, {
       functionHooks,
       preference: "on\n",
       messages: [{ role: "assistant", text: "Working", toolUses: [{ name: "Bash" }] }],
     });
+    files.set(
+      `${HOME}/state/.branch-outcomes-tail.jsonl`,
+      '{"seq":1,"epoch":0,"task":"fm-x","wake":"","verdict":"captain","summary":"PR ready","silent":false}\n',
+    );
     await $.session.start(sessionStart);
     const drawings = await Promise.all([
       $.ui.render(spinner()),
@@ -38,12 +75,13 @@ describe("activation", () => {
       $.ui.render(assistantMessage("Working")),
     ]);
     expect(drawings.every(isStock)).toBe(true);
-    await clock.advance(220 * 8);
+    await clock.advance(220 * 16);
     expect(journal.commands).toHaveLength(0);
     expect(journal.blits).toHaveLength(0);
     expect(journal.invalidations).toHaveLength(0);
     expect(journal.toasts).toHaveLength(0);
     expect(journal.fsReads).toHaveLength(0);
+    expect(journal.logs).toHaveLength(0);
     expect(journal.sessionMessageReads).toBe(0);
     expect(journal.configLists).toBe(0);
   }
@@ -373,7 +411,7 @@ describe("mid-turn working notes", () => {
       result: { answer: "Done.", toolUses: [{ name: "Bash", input: {} }], stopReason: "tool_use" },
     });
     await runStep($);
-    expect(journal.fsReads).toHaveLength(2);
+    expect(journal.fsReads.filter((path) => path === PREFERENCE)).toHaveLength(2);
     expect(journal.sessionMessageReads).toBe(2);
     expect(isHidden(await $.ui.render(assistantMessage("Done.", "session-two-note")))).toBe(true);
   });

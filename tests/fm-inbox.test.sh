@@ -401,6 +401,30 @@ assert_equals "False" "$(printf '%s' "$ready" | python3 -c 'import json,sys; pri
 assert_equals "present" "$(printf '%s' "$ready" | python3 -c 'import json,sys; print(json.load(sys.stdin)["posture"]["state"])')" \
   "no away flag is present posture"
 
+for mode in quiet away; do
+  home=$(make_home "ready-record-$mode")
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_AFK_MODE="$mode" \
+    bash "$ROOT/bin/fm-afk-contract.sh" enter --words "record readiness posture" >/dev/null \
+    || fail "$mode record entry should succeed"
+  assert_absent "$home/state/.afk" "record entry has not started the daemon"
+  cp "$home/state/.afk-contract" "$home/record-before-ready"
+  ready=$(run_inbox "$home" ready) || fail "ready should succeed for a $mode record"
+  assert_equals "$mode" "$(printf '%s' "$ready" | json_get posture state)" \
+    "ready preserves the $mode record's posture without a daemon flag"
+  cmp -s "$home/record-before-ready" "$home/state/.afk-contract" \
+    || fail "ready must leave the $mode record unchanged"
+  assert_absent "$home/state/.afk" "ready must not start a daemon"
+  assert_absent "$home/state/.lock" "ready must not acquire the session lock"
+  assert_absent "$home/state/.wake-queue" "ready must not append a wake"
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" \
+    bash "$ROOT/bin/fm-afk-contract.sh" archive >/dev/null \
+    || fail "$mode record archive should succeed"
+  ready=$(run_inbox "$home" ready) || fail "ready should succeed after archiving the $mode record"
+  assert_equals "present" "$(printf '%s' "$ready" | json_get posture state)" \
+    "archiving the $mode record restores present posture"
+done
+pass "readiness preserves quiet and away record modes without a daemon flag"
+
 # A live non-harness pid in the lock file must not be treated as a live primary.
 home=$(make_home ready-unknown)
 printf '%s\n' "$$" > "$home/state/.lock"

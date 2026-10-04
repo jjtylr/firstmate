@@ -417,6 +417,26 @@ test_idempotent_write_dedups_exact_body() {
   pass "inbox: the idempotent enqueue dedups an exact re-run onto the same record, handled or not"
 }
 
+test_idempotent_write_reports_creation() {
+  local state result rec
+  state="$TMP_ROOT/idem-created/state"; mkdir -p "$state"
+  result=$(inbox_lib "$state" fm_task_inbox_write_idempotent "$state" t1 "steer" '' --report-created) \
+    || fail "idempotent write with creation reporting failed"
+  rec="$state/t1.inbox/001.msg"
+  [ "$result" = $'1\t'"$rec" ] || fail "new record was not reported as created: $result"
+  [ -f "$rec" ] || fail "creation was reported without a durable record"
+  result=$(inbox_lib "$state" fm_task_inbox_write_idempotent "$state" t1 "steer" '' --report-created) \
+    || fail "idempotent repeat with creation reporting failed"
+  [ "$result" = $'0\t'"$rec" ] || fail "existing active record was reported as created: $result"
+  mv "$rec" "$state/t1.inbox/handled/"
+  result=$(inbox_lib "$state" fm_task_inbox_write_idempotent "$state" t1 "steer" '' --report-created) \
+    || fail "idempotent acknowledged repeat with creation reporting failed"
+  [ "$result" = $'0\t'"$state/t1.inbox/handled/001.msg" ] \
+    || fail "existing handled record was reported as created: $result"
+  [ ! -e "$state/t1.inbox/002.msg" ] || fail "creation reporting changed deduplication"
+  pass "inbox: idempotent enqueue reports creation separately from the record path"
+}
+
 test_idempotent_write_follows_concurrent_ack() {
   local state rec result count text
   state="$TMP_ROOT/idem-ack-race/state"; mkdir -p "$state"
@@ -435,10 +455,10 @@ test_idempotent_write_follows_concurrent_ack() {
       esac
       _original_fm_task_inbox_body "$candidate"
     }
-    fm_task_inbox_write_idempotent "$2" t1 "$3"
+    fm_task_inbox_write_idempotent "$2" t1 "$3" "" --report-created
   ' _ "$ROOT/bin/fm-task-inbox-lib.sh" "$state" "$text") \
     || fail "idempotent enqueue failed while acknowledgement moved its candidate"
-  [ "$result" = "$state/t1.inbox/handled/${rec##*/}" ] \
+  [ "$result" = $'0\t'"$state/t1.inbox/handled/${rec##*/}" ] \
     || fail "dedup did not follow the concurrently acknowledged record: $result"
   count=$(find "$state/t1.inbox" -name '*.msg' | wc -l | tr -d ' ')
   [ "$count" = 1 ] || fail "acknowledgement racing dedup created a duplicate record"
@@ -804,6 +824,7 @@ test_doorbell_rejects_terminal_controls
 test_ring_skips_dead_agent
 test_ring_submits_its_own_stuck_doorbell
 test_idempotent_write_dedups_exact_body
+test_idempotent_write_reports_creation
 test_idempotent_write_follows_concurrent_ack
 test_handled_mv_dedups_by_sequence
 test_concurrent_writers_never_clobber
