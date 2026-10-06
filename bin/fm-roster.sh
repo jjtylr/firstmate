@@ -91,8 +91,9 @@ M_ID=() M_ROLE=() M_COMPUTER=() M_PLACEMENT=() M_HOME=() M_SUMMARY=() M_SCOPE=()
 trim() { local s=$1; s=${s#"${s%%[![:space:]]*}"}; printf '%s' "${s%"${s##*[![:space:]]}"}"; }
 
 split_projects() {  # <comma list> -> unique trimmed names, one per line
-  local IFS=, item name out=""
-  for item in $1; do
+  local IFS=, item name out="" items=()
+  read -r -a items <<< "$1"
+  for item in "${items[@]}"; do
     name=$(trim "$item")
     [ -n "$name" ] || continue
     printf '%s\n' "$out" | grep -Fxq -- "$name" && continue

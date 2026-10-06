@@ -21,7 +21,7 @@ HOST=$(hostname -s 2>/dev/null || uname -n)
 HOST=${HOST%%.*}
 
 home=$T/home
-mkdir -p "$home/data" "$T/elsewhere"
+mkdir -p "$home/data" "$T/elsewhere/alpha"
 cat > "$home/data/projects.md" <<'EOF'
 # Projects
 
@@ -30,11 +30,12 @@ cat > "$home/data/projects.md" <<'EOF'
 - gamma - legacy entry (added 2026-01-01)
 - delta [local-only] - plain folder (added 2026-01-01)
 - my project [local-only] - spaced name (added 2026-01-01)
+- * [local-only] - wildcard name (added 2026-01-01)
 EOF
 cat > "$home/data/secondmates.md" <<EOF
 # Second mates
 
-- near - Own beta; and (some) prose. (home: $T/near-home; scope: All beta work; with semicolons; projects: beta, shared, my project; added 2026-01-02)
+- near - Own beta; and (some) prose. (home: $T/near-home; scope: All beta work; with semicolons; projects: beta, shared, my project,*; added 2026-01-02)
 - far - Own gamma remotely. (host: box-2; root: /srv/firstmate; home: /srv/homes/far; scope: All gamma work; projects: gamma, shared; added 2026-01-03)
 EOF
 fm_git_init_commit "$home/projects/alpha" >/dev/null
@@ -67,6 +68,7 @@ assert_equals "{\"role\":\"firstmate\",\"computer\":\"$HOST\",\"placement\":\"lo
   "$(q '.mates[0] | {role,computer,placement,home,summary,scope}')" "(b) first mate fields"
 assert_equals '["alpha","delta"]' "$(q '[.mates[0].projects[].name]')" "(b) first mate keeps unlisted projects"
 assert_equals '"my project"' "$(q '.mates[1].projects[] | select(.name=="my project") | .name')" "project names with spaces stay assigned"
+assert_equals '"*"' "$(q '.mates[1].projects[] | select(.name=="*") | .name')" "glob characters stay literal"
 pass "(b) first mate holds the rest of the main registry"
 
 assert_equals '{"name":"shared","repo":null,"shared":true,"mates":["near","far"]}' \
@@ -97,7 +99,7 @@ cp "$T/secondmates.saved" "$home/data/secondmates.md"
 mv "$home/data/secondmates.md" "$T/secondmates.saved"
 out=$(roster --json) || fail "(e) roster without secondmates.md exited non-zero"
 assert_equals '["main"]' "$(q '[.mates[].id]')" "(e) only the first mate"
-assert_equals '["alpha","beta","gamma","delta","my project"]' "$(q '[.mates[0].projects[].name]')" "(e) first mate holds every project"
+assert_equals '["alpha","beta","gamma","delta","my project","*"]' "$(q '[.mates[0].projects[].name]')" "(e) first mate holds every project"
 pass "(e) absent secondmate registry yields the first mate alone"
 ln -s "$T/missing-registry-target" "$home/data/secondmates.md"
 rc=0
@@ -126,6 +128,6 @@ assert_contains "$err" "malformed secondmate registry entry" "(h) names the malf
 pass "(h) a malformed secondmate entry is an error"
 
 names=$(FM_HOME=$home "$ROOT/bin/fm-project-mode.sh" --list)
-assert_equals $'alpha\nbeta\ngamma\ndelta\nmy project' "$names" "(i) --list names"
+assert_equals $'alpha\nbeta\ngamma\ndelta\nmy project\n*' "$names" "(i) --list names"
 assert_equals "" "$(FM_HOME=$T/elsewhere "$ROOT/bin/fm-project-mode.sh" --list)" "(i) --list with no registry"
 pass "(i) fm-project-mode.sh --list enumerates registry names"
