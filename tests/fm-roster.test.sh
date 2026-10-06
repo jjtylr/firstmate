@@ -120,6 +120,14 @@ assert_contains "$err" "secondmate registry is unsafe" "dangling symlink is reje
 pass "dangling secondmate registry symlink is not treated as absent"
 rm "$home/data/secondmates.md"
 mv "$T/secondmates.saved" "$home/data/secondmates.md"
+mv "$home/data/projects.md" "$T/projects.saved"
+ln -s "$T/missing-project-registry" "$home/data/projects.md"
+rc=0
+err=$(roster --json 2>&1 >/dev/null) || rc=$?
+expect_code 1 "$rc" "roster rejects project-list failure"
+assert_contains "$err" "project registry is unsafe" "roster propagates project-list failure"
+rm "$home/data/projects.md"
+mv "$T/projects.saved" "$home/data/projects.md"
 
 code=$T/code
 mkdir -p "$code"
@@ -145,14 +153,17 @@ printf '%s\n' '- trailing -' > "$home/data/projects.md"
 assert_equals "trailing" "$(FM_HOME=$home "$ROOT/bin/fm-project-mode.sh" --list)" "(i) trailing separator matches lookup boundary"
 mv "$home/data/projects.md" "$home/data/projects.saved"
 ln -s "$home/data/projects.saved" "$home/data/projects.md"
-rc=0
-err=$(FM_HOME=$home "$ROOT/bin/fm-project-mode.sh" --list 2>&1 >/dev/null) || rc=$?
-expect_code 1 "$rc" "symlinked project registry"
-assert_contains "$err" "project registry is unsafe" "valid-target symlink is rejected"
+assert_equals "trailing" "$(FM_HOME=$home "$ROOT/bin/fm-project-mode.sh" --list)" "valid-target symlink is listed"
 rm "$home/data/projects.md"
 ln -s "$T/missing-project-registry" "$home/data/projects.md"
 rc=0
 err=$(FM_HOME=$home "$ROOT/bin/fm-project-mode.sh" --list 2>&1 >/dev/null) || rc=$?
 expect_code 1 "$rc" "dangling project registry symlink"
 assert_contains "$err" "project registry is unsafe" "dangling symlink is rejected"
-pass "(i) fm-project-mode.sh --list rejects project registry symlinks"
+rm "$home/data/projects.md"
+mkdir "$home/data/projects.md"
+rc=0
+err=$(FM_HOME=$home "$ROOT/bin/fm-project-mode.sh" --list 2>&1 >/dev/null) || rc=$?
+expect_code 1 "$rc" "non-regular project registry"
+assert_contains "$err" "project registry is unsafe" "non-regular path is rejected"
+pass "(i) --list validates project registry paths"

@@ -136,6 +136,10 @@ for projects in "${M_PROJECTS[@]}"; do
 $projects
 EOF
 done
+project_names=$(FM_HOME="$MAIN_HOME" FM_DATA_OVERRIDE="$DATA" "$SCRIPT_DIR/fm-project-mode.sh" --list) || {
+  echo "fm-roster: could not list registered projects" >&2
+  exit 1
+}
 main_projects=""
 while IFS= read -r name; do
   [ -n "$name" ] || continue
@@ -143,7 +147,7 @@ while IFS= read -r name; do
   printf '%s\n' "$main_projects" | grep -Fxq -- "$name" && continue
   main_projects="${main_projects}${main_projects:+$'\n'}$name"
 done <<EOF
-$(FM_HOME="$MAIN_HOME" FM_DATA_OVERRIDE="$DATA" "$SCRIPT_DIR/fm-project-mode.sh" --list)
+$project_names
 EOF
 
 M_ID=(main ${M_ID[@]+"${M_ID[@]}"})
