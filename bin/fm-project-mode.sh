@@ -107,7 +107,7 @@
 # forge-agreement check) still refuses.
 # --list prints every registered project name, one per line in registry order,
 # and nothing at all when the registry is absent. A name is the text after the
-# leading "- " up to the first " [" or " - ", the same boundary the per-project
+# leading "- " up to the first " [" or " -", the same boundary the per-project
 # lookup matches. It is the enumeration entry point for read-only consumers such
 # as bin/fm-roster.sh, and it reports names only, never a resolved posture.
 # Usage: fm-project-mode.sh [--raw|--branch-prefix|--forge] [--strict] <project-name>
@@ -130,7 +130,7 @@ if [ "$#" -eq 1 ] && [ "$1" = --list ]; then
     {
       rest = substr($0, 3); cut = length(rest) + 1
       i = index(rest, " ["); if (i > 0 && i < cut) cut = i
-      i = index(rest, " - "); if (i > 0 && i < cut) cut = i
+      i = index(rest, " -"); if (i > 0 && i < cut) cut = i
       name = substr(rest, 1, cut - 1)
       if (name != "") print name
     }

@@ -141,4 +141,6 @@ pass "(h) a malformed secondmate entry is an error"
 names=$(FM_HOME=$home "$ROOT/bin/fm-project-mode.sh" --list)
 assert_equals $'alpha\nbeta\ngamma\ndelta\nmy project\n*\n../sibling' "$names" "(i) --list names"
 assert_equals "" "$(FM_HOME=$T/elsewhere "$ROOT/bin/fm-project-mode.sh" --list)" "(i) --list with no registry"
+printf '%s\n' '- trailing -' > "$home/data/projects.md"
+assert_equals "trailing" "$(FM_HOME=$home "$ROOT/bin/fm-project-mode.sh" --list)" "(i) trailing separator matches lookup boundary"
 pass "(i) fm-project-mode.sh --list enumerates registry names"
