@@ -123,7 +123,14 @@ if [ -e "$SM_REG" ]; then
 fi
 
 claimed=""
-for p in ${M_PROJECTS[@]+"${M_PROJECTS[@]}"}; do claimed="${claimed}${claimed:+$'\n'}$p"; done
+for projects in "${M_PROJECTS[@]}"; do
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    claimed="${claimed}${claimed:+$'\n'}$p"
+  done <<EOF
+$projects
+EOF
+done
 main_projects=""
 while IFS= read -r name; do
   [ -n "$name" ] || continue
