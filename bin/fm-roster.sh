@@ -108,6 +108,9 @@ if [ -e "$SM_REG" ] || [ -L "$SM_REG" ]; then
     case "$line" in "- "*) ;; *) continue ;; esac
     secondmate_registry_parse_line "$line" || { echo "fm-roster: malformed secondmate registry entry: $line" >&2; exit 1; }
     [ "$SECONDMATE_REGISTRY_ID" != main ] || { echo "fm-roster: secondmate ID conflicts with firstmate: main" >&2; exit 1; }
+    for existing_id in "${M_ID[@]}"; do
+      [ "$existing_id" != "$SECONDMATE_REGISTRY_ID" ] || { echo "fm-roster: duplicate secondmate ID: $SECONDMATE_REGISTRY_ID" >&2; exit 1; }
+    done
     M_ID+=("$SECONDMATE_REGISTRY_ID")
     M_ROLE+=(secondmate)
     if [ "$SECONDMATE_REGISTRY_REMOTE" -eq 1 ]; then

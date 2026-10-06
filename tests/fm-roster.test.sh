@@ -96,6 +96,13 @@ expect_code 1 "$rc" "secondmate ID colliding with firstmate"
 assert_contains "$err" "ID conflicts with firstmate" "collision is rejected"
 pass "firstmate and secondmate IDs remain distinct"
 cp "$T/secondmates.saved" "$home/data/secondmates.md"
+printf '%s\n' '- near - Duplicate route. (home: $T/duplicate-home; scope: Duplicate route; projects: alpha; added 2026-01-04)' >> "$home/data/secondmates.md"
+rc=0
+err=$(roster --json 2>&1 >/dev/null) || rc=$?
+expect_code 1 "$rc" "duplicate secondmate ID"
+assert_contains "$err" "duplicate secondmate ID: near" "duplicate ID is rejected"
+pass "duplicate secondmate IDs are rejected"
+cp "$T/secondmates.saved" "$home/data/secondmates.md"
 mv "$home/data/secondmates.md" "$T/secondmates.saved"
 out=$(roster --json) || fail "(e) roster without secondmates.md exited non-zero"
 assert_equals '["main"]' "$(q '[.mates[].id]')" "(e) only the first mate"
