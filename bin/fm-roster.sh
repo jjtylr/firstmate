@@ -101,11 +101,12 @@ split_projects() {  # <comma list> -> unique trimmed names, one per line
   [ -z "$out" ] || printf '%s\n' "$out"
 }
 
-if [ -e "$SM_REG" ]; then
+if [ -e "$SM_REG" ] || [ -L "$SM_REG" ]; then
   [ -f "$SM_REG" ] && [ ! -L "$SM_REG" ] || { echo "fm-roster: secondmate registry is unsafe: $SM_REG" >&2; exit 1; }
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in "- "*) ;; *) continue ;; esac
     secondmate_registry_parse_line "$line" || { echo "fm-roster: malformed secondmate registry entry: $line" >&2; exit 1; }
+    [ "$SECONDMATE_REGISTRY_ID" != main ] || { echo "fm-roster: secondmate ID conflicts with firstmate: main" >&2; exit 1; }
     M_ID+=("$SECONDMATE_REGISTRY_ID")
     M_ROLE+=(secondmate)
     if [ "$SECONDMATE_REGISTRY_REMOTE" -eq 1 ]; then

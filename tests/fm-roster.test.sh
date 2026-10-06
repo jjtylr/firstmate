@@ -86,11 +86,26 @@ assert_contains "$table" "box-2" "(a) table shows host alias"
 assert_contains "$table" "shared*" "(c) table marks shared project"
 pass "plain table lists every mate"
 
+cp "$home/data/secondmates.md" "$T/secondmates.saved"
+printf '%s\n' '- main - Owns alpha. (home: /tmp/main-home; scope: Main route; projects: alpha; added 2026-01-04)' >> "$home/data/secondmates.md"
+rc=0
+err=$(roster --json 2>&1 >/dev/null) || rc=$?
+expect_code 1 "$rc" "secondmate ID colliding with firstmate"
+assert_contains "$err" "ID conflicts with firstmate" "collision is rejected"
+pass "firstmate and secondmate IDs remain distinct"
+cp "$T/secondmates.saved" "$home/data/secondmates.md"
 mv "$home/data/secondmates.md" "$T/secondmates.saved"
 out=$(roster --json) || fail "(e) roster without secondmates.md exited non-zero"
 assert_equals '["main"]' "$(q '[.mates[].id]')" "(e) only the first mate"
 assert_equals '["alpha","beta","gamma","delta","my project"]' "$(q '[.mates[0].projects[].name]')" "(e) first mate holds every project"
 pass "(e) absent secondmate registry yields the first mate alone"
+ln -s "$T/missing-registry-target" "$home/data/secondmates.md"
+rc=0
+err=$(roster --json 2>&1 >/dev/null) || rc=$?
+expect_code 1 "$rc" "dangling secondmate registry symlink"
+assert_contains "$err" "secondmate registry is unsafe" "dangling symlink is rejected"
+pass "dangling secondmate registry symlink is not treated as absent"
+rm "$home/data/secondmates.md"
 mv "$T/secondmates.saved" "$home/data/secondmates.md"
 
 code=$T/code
