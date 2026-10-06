@@ -165,6 +165,7 @@ holders() {  # <project> -> ids of every mate listing it, one per line
 
 github_repo() {  # <project> <mate index> -> owner/name or nothing
   local name=$1 i=$2 dir url dirs=()
+  case "$name" in ''|.|..|*/*) return 0 ;; esac
   [ "${M_PLACEMENT[$i]}" = remote ] || dirs+=("${M_HOME[$i]}/projects/$name")
   dirs+=("$MAIN_HOME/projects/$name")
   for dir in "${dirs[@]}"; do

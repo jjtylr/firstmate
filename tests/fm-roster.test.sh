@@ -31,6 +31,7 @@ cat > "$home/data/projects.md" <<'EOF'
 - delta [local-only] - plain folder (added 2026-01-01)
 - my project [local-only] - spaced name (added 2026-01-01)
 - * [local-only] - wildcard name (added 2026-01-01)
+- ../sibling [local-only] - path-like name (added 2026-01-01)
 EOF
 cat > "$home/data/secondmates.md" <<EOF
 # Second mates
@@ -42,6 +43,8 @@ fm_git_init_commit "$home/projects/alpha" >/dev/null
 git -C "$home/projects/alpha" remote add origin git@github.com:owner/alpha.git
 fm_git_init_commit "$home/projects/delta" >/dev/null
 git -C "$home/projects/delta" remote add origin https://gitlab.example/owner/delta.git
+fm_git_init_commit "$home/sibling" >/dev/null
+git -C "$home/sibling" remote add origin git@github.com:unrelated/sibling.git
 
 roster() { (cd "$T/elsewhere" && FM_HOME=$home "$ROOT/bin/fm-roster.sh" "$@"); }
 
@@ -66,7 +69,7 @@ pass "(a) local and remote second mates report computer and placement"
 
 assert_equals "{\"role\":\"firstmate\",\"computer\":\"$HOST\",\"placement\":\"local\",\"home\":\"$home\",\"summary\":null,\"scope\":null}" \
   "$(q '.mates[0] | {role,computer,placement,home,summary,scope}')" "(b) first mate fields"
-assert_equals '["alpha","delta"]' "$(q '[.mates[0].projects[].name]')" "(b) first mate keeps unlisted projects"
+assert_equals '["alpha","delta","../sibling"]' "$(q '[.mates[0].projects[].name]')" "(b) first mate keeps unlisted projects"
 assert_equals '"my project"' "$(q '.mates[1].projects[] | select(.name=="my project") | .name')" "project names with spaces stay assigned"
 assert_equals '"*"' "$(q '.mates[1].projects[] | select(.name=="*") | .name')" "glob characters stay literal"
 pass "(b) first mate holds the rest of the main registry"
@@ -80,6 +83,7 @@ pass "(c) a project held by two mates is listed under each and flagged"
 
 assert_equals '"owner/alpha"' "$(q '.mates[0].projects[] | select(.name=="alpha") | .repo')" "(d) github origin"
 assert_equals 'null' "$(q '.mates[0].projects[] | select(.name=="delta") | .repo')" "(d) non-github origin"
+assert_equals 'null' "$(q '.mates[0].projects[] | select(.name=="../sibling") | .repo')" "path-like project names do not expose sibling repos"
 pass "(d) repo comes from a GitHub clone origin only"
 
 table=$(roster) || fail "plain roster exited non-zero"
@@ -106,7 +110,7 @@ cp "$T/secondmates.saved" "$home/data/secondmates.md"
 mv "$home/data/secondmates.md" "$T/secondmates.saved"
 out=$(roster --json) || fail "(e) roster without secondmates.md exited non-zero"
 assert_equals '["main"]' "$(q '[.mates[].id]')" "(e) only the first mate"
-assert_equals '["alpha","beta","gamma","delta","my project","*"]' "$(q '[.mates[0].projects[].name]')" "(e) first mate holds every project"
+assert_equals '["alpha","beta","gamma","delta","my project","*","../sibling"]' "$(q '[.mates[0].projects[].name]')" "(e) first mate holds every project"
 pass "(e) absent secondmate registry yields the first mate alone"
 ln -s "$T/missing-registry-target" "$home/data/secondmates.md"
 rc=0
@@ -135,6 +139,6 @@ assert_contains "$err" "malformed secondmate registry entry" "(h) names the malf
 pass "(h) a malformed secondmate entry is an error"
 
 names=$(FM_HOME=$home "$ROOT/bin/fm-project-mode.sh" --list)
-assert_equals $'alpha\nbeta\ngamma\ndelta\nmy project\n*' "$names" "(i) --list names"
+assert_equals $'alpha\nbeta\ngamma\ndelta\nmy project\n*\n../sibling' "$names" "(i) --list names"
 assert_equals "" "$(FM_HOME=$T/elsewhere "$ROOT/bin/fm-project-mode.sh" --list)" "(i) --list with no registry"
 pass "(i) fm-project-mode.sh --list enumerates registry names"
