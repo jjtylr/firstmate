@@ -143,4 +143,16 @@ assert_equals $'alpha\nbeta\ngamma\ndelta\nmy project\n*\n../sibling' "$names" "
 assert_equals "" "$(FM_HOME=$T/elsewhere "$ROOT/bin/fm-project-mode.sh" --list)" "(i) --list with no registry"
 printf '%s\n' '- trailing -' > "$home/data/projects.md"
 assert_equals "trailing" "$(FM_HOME=$home "$ROOT/bin/fm-project-mode.sh" --list)" "(i) trailing separator matches lookup boundary"
-pass "(i) fm-project-mode.sh --list enumerates registry names"
+mv "$home/data/projects.md" "$home/data/projects.saved"
+ln -s "$home/data/projects.saved" "$home/data/projects.md"
+rc=0
+err=$(FM_HOME=$home "$ROOT/bin/fm-project-mode.sh" --list 2>&1 >/dev/null) || rc=$?
+expect_code 1 "$rc" "symlinked project registry"
+assert_contains "$err" "project registry is unsafe" "valid-target symlink is rejected"
+rm "$home/data/projects.md"
+ln -s "$T/missing-project-registry" "$home/data/projects.md"
+rc=0
+err=$(FM_HOME=$home "$ROOT/bin/fm-project-mode.sh" --list 2>&1 >/dev/null) || rc=$?
+expect_code 1 "$rc" "dangling project registry symlink"
+assert_contains "$err" "project registry is unsafe" "dangling symlink is rejected"
+pass "(i) fm-project-mode.sh --list rejects project registry symlinks"

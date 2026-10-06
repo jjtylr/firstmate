@@ -124,6 +124,7 @@ STRICT=0
 BRANCH_PREFIX_QUERY=0
 WANT_FORGE=0
 if [ "$#" -eq 1 ] && [ "$1" = --list ]; then
+  [ ! -L "$REG" ] || { echo "fm-project-mode: project registry is unsafe: $REG" >&2; exit 1; }
   [ -f "$REG" ] || exit 0
   awk '
     substr($0, 1, 2) != "- " { next }
