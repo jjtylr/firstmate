@@ -108,11 +108,11 @@
 # process state/<id>.inbox/*.msg in order and acknowledge each by moving it to
 # handled/ (record, doorbell, and ladder owned by bin/fm-task-inbox-lib.sh).
 # Ship tasks include a project-memory section bounding crewmate edits to a
-# project's AGENTS.md/CLAUDE.md: only corrections of factually wrong
-# information, including wrong information the task itself introduced - never
-# additions of missing knowledge. A correction edits only the wrong text and
-# never runs fm-ensure-agents-md.sh, whose inserted sections and created
-# pointer file are themselves additions.
+# project's AGENTS.md/CLAUDE.md: corrections of factually wrong information,
+# including wrong information the task itself introduced, and short technical
+# rules backed by the task's evidence, stated in the project's PR. Neither runs
+# fm-ensure-agents-md.sh, whose inserted sections and created pointer file are
+# not part of either.
 # Scaffolds carry no role scope: fm-spawn.sh supplies fm_brief_worker_role from
 # fm-dod-lib.sh to every ship/scout launch brief, so this file never becomes a
 # second owner of a contract that must stay current across relaunches.
@@ -717,8 +717,10 @@ $SHARED_INFRA_RULE
 $WAIT_BLOCK$INBOX_SECTION
 
 # Project memory
-A project's \`AGENTS.md\` or \`CLAUDE.md\` is loaded into every agent session in that project, so edit it only to correct information that is factually wrong - including information your own change made wrong - and never to add knowledge because it is missing.
-A correction edits only the wrong text: do not run \`$FM_ROOT/bin/fm-ensure-agents-md.sh\`, create either file, or add sections, headings, or pointers alongside it.
+A project's \`AGENTS.md\` or \`CLAUDE.md\` is loaded into every agent session in that project, so keep it short.
+You may correct information there that is factually wrong - including information your own change made wrong - and you may add a short technical rule when evidence from your work backs it, stating that evidence in the project's PR.
+Remove entries your work shows are stale, and never add quotes of the captain, delivery posture, or private strategy.
+A correction or addition edits only that text: do not run \`$FM_ROOT/bin/fm-ensure-agents-md.sh\`, create either file, or add pointer sections alongside it.
 
 $DOD
 EOF

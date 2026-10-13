@@ -484,10 +484,10 @@ test_ask_user_escalation_format() {
   pass "fm-brief.sh: no-mistakes ask-user findings use one event plus a verbatim snapshot"
 }
 
-# The project-memory section bounds crewmate edits of a project's AGENTS.md or
-# CLAUDE.md to corrections of factually wrong information - including wrong
-# information the task itself introduced - and never invites additions of
-# missing knowledge, because those files tax every agent session of the project.
+# The project-memory section lets a crewmate correct factually wrong
+# information in a project's AGENTS.md or CLAUDE.md and add short evidence-backed
+# technical rules through the project's PR, keeps entries short because those
+# files tax every agent session, and never runs the ensure helper.
 test_ship_project_memory_wording() {
   local home id brief
   home="$TMP_ROOT/project-memory-home"
@@ -498,17 +498,19 @@ test_ship_project_memory_wording() {
   assert_present "$brief" "brief was not scaffolded"
   assert_grep "loaded into every agent session" "$brief" \
     "project-memory contract lost the per-session cost rationale"
-  assert_grep "only to correct information that is factually wrong" "$brief" \
-    "project-memory contract lost the corrections-only bound"
+  assert_grep "You may correct information there that is factually wrong" "$brief" \
+    "project-memory contract lost the correction permission"
   assert_grep "including information your own change made wrong" "$brief" \
     "project-memory contract lost the self-inflicted correction case"
-  assert_grep "never to add knowledge because it is missing" "$brief" \
-    "project-memory contract still permits additions of missing knowledge"
-  assert_no_grep "if this task produced durable project-intrinsic knowledge" "$brief" \
-    "project-memory contract still invites additions for durable knowledge"
-  assert_grep "A correction edits only the wrong text: do not run \`$ROOT/bin/fm-ensure-agents-md.sh\`" "$brief" \
-    "project-memory contract no longer forbids the ensure helper on a correction"
-  pass "fm-brief.sh: ship project-memory wording bounds edits to corrections of wrong information"
+  assert_grep "add a short technical rule when evidence from your work backs it, stating that evidence in the project's PR" "$brief" \
+    "project-memory contract lost the evidence-backed addition rule"
+  assert_grep "never add quotes of the captain, delivery posture, or private strategy" "$brief" \
+    "project-memory contract lost the quotes and posture exclusion"
+  assert_no_grep "never to add knowledge because it is missing" "$brief" \
+    "project-memory contract still forbids evidence-backed additions"
+  assert_grep "A correction or addition edits only that text: do not run \`$ROOT/bin/fm-ensure-agents-md.sh\`" "$brief" \
+    "project-memory contract no longer forbids the ensure helper"
+  pass "fm-brief.sh: ship project-memory wording allows corrections and evidence-backed rules"
 }
 
 test_herdr_lab_contract_is_explicit_and_complete() {
