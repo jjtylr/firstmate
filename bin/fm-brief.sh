@@ -21,6 +21,11 @@
 #   data/<task-id>/report.md (no branch, no push, no PR) and the worktree is scratch.
 #   It offers the Lavish review loop only when `fm-bootstrap.sh lavish-compatible`
 #   confirms the legacy board-compatibility floor; otherwise it asks for a text report.
+#   When the active home's config/board-tool holds one non-blank line, that line
+#   replaces the Lavish line entirely, so the home's own board tool is the only
+#   review surface the scout is offered; an absent or blank file changes nothing,
+#   and an unreadable path or more than one non-blank line stops the scaffold
+#   before anything is written.
 #   --secondmate writes a persistent secondmate charter. The project list
 #   is cloned into the secondmate home, while the natural-language scope
 #   tells the main firstmate when to route work there; routine churn stays in its own home;
@@ -334,6 +339,23 @@ if [ "$KIND" != secondmate ] && { [ -e "$BRIEF_INCLUDE_FILE" ] || [ -L "$BRIEF_I
   [ -n "$(printf '%s' "$BRIEF_INCLUDE_BODY" | tr -d '[:space:]')" ] || BRIEF_INCLUDE_BODY=
 fi
 
+# The optional home-local board tool is likewise read before anything is written.
+BOARD_TOOL_FILE="$CONFIG/board-tool"
+BOARD_TOOL_LINE=
+if [ "$KIND" = scout ] && { [ -e "$BOARD_TOOL_FILE" ] || [ -L "$BOARD_TOOL_FILE" ]; }; then
+  { [ -f "$BOARD_TOOL_FILE" ] && BOARD_TOOL_LINE=$(cat "$BOARD_TOOL_FILE" 2>/dev/null); } || {
+    echo "error: $BOARD_TOOL_FILE must be a readable regular file" >&2
+    exit 1
+  }
+  BOARD_TOOL_LINE=$(printf '%s\n' "$BOARD_TOOL_LINE" | grep -v '^[[:space:]]*$' || true)
+  case "$BOARD_TOOL_LINE" in
+    *$'\n'*)
+      echo "error: $BOARD_TOOL_FILE must hold one instruction line" >&2
+      exit 1
+      ;;
+  esac
+fi
+
 # Append the include as the last section of a ship or scout scaffold.
 append_brief_include() {
   [ -n "$BRIEF_INCLUDE_BODY" ] || return 0
@@ -594,7 +616,9 @@ else
 fi
 
 if [ "$KIND" = scout ]; then
-if "$SCRIPT_DIR/fm-bootstrap.sh" lavish-compatible >/dev/null 2>&1; then
+if [ -n "$BOARD_TOOL_LINE" ]; then
+  LAVISH_LINE=$BOARD_TOOL_LINE
+elif "$SCRIPT_DIR/fm-bootstrap.sh" lavish-compatible >/dev/null 2>&1; then
   LAVISH_LINE='If your deliverable is a visual artifact the captain will review and iterate on, use the lavish-axi rule: arm your board with bin/fm-procevent-lavish.sh arm <artifact.html> --for <task-id>; never run lavish-axi poll yourself. Re-arm with the reply after each nonterminal round to acknowledge it, route the board feedback through your steering inbox, write needs-decision [key=board-review] with the live board URL when the captain owes a decision, and stop at session_ended or an empty End without re-arming - acknowledge that final round with bin/fm-procevent.sh handled <source-id> <sequence> to conclude and retire your board.'
 else
   LAVISH_LINE='Lavish is unavailable (lavish-axi is missing or below its supported version floor), so deliver your findings as a text report without Lavish, even for a visual deliverable.'

@@ -927,7 +927,13 @@ When the file is absent, worker launches do not add a board address and retain t
 Malformed or unreadable values refuse the launch before the worker starts.
 The address selects the existing shared server; it does not authorize starting or stopping the server, and the Lavish startup crash remains a vendor-tool concern.
 
-## Home brief include (config/brief-include.md)
+## Board tool (config/board-tool)
+
+The optional local, gitignored `config/board-tool` holds the one instruction line workers follow to publish a board when this home uses a board tool other than Lavish.
+When the file holds one non-blank line, `bin/fm-brief.sh` puts that line in scout briefs in place of the Lavish line, so scouts publish there and never open a separate Lavish page for the same review.
+An absent or blank file keeps the Lavish line exactly as before, while a present path that is not a readable regular file, or text with more than one non-blank line, stops the scaffold before anything is written.
+The file is inherited into secondmate homes through the primary-authoritative configuration contract.
+
 
 The optional local, gitignored `config/brief-include.md` adds standing worker instructions to every ship and scout brief.
 This keeps private brief content out of tracked files.
