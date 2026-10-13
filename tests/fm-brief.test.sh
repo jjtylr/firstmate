@@ -1119,6 +1119,52 @@ test_worker_role_scope() {
   pass "fm-brief: scaffolds leave the worker role scope to the launch boundary and keep the secondmate contract"
 }
 
+# A home's config/board-tool line replaces the Lavish line in scout briefs,
+# whatever lavish-axi is installed; absent or blank keeps the Lavish line, and an
+# unusable or multi-line file stops the scaffold before anything is written.
+test_board_tool_replaces_lavish_line() {
+  local home config base fakebin out rc
+  local board='Publish boards with house-board and never open a Lavish page.'
+  local hosting='use the lavish-axi rule'
+  home="$TMP_ROOT/board-home"
+  config="$home/config"
+  mkdir -p "$config"
+  base=$(fm_test_base_path_sans "${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}" lavish-axi)
+  fakebin=$(fm_fakebin "$TMP_ROOT/board-bin")
+  fm_fake_version_tool "$fakebin" lavish-axi FM_FAKE_LAVISH_AXI_VERSION 0.2.0
+
+  PATH="$fakebin:$base" FM_HOME="$home" "$ROOT/bin/fm-brief.sh" board-absent alpha --scout >/dev/null \
+    || fail "scout scaffold failed without a board tool"
+  assert_grep "$hosting" "$home/data/board-absent/brief.md" "an absent board tool dropped the Lavish line"
+  printf ' \n\n' > "$config/board-tool"
+  PATH="$fakebin:$base" FM_HOME="$home" "$ROOT/bin/fm-brief.sh" board-blank alpha --scout >/dev/null \
+    || fail "scout scaffold failed with a blank board tool"
+  assert_grep "$hosting" "$home/data/board-blank/brief.md" "a blank board tool dropped the Lavish line"
+
+  printf '\n%s\n' "$board" > "$config/board-tool"
+  PATH="$fakebin:$base" FM_HOME="$home" "$ROOT/bin/fm-brief.sh" board-set alpha --scout >/dev/null \
+    || fail "scout scaffold failed with a board tool"
+  assert_grep "$board" "$home/data/board-set/brief.md" "scout brief did not carry the board tool line"
+  assert_no_grep "$hosting" "$home/data/board-set/brief.md" "scout brief kept the Lavish line beside the board tool"
+  PATH="$base" FM_HOME="$home" "$ROOT/bin/fm-brief.sh" board-nolavish alpha --scout >/dev/null \
+    || fail "scout scaffold failed with a board tool and no lavish-axi"
+  assert_grep "$board" "$home/data/board-nolavish/brief.md" "board tool line depended on lavish-axi"
+  assert_no_grep 'without Lavish' "$home/data/board-nolavish/brief.md" "missing lavish-axi still asked for a text report"
+
+  printf '%s\n%s\n' "$board" 'second line' > "$config/board-tool"
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" board-multi alpha --scout 2>&1); rc=$?
+  expect_code 1 "$rc" "a multi-line board tool must stop the scaffold"
+  assert_contains "$out" "board-tool must hold one instruction line" "multi-line refusal did not explain itself"
+  assert_absent "$home/data/board-multi" "a refused board tool left a partial scaffold behind"
+  rm -f "$config/board-tool"
+  mkdir "$config/board-tool"
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" board-unusable alpha --scout 2>&1); rc=$?
+  expect_code 1 "$rc" "an unusable board tool path must stop the scaffold"
+  assert_contains "$out" "board-tool must be a readable regular file" "unusable refusal did not name the file"
+  assert_absent "$home/data/board-unusable" "an unusable board tool left a partial scaffold behind"
+  pass "fm-brief.sh: a home board tool replaces the Lavish line in scout briefs and fails closed"
+}
+
 # A home can carry standing worker instructions in its gitignored
 # config/brief-include.md. The include must land last on ship and scout
 # scaffolds, stay out of charters, change nothing when absent or blank, and stop
@@ -1495,6 +1541,7 @@ test_scout_and_secondmate_scaffold
 test_scout_lavish_line_follows_presentation_floor
 test_workers_wait_without_spending_turns
 test_wait_no_turns_absent_keeps_the_previous_brief
+test_board_tool_replaces_lavish_line
 test_home_brief_include_is_appended_last
 test_base_branch_is_rendered_and_bounded
 test_ship_branch_prefix_defaults_to_legacy_fm
