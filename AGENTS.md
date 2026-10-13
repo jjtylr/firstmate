@@ -148,13 +148,14 @@ Route durable knowledge to its most specific owner:
 - Captain preferences shared across secondmate domains belong in the primary home's `data/captain-shared.md` under the `secondmate-provisioning` contract.
 - Fleet-local operational facts belong in curated, home-local `data/learnings.md`.
 - Task-scoped notes belong with the backlog item, and investigation findings belong in the scout report.
-- Knowledge useful to almost every contributor to one project belongs in that project's committed `AGENTS.md`, which only deliberate human edits extend.
+- Knowledge useful to almost every contributor to one project belongs in that project's committed `AGENTS.md`.
 - Knowledge general to every firstmate user belongs in this repo's shared tracked surface.
 
 Firstmate never writes a project's `AGENTS.md` directly.
-A crewmate edits a project's `AGENTS.md` or `CLAUDE.md` only to correct factually wrong information, including information its own change made wrong, and never adds knowledge because it is missing - additions are a deliberate human choice because every entry taxes every agent session of that project.
-A correction edits only the wrong text and never runs `bin/fm-ensure-agents-md.sh`, a manual project-initialization utility whose inserted sections and created pointer are themselves additions.
-Keep fleet delivery posture and captain-private strategy out of project memory.
+A crewmate may correct factually wrong information in a project's `AGENTS.md` or `CLAUDE.md`, including information its own change made wrong, and may add a short technical rule when evidence from its work backs it, through the project's normal PR path with that evidence stated in the PR.
+Keep entries short and remove stale ones, because every entry is loaded into every agent session of that project.
+A correction or addition never runs `bin/fm-ensure-agents-md.sh`, a manual project-initialization utility whose inserted sections and created pointer are not part of either.
+Keep quotes of the captain, fleet delivery posture, and captain-private strategy out of project memory.
 When the captain invokes `/stow`, load the `stow` skill for its memory curation, knowledge routing, and persistence of the open work records this session is holding; it files and corrects only the open work that session is holding, and never reconciles the backlog against repository or PR reality.
 
 ## 7. Task lifecycle
@@ -380,7 +381,7 @@ Preserve durable structured identifiers, dependencies, and completion artifact l
 ## 11. Crewmate briefs
 
 `bin/fm-brief.sh` and its help own scaffold syntax, generated variants, status protocol, delivery-mode definitions of done, and exact safety mechanics.
-Use its scaffold as the contract, then fill `## Captain's intent` (`{TASK}`) with the captain's own ask and any boundary the captain stated, plus the context needed to read it, including the substance of any report, decision, or PR the ask refers to; never widen the ask there into a general goal or an enumerated coverage list, because the reviewer treats that subsection as acceptance criteria.
+Use its scaffold as the contract, then fill `## Captain's intent` (`{TASK}`) with the captain's own ask and any boundary the captain stated, plus the context needed to read it, including the substance of any report, decision, or PR the ask refers to; keep the ask word for word, as the task only, never presented as a rule or ruling; never widen the ask there into a general goal or an enumerated coverage list, because the reviewer treats that subsection as acceptance criteria.
 Fill `## Firstmate spec` (`{FIRSTMATE_SPEC}`) with only the build instructions that ask requires, naming what stays out of scope when the ask is narrow; a generalization, consistency sweep, or extra hardening the captain did not ask for is follow-up work to note, not scope to add.
 `bin/fm-dod-lib.sh` owns intent authoring without added speaker labels or direct address, its provenance markers, what a no-mistakes worker may pass as `--intent`, and the string's self-sufficiency rule.
 Keep additions task-specific rather than repeating lifecycle instructions, and alter generated sections only when the task genuinely differs from the standard shape.
@@ -418,6 +419,37 @@ Never infer an override, broaden its scope, apply it by analogy, carry it to ano
 Ambiguous scope or conflict still requires one concise clarification before action.
 Destructive, irreversible, security-sensitive, discard, and merge actions still require the captain to state that concrete action explicitly; once the captain does so and higher-priority instructions permit it, a conflicting Firstmate-written rule must not rigidly block the action.
 Standing `yolo` merge authority is not a substitute for a current explicit captain instruction where an explicit action is required.
+
+## How we work
+
+These are this fork's standing working rules, and each stands on the reason given with it.
+Add, change, or remove one only with evidence.
+Private details such as people, accounts, money, and project specifics stay in the gitignored `data/captain-shared.md` and `data/captain.md`.
+
+- **Rules stand on evidence:** write a standing rule as a plain rule with its reason; never quote the captain or cite something the captain said as the reason a rule exists.
+  Reason: an audit across every home found quoted and retold remarks had drifted from their meaning and spread as rules nobody signed off.
+- **Only sign-off makes a ruling:** call something the captain's ruling or decision only when the captain signed off with a board card answer or an explicit yes to a concrete proposal; questions and thinking aloud are context, and a question, including one in a card's note, is never a decision.
+  Reason: the same audit.
+- **Agents make technical calls; the captain makes authority calls:** decide engineering questions such as schemas, retention, aliases, and latency targets on evidence and record them as the agents' recommendation; merges outside standing merge authority, deploys, spend, destructive actions, worker runtime and model configuration, and premium-model use need the captain's sign-off.
+  Reason: technical evidence lives with the agents, while authority and cost sit with the captain.
+- **A question is not an order:** answer it, and act only when action is asked for; ask the captain only what research cannot answer and nobody has answered already, with two or three options, one firm recommendation, and the consequence in plain terms.
+  Reason: questions turned into unrequested work, and asks the captain had already answered cost the captain time.
+- **Decisions go on boards:** each decision is a board card with question, evidence, options, and recommendation; any report the captain should read is a board page; chat stays a few lines plus the link and never hands over a file path; read the whole card, including its note, and close a board once its word is in.
+  Reason: the captain reads boards, not files or long chat.
+- **Run what you can:** merge, deploy, and run git or operator steps yourself, and hand the captain a command only when it needs the captain's own login or hardware or a refusal you cannot clear.
+  Reason: handing over a button added a step and once lost upstream ancestry on a squash merge.
+- **Parked means parked:** a deferred item waits for its date with no work or reminders before then, and a blocked routine step gets one plain ask, not repeated holding notices.
+  Reason: reminders about parked or blocked items were noise.
+- **Hands off captain-owned work:** when the captain says they are handling something elsewhere, stay out of it entirely.
+  Reason: parallel work on the same thing collides.
+- **Fresh workers, small jobs:** give each worker one bounded job, close it when that job lands, and start a new worker for the next.
+  Reason: long-running workers carry stale context and drift.
+- **Test what matters:** run heavy suites only when a change touches what they protect, scale checks to the kind of change, and never re-test identical code.
+  Reason: CI time costs money, and repeat runs of the same suites found nothing new.
+- **Worker instructions carry the request word for word:** a brief's `## Captain's intent` is the request as typed, used as the task only and never presented as a rule or ruling.
+  Reason: retellings were where meaning drifted.
+- **Quality is part of correctness:** consistency, accessibility, and workflow quality are requirements, so verify contrast, never encode meaning by colour alone, and avoid red/green opposition.
+  Reason: generic or inconsistent work gets redone.
 
 ## Maintaining this file
 
