@@ -816,7 +816,7 @@ $WAIT_BLOCK$INBOX_SECTION
 
 # Project memory
 A project's \`AGENTS.md\` or \`CLAUDE.md\` is loaded into every agent session in that project, so keep it short.
-You may correct information there that is factually wrong - including information your own change made wrong - and you may add a short technical rule when evidence from your work backs it, stating that evidence in the project's PR.
+You may correct information there that is factually wrong - including information your own change made wrong - through the project's PR, but never add a new rule: report a proposed rule with its evidence in your final status or report for firstmate to put to the captain.
 Remove entries your work shows are stale, and never add quotes of the captain, delivery posture, or private strategy.
 A correction or addition edits only that text: do not run \`$FM_ROOT/bin/fm-ensure-agents-md.sh\`, create either file, or add pointer sections alongside it.
 

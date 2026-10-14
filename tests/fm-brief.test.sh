@@ -562,9 +562,10 @@ test_ask_user_escalation_format() {
 }
 
 # The project-memory section lets a crewmate correct factually wrong
-# information in a project's AGENTS.md or CLAUDE.md and add short evidence-backed
-# technical rules through the project's PR, keeps entries short because those
-# files tax every agent session, and never runs the ensure helper.
+# information in a project's AGENTS.md or CLAUDE.md through the project's PR,
+# forbids adding a new rule and routes a proposed rule to firstmate instead,
+# keeps entries short because those files tax every agent session, and never
+# runs the ensure helper.
 test_ship_project_memory_wording() {
   local home id brief
   home="$TMP_ROOT/project-memory-home"
@@ -579,15 +580,17 @@ test_ship_project_memory_wording() {
     "project-memory contract lost the correction permission"
   assert_grep "including information your own change made wrong" "$brief" \
     "project-memory contract lost the self-inflicted correction case"
-  assert_grep "add a short technical rule when evidence from your work backs it, stating that evidence in the project's PR" "$brief" \
-    "project-memory contract lost the evidence-backed addition rule"
+  assert_grep "but never add a new rule" "$brief" \
+    "project-memory contract no longer forbids worker-added rules"
+  assert_grep "report a proposed rule with its evidence in your final status or report for firstmate to put to the captain" "$brief" \
+    "project-memory contract lost the proposed-rule reporting path"
+  assert_no_grep "add a short technical rule when evidence from your work backs it" "$brief" \
+    "project-memory contract still lets a worker add rules on its own evidence"
   assert_grep "never add quotes of the captain, delivery posture, or private strategy" "$brief" \
     "project-memory contract lost the quotes and posture exclusion"
-  assert_no_grep "never to add knowledge because it is missing" "$brief" \
-    "project-memory contract still forbids evidence-backed additions"
   assert_grep "A correction or addition edits only that text: do not run \`$ROOT/bin/fm-ensure-agents-md.sh\`" "$brief" \
     "project-memory contract no longer forbids the ensure helper"
-  pass "fm-brief.sh: ship project-memory wording allows corrections and evidence-backed rules"
+  pass "fm-brief.sh: ship project-memory wording allows corrections and routes proposed rules to firstmate"
 }
 
 test_herdr_lab_contract_is_explicit_and_complete() {
