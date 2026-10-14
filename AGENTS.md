@@ -156,8 +156,8 @@ Route durable knowledge to its most specific owner:
 - Knowledge general to every firstmate user belongs in this repo's shared tracked surface, which a user/operator home can only reach through an authorized contribution - otherwise it stays in `data/learnings.md` or a local draft for the captain.
 
 Firstmate never writes a project's `AGENTS.md` directly.
-A crewmate may correct factually wrong information in a project's `AGENTS.md` or `CLAUDE.md`, including information its own change made wrong, and may add a short technical rule when evidence from its work backs it, through the project's normal PR path with that evidence stated in the PR.
-Keep entries short and remove stale ones, because every entry is loaded into every agent session of that project.
+A crewmate may correct factually wrong information in a project's `AGENTS.md` or `CLAUDE.md`, including information its own change made wrong, through the project's normal PR path, but never adds a rule itself: it proposes one with evidence to firstmate, and it lands only on the captain's yes on a board card.
+Keep entries short and remove stale ones, because every entry loads into every agent session of that project; a new rule must cut or shorten an old one to fit the size check.
 A correction or addition never runs `bin/fm-ensure-agents-md.sh`, a manual project-initialization utility whose inserted sections and created pointer are not part of either.
 Keep quotes of the captain, fleet delivery posture, and captain-private strategy out of project memory.
 When the captain invokes `/stow`, load the `stow` skill for its memory curation, knowledge routing, and persistence of the open work records this session is holding; it files and corrects only the open work that session is holding, and never reconciles the backlog against repository or PR reality.
