@@ -1,0 +1,12 @@
+{
+  "argv": [
+    "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/bin/fm-remote-entrypoint.sh",
+    "1",
+    "L1VzZXJzL2pvc2gvLm5vLW1pc3Rha2VzL3dvcmt0cmVlcy81ZjM4NTE2NjRiYjgvMDFNNTZWRllCOVk2WVNCM05ERTAwU1BCOVY=",
+    "L1VzZXJzL2pvc2gvLm5vLW1pc3Rha2VzL3dvcmt0cmVlcy81ZjM4NTE2NjRiYjgvMDFNNTZWRllCOVk2WVNCM05ERTAwU1BCOVYvLnRlc3QtbG9jYWwvcmVtb3RlLWNhbmRpZGF0ZQ==",
+    "Zm0tY29udGV4dC1zaXplLnNoAC0tcmVtb3RlLXNlbGYAbWF0ZQA="
+  ],
+  "exit": 64,
+  "stdout": "",
+  "stderr": "error: remote root and home must be separate, non-overlapping directories\n"
+}

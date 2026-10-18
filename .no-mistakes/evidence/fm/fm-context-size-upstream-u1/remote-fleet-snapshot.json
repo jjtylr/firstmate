@@ -1,0 +1,241 @@
+{
+  "schema": "fm-fleet-snapshot.v1",
+  "generated": "2026-10-18T06:53:08Z",
+  "fm_home": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/parent",
+  "roots": {
+    "fm_root": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V",
+    "state": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/parent/state",
+    "data": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/parent/data",
+    "config": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/parent/config",
+    "projects": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/parent/projects"
+  },
+  "backlog": {
+    "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/parent/data/backlog.md",
+    "present": false,
+    "records": []
+  },
+  "tasks": [
+    {
+      "id": "mate",
+      "kind": "secondmate",
+      "harness": "pi",
+      "mode": "",
+      "yolo": "",
+      "branch": null,
+      "project": "",
+      "spawn_gen": null,
+      "backend": "unknown",
+      "remote": {
+        "host": "sandbox-remote",
+        "root": ""
+      },
+      "paths": {
+        "meta": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/parent/state/mate.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/parent/state/mate.status",
+          "present": false,
+          "kind": "event_history",
+          "last_event": {
+            "state": "",
+            "note": "",
+            "raw": "",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": null,
+          "present": false
+        },
+        "home": {
+          "path": "/home/mate",
+          "present": null
+        },
+        "report": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/parent/data/mate/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "conversation": {
+        "status": "read",
+        "tokens": 324,
+        "context_window": 1000,
+        "percentage": 32.4,
+        "over_threshold": true,
+        "age_seconds": 9,
+        "model": "remote-model",
+        "reason": null
+      },
+      "current_state": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "remote endpoint liveness not collected by fleet snapshot",
+        "raw": "",
+        "observed_at": "2026-10-18T06:53:08Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": null,
+        "exists": null,
+        "agent_alive": "unknown",
+        "status": "unknown",
+        "observed_at": "2026-10-18T06:53:08Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": false,
+        "open_decisions": [],
+        "scout_report_present": false,
+        "last_event_text": ""
+      },
+      "actions": {
+        "send": "bin/fm-send.sh fm-mate '<request>'",
+        "watch": "read status/doc return channel; do not routinely fm-peek a secondmate for answers",
+        "return_channel_note": "Secondmate answers come back through status/doc paths after a marked fm-send request."
+      },
+      "backlog": null
+    }
+  ],
+  "main_inventory": {
+    "valid": true,
+    "reason": null,
+    "orphan_in_flight": [],
+    "unstructured_current_count": 0
+  },
+  "contributions": {
+    "known": 0,
+    "checked": 0,
+    "counts": {
+      "captain": 0,
+      "fleet": 0,
+      "maintainer": 0,
+      "nobody": 0
+    },
+    "unmeasured": 0,
+    "complete": false,
+    "proven_clear": false,
+    "stale_verdicts": 0,
+    "missing_verdicts": 0,
+    "unreadable_records": 1,
+    "valid_until": 900,
+    "captain": [],
+    "captain_omitted": 0
+  },
+  "scout_reports": [],
+  "secondmate_current": {
+    "registry": {
+      "present": true,
+      "available": false,
+      "complete": false,
+      "reason": "registered secondmate table is unreadable",
+      "provenance": "registered-table",
+      "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/parent/data/secondmates.md",
+      "freshness": {
+        "status": "unavailable",
+        "observed_at": "2026-10-18T06:53:08Z"
+      },
+      "records": [],
+      "input_truncated": false,
+      "records_truncated": false,
+      "reasons": [
+        "registered secondmate table is unreadable"
+      ],
+      "lines_in_window": 0,
+      "records_in_window": 0
+    },
+    "records": [
+      {
+        "id": "mate",
+        "home": "/home/mate",
+        "host": null,
+        "remote": false,
+        "registered": null,
+        "spawn_gen": null,
+        "current": {
+          "state": "unknown",
+          "reason": "secondmate registration is unknown because the registry read is incomplete or unavailable"
+        },
+        "invalidity": null,
+        "reconcile_inventory": null,
+        "provenance": {
+          "selected": "unknown",
+          "structured_home": "/home/mate",
+          "parent_event_role": "fallback-only-not-current"
+        },
+        "freshness": {
+          "status": "unknown",
+          "observed_at": "2026-10-18T06:53:08Z",
+          "age_seconds": null
+        },
+        "active_children": [],
+        "decisions_open": [],
+        "holds": [],
+        "queued": [],
+        "landed": [],
+        "endpoints": [],
+        "counts": {
+          "active_children": 0,
+          "decisions_open": 0,
+          "holds": 0,
+          "queued": 0,
+          "landed": 0,
+          "endpoints": 0
+        },
+        "omitted": [],
+        "parent_event": {
+          "raw": "",
+          "note": "",
+          "age_seconds": null,
+          "open_activities": [],
+          "open_decisions": [],
+          "activity_scan": {
+            "records": [],
+            "available": true,
+            "input_truncated": false,
+            "retained_truncated": false,
+            "reasons": [],
+            "lines_in_window": 0,
+            "records_in_window": 0
+          }
+        },
+        "terminal_evidence": {
+          "provenance": "parent-direct-report-terminal",
+          "trust": "untrusted-supplement",
+          "captured": false,
+          "observed_at": "2026-10-18T06:53:08Z",
+          "freshness": "not-collected",
+          "reason": "no parent event to compare",
+          "lines": 0,
+          "bytes": 0,
+          "event_note_seen": false,
+          "contradiction": false
+        },
+        "contradiction": false
+      }
+    ],
+    "total_registered": 0,
+    "total": 1,
+    "shown": 1,
+    "truncated": 0
+  },
+  "secondmate_landed": {
+    "records": [],
+    "truncated": [],
+    "unreadable": [
+      "/home/mate"
+    ],
+    "partial": []
+  },
+  "secondmate_guidance": {
+    "note": "For kind=secondmate, bearings selects validated structured state from that registered home; parent events and bounded terminal evidence are fallback-only supplements and never current-state authority."
+  }
+}

@@ -1,0 +1,120 @@
+{
+  "real_pi": {
+    "status": "read",
+    "tokens": 130000,
+    "context_window": 500000,
+    "percentage": 26.0,
+    "over_threshold": true,
+    "age_seconds": 0,
+    "model": "sandbox-model",
+    "reason": null
+  },
+  "real_claude": {
+    "status": "read",
+    "tokens": 250100,
+    "context_window": 1000000,
+    "percentage": 25.01,
+    "over_threshold": true,
+    "age_seconds": 0,
+    "model": "claude-opus-5-5",
+    "reason": null
+  },
+  "boundary": {
+    "status": "read",
+    "tokens": 200000,
+    "context_window": 1000000,
+    "percentage": 20.0,
+    "over_threshold": false,
+    "age_seconds": 65,
+    "model": "claude-opus-5-5",
+    "reason": null
+  },
+  "above": {
+    "status": "read",
+    "tokens": 200001,
+    "context_window": 1000000,
+    "percentage": 20.0001,
+    "over_threshold": true,
+    "age_seconds": 65,
+    "model": "claude-opus-5-5",
+    "reason": null
+  },
+  "below": {
+    "status": "read",
+    "tokens": 199999,
+    "context_window": 1000000,
+    "percentage": 19.9999,
+    "over_threshold": false,
+    "age_seconds": 65,
+    "model": "claude-opus-5-5",
+    "reason": null
+  },
+  "unknown_window": {
+    "status": "read",
+    "tokens": 23456,
+    "context_window": null,
+    "percentage": null,
+    "over_threshold": null,
+    "age_seconds": null,
+    "model": "unlisted-model",
+    "reason": "unknown model window"
+  },
+  "bounded_tail": {
+    "status": "unknown",
+    "tokens": null,
+    "context_window": null,
+    "percentage": null,
+    "over_threshold": null,
+    "age_seconds": null,
+    "model": null,
+    "reason": "no assistant usage in bounded tail"
+  },
+  "newest_last_assistant": {
+    "status": "read",
+    "tokens": 17,
+    "context_window": 1000000,
+    "percentage": 0.0017,
+    "over_threshold": false,
+    "age_seconds": 65,
+    "model": "claude-opus-5-5",
+    "reason": null
+  },
+  "unsupported": {
+    "status": "not_read",
+    "tokens": null,
+    "context_window": null,
+    "percentage": null,
+    "over_threshold": null,
+    "age_seconds": null,
+    "model": null,
+    "reason": "unsupported harness"
+  },
+  "missing": {
+    "status": "unknown",
+    "tokens": null,
+    "context_window": null,
+    "percentage": null,
+    "over_threshold": null,
+    "age_seconds": null,
+    "model": null,
+    "reason": "no session log"
+  },
+  "real_ssh_stall": {
+    "observation": {
+      "status": "unknown",
+      "tokens": null,
+      "context_window": null,
+      "percentage": null,
+      "over_threshold": null,
+      "age_seconds": null,
+      "model": null,
+      "reason": "conversation read unavailable or timed out"
+    },
+    "elapsed_seconds": 3.138903790997574,
+    "accepted_connections": 1
+  },
+  "read_only": {
+    "mutations": {},
+    "session_and_metadata_files_unchanged": true
+  }
+}

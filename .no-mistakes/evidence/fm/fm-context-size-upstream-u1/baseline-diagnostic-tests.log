@@ -1,0 +1,57 @@
+FM_TEST_BEGIN 2026-10-18T06:53:40Z tests/fm-fleet-snapshot-view.test.sh family=snapshot-bearings expected_gate_skip=optional-binary
+ok - empty fleet snapshot and view use explicit absence markers
+ok - fixture snapshot covers task rows, backlog rows, pointers, stable ordering, and emission-time event age
+ok - home-summary excludes kind=secondmate from unowned_current and terminal_in_flight
+ok - undated captain holds age after a configurable threshold, decided only from structured fields
+ok - captain-hold buckets are total, mutually exclusive, and never decided by prose
+ok - main_inventory discloses orphan/unstructured and clears when inventory is consistent
+ok - backlog normalization preserves strict roles and resolves every blocker compatibly
+ok - snapshot event hints follow reconciled current state
+ok - durable fold keeps an open decision past a later unrelated event
+ok - a live secondmate endpoint preserves unrelated open decisions
+ok - durable captain-held transfer closes the duplicate live status decision
+ok - durable fold clears a decision only on a keyed resolution
+ok - a completed scout's stale decision surfaces as a report pointer, not pending
+ok - a scout still parked at a decision stays pending (terminal clear does not over-fire)
+ok - snapshot includes durable scout reports after teardown
+ok - snapshot parses tasks-axi rows and respects operational overrides
+not ok - view should render ship row from snapshot (missing: '| ship-task | working / pane | ship | alpha | tmux | present | https://github.com/kunchenguid/firstmate/pull/9')
+--- output ---
+# Fleet View
+
+Schema: fm-fleet-snapshot.v1
+Home: /private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.1VVvHU/view
+
+## Under Way
+| ID | Current | Kind | Repo/Project | Backend | Endpoint | Artifact | Path | Watch / return channel |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| cmux-task | unknown / none | ship | alpha | cmux | absent | - | /private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.1VVvHU/view/projects/missing-cmux (absent) | bin/fm-peek.sh fm-cmux-task |
+| scout-task | unknown / none | scout | alpha | tmux | absent | /private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.1VVvHU/view/data/scout-task/report.md | /private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.1VVvHU/view/projects/scout-worktree | bin/fm-peek.sh fm-scout-task |
+| secondmate-task | unknown / none | secondmate | /private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.1VVvHU/view/secondmate-home | tmux | absent / unknown | - | /private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.1VVvHU/view/secondmate-home | bin/fm-send.sh fm-secondmate-task '<request>' - read status/doc return channel; do not routinely fm-peek a secondmate for answers |
+| ship-task | working / pane | ship | alpha | tmux | absent | https://github.com/kunchenguid/firstmate/pull/9 | /private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.1VVvHU/view/projects/alpha-worktree | bin/fm-peek.sh fm-ship-task |
+
+## Queued
+| ID | Title | Repo | Kind | Blocked By | Artifact |
+| --- | --- | --- | --- | --- | --- |
+| queued-task | Queued Task | alpha | ship | ship-task | - |
+| - | handoff note without canonical syntax | - | - | - | - |
+
+## Done
+| ID | Title | Repo | Kind | Blocked By | Artifact |
+| --- | --- | --- | --- | --- | --- |
+| done-task | Done Task | alpha | ship | - | https://github.com/kunchenguid/firstmate/pull/7 |
+
+## Secondmates
+For kind=secondmate, bearings selects validated structured state from that registered home; parent events and bounded terminal evidence are fallback-only supplements and never current-state authority.
+FM_TEST_END 2026-10-18T06:54:13Z tests/fm-fleet-snapshot-view.test.sh exit=1 duration_ms=33590 gate_skip=false
+FM_TEST_BEGIN 2026-10-18T06:54:13Z tests/fm-bearings-snapshot.test.sh family=snapshot-bearings expected_gate_skip=optional-binary
+ok - task teardown during metadata capture is omitted without aborting the snapshot
+ok - current state and decision hints share one captured status observation
+ok - reused live state is discarded when task generation changes
+ok - large local snapshot overlaps local reads with byte-identical serial and concurrent projections
+not ok - a healthy snapshot did not issue exactly one remote file read per home
+FM_TEST_END 2026-10-18T06:54:32Z tests/fm-bearings-snapshot.test.sh exit=1 duration_ms=18381 gate_skip=false
+FM_TEST_SUMMARY total=2 failed=2 skipped_gate=0 duration_ms=52124
+FM_TEST_SUMMARY_FAMILY family=snapshot-bearings count=2 duration_ms=51971 failed=2
+FM_TEST_SLOWEST rank=1 script=tests/fm-fleet-snapshot-view.test.sh duration_ms=33590
+FM_TEST_SLOWEST rank=2 script=tests/fm-bearings-snapshot.test.sh duration_ms=18381

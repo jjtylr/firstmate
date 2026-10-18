@@ -1,0 +1,901 @@
+FM_TEST_BEGIN 2026-10-18T06:41:03Z tests/fm-context-size.test.sh family=snapshot-bearings expected_gate_skip=optional-binary
+PASS: bounded Claude/Pi usage, windows, pins, absence and selected-home remote reads
+ok - fixture-only conversation reader
+FM_TEST_END 2026-10-18T06:41:09Z tests/fm-context-size.test.sh exit=0 duration_ms=5643 gate_skip=false
+FM_TEST_BEGIN 2026-10-18T06:41:09Z tests/fm-fleet-snapshot-view.test.sh family=snapshot-bearings expected_gate_skip=optional-binary
+ok - empty fleet snapshot and view use explicit absence markers
+ok - fixture snapshot covers task rows, backlog rows, pointers, stable ordering, and emission-time event age
+ok - snapshot and view expose per-direct-report conversation observations
+ok - home-summary excludes kind=secondmate from unowned_current and terminal_in_flight
+ok - undated captain holds age after a configurable threshold, decided only from structured fields
+ok - captain-hold buckets are total, mutually exclusive, and never decided by prose
+ok - main_inventory discloses orphan/unstructured and clears when inventory is consistent
+ok - backlog normalization preserves strict roles and resolves every blocker compatibly
+ok - snapshot event hints follow reconciled current state
+ok - durable fold keeps an open decision past a later unrelated event
+ok - a live secondmate endpoint preserves unrelated open decisions
+ok - durable captain-held transfer closes the duplicate live status decision
+ok - durable fold clears a decision only on a keyed resolution
+not ok - reopened snapshot revived a completed decision or lost a current one: {
+  "schema": "fm-fleet-snapshot.v1",
+  "generated": "2026-10-18T06:41:40Z",
+  "fm_home": "/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.Njo4Q5/terminal-cleanup",
+  "roots": {
+    "fm_root": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V",
+    "state": "/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.Njo4Q5/terminal-cleanup/state",
+    "data": "/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.Njo4Q5/terminal-cleanup/data",
+    "config": "/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.Njo4Q5/terminal-cleanup/config",
+    "projects": "/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.Njo4Q5/terminal-cleanup/projects"
+  },
+  "backlog": {
+    "path": "/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.Njo4Q5/terminal-cleanup/data/backlog.md",
+    "present": false,
+    "records": []
+  },
+  "tasks": [
+    {
+      "id": "scout-done",
+      "kind": "scout",
+      "harness": "claude",
+      "mode": "",
+      "yolo": "",
+      "branch": null,
+      "project": "",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.Njo4Q5/terminal-cleanup/state/scout-done.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.Njo4Q5/terminal-cleanup/state/scout-done.status",
+          "present": true,
+          "kind": "event_history",
+          "last_event": {
+            "state": "note",
+            "note": "more cleanup",
+            "raw": "note: more cleanup",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.Njo4Q5/terminal-cleanup/projects/task",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.Njo4Q5/terminal-cleanup/data/scout-done/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "conversation": {
+        "status": "unknown",
+        "tokens": null,
+        "context_window": null,
+        "percentage": null,
+        "over_threshold": null,
+        "age_seconds": null,
+        "model": null,
+        "reason": "no session log"
+      },
+      "current_state": {
+        "state": "parked",
+        "source": "status-log",
+        "detail": "a new choice",
+        "raw": "state: parked · source: status-log · a new choice",
+        "observed_at": "2026-10-18T06:41:40Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": "firstmate:fm-scout-done",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-10-18T06:41:40Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": true,
+        "blocked_event": true,
+        "open_decisions": [
+          {
+            "key": "access",
+            "verb": "blocked",
+            "summary": "reopened access"
+          },
+          {
+            "key": "new-choice",
+            "verb": "needs-decision",
+            "summary": "a new choice"
+          }
+        ],
+        "scout_report_present": false,
+        "last_event_text": "note: more cleanup"
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-scout-done",
+        "steer": "bin/fm-send.sh fm-scout-done '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    },
+    {
+      "id": "scout-failed",
+      "kind": "scout",
+      "harness": "claude",
+      "mode": "",
+      "yolo": "",
+      "branch": null,
+      "project": "",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.Njo4Q5/terminal-cleanup/state/scout-failed.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.Njo4Q5/terminal-cleanup/state/scout-failed.status",
+          "present": true,
+          "kind": "event_history",
+          "last_event": {
+            "state": "note",
+            "note": "more cleanup",
+            "raw": "note: more cleanup",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.Njo4Q5/terminal-cleanup/projects/task",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.Njo4Q5/terminal-cleanup/data/scout-failed/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "conversation": {
+        "status": "unknown",
+        "tokens": null,
+        "context_window": null,
+        "percentage": null,
+        "over_threshold": null,
+        "age_seconds": null,
+        "model": null,
+        "reason": "no session log"
+      },
+      "current_state": {
+        "state": "parked",
+        "source": "status-log",
+        "detail": "a new choice",
+        "raw": "state: parked · source: status-log · a new choice",
+        "observed_at": "2026-10-18T06:41:40Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": "firstmate:fm-scout-failed",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-10-18T06:41:40Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": true,
+        "blocked_event": true,
+        "open_decisions": [
+          {
+            "key": "access",
+            "verb": "blocked",
+            "summary": "reopened access"
+          },
+          {
+            "key": "new-choice",
+            "verb": "needs-decision",
+            "summary": "a new choice"
+          }
+        ],
+        "scout_report_present": false,
+        "last_event_text": "note: more cleanup"
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-scout-failed",
+        "steer": "bin/fm-send.sh fm-scout-failed '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    },
+    {
+      "id": "secondmate-done",
+      "kind": "secondmate",
+      "harness": "claude",
+      "mode": "",
+      "yolo": "",
+      "branch": null,
+      "project": "",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.Njo4Q5/terminal-cleanup/state/secondmate-done.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.Njo4Q5/terminal-cleanup/state/secondmate-done.status",
+          "present": true,
+          "kind": "event_history",
+          "last_event": {
+            "state": "note",
+            "note": "more cleanup",
+            "raw": "note: more cleanup",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.Njo4Q5/terminal-cleanup/projects/task",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.Njo4Q5/terminal-cleanup/data/secondmate-done/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "conversation": {
+        "status": "unknown",
+        "tokens": null,
+        "context_window": null,
+        "percentage": null,
+        "over_threshold": null,
+        "age_seconds": null,
+        "model": null,
+        "reason": "missing working directory"
+      },
+      "current_state": {
+        "state": "parked",
+        "source": "status-log",
+        "detail": "a new choice",
+        "raw": "state: parked · source: status-log · a new choice",
+        "observed_at": "2026-10-18T06:41:40Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": "firstmate:fm-secondmate-done",
+        "exists": true,
+        "agent_alive": "alive",
+        "status": "alive",
+        "observed_at": "2026-10-18T06:41:40Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": true,
+        "blocked_event": true,
+        "open_decisions": [
+          {
+            "key": "choice",
+            "verb": "needs-decision",
+            "summary": "choose a route"
+          },
+          {
+            "key": "access",
+            "verb": "blocked",
+            "summary": "reopened access"
+          },
+          {
+            "key": "new-choice",
+            "verb": "needs-decision",
+            "summary": "a new choice"
+          }
+        ],
+        "scout_report_present": false,
+        "last_event_text": "note: more cleanup"
+      },
+      "actions": {
+        "send": "bin/fm-send.sh fm-secondmate-done '<request>'",
+        "watch": "read status/doc return channel; do not routinely fm-peek a secondmate for answers",
+        "return_channel_note": "Secondmate answers come back through status/doc paths after a marked fm-send request."
+      },
+      "backlog": null
+    },
+    {
+      "id": "secondmate-failed",
+      "kind": "secondmate",
+      "harness": "claude",
+      "mode": "",
+      "yolo": "",
+      "branch": null,
+      "project": "",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.Njo4Q5/terminal-cleanup/state/secondmate-failed.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.Njo4Q5/terminal-cleanup/state/secondmate-failed.status",
+          "present": true,
+          "kind": "event_history",
+          "last_event": {
+            "state": "note",
+            "note": "more cleanup",
+            "raw": "note: more cleanup",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.Njo4Q5/terminal-cleanup/projects/task",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.Njo4Q5/terminal-cleanup/data/secondmate-failed/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "conversation": {
+        "status": "unknown",
+        "tokens": null,
+        "context_window": null,
+        "percentage": null,
+        "over_threshold": null,
+        "age_seconds": null,
+        "model": null,
+        "reason": "missing working directory"
+      },
+      "current_state": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "backend unreachable (tmux endpoint state: unreadable)",
+        "raw": "state: unknown · source: none · backend unreachable (tmux endpoint state: unreadable)",
+        "observed_at": "2026-10-18T06:41:40Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": "firstmate:fm-secondmate-failed",
+        "exists": true,
+        "agent_alive": "alive",
+        "status": "alive",
+        "observed_at": "2026-10-18T06:41:40Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": true,
+        "blocked_event": true,
+        "open_decisions": [
+          {
+            "key": "choice",
+            "verb": "needs-decision",
+            "summary": "choose a route"
+          },
+          {
+            "key": "access",
+            "verb": "blocked",
+            "summary": "reopened access"
+          },
+          {
+            "key": "new-choice",
+            "verb": "needs-decision",
+            "summary": "a new choice"
+          }
+        ],
+        "scout_report_present": false,
+        "last_event_text": "note: more cleanup"
+      },
+      "actions": {
+        "send": "bin/fm-send.sh fm-secondmate-failed '<request>'",
+        "watch": "read status/doc return channel; do not routinely fm-peek a secondmate for answers",
+        "return_channel_note": "Secondmate answers come back through status/doc paths after a marked fm-send request."
+      },
+      "backlog": null
+    },
+    {
+      "id": "ship-done",
+      "kind": "ship",
+      "harness": "claude",
+      "mode": "",
+      "yolo": "",
+      "branch": null,
+      "project": "",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.Njo4Q5/terminal-cleanup/state/ship-done.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.Njo4Q5/terminal-cleanup/state/ship-done.status",
+          "present": true,
+          "kind": "event_history",
+          "last_event": {
+            "state": "note",
+            "note": "more cleanup",
+            "raw": "note: more cleanup",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.Njo4Q5/terminal-cleanup/projects/task",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.Njo4Q5/terminal-cleanup/data/ship-done/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "conversation": {
+        "status": "unknown",
+        "tokens": null,
+        "context_window": null,
+        "percentage": null,
+        "over_threshold": null,
+        "age_seconds": null,
+        "model": null,
+        "reason": "no session log"
+      },
+      "current_state": {
+        "state": "parked",
+        "source": "status-log",
+        "detail": "a new choice",
+        "raw": "state: parked · source: status-log · a new choice",
+        "observed_at": "2026-10-18T06:41:40Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": "firstmate:fm-ship-done",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-10-18T06:41:40Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": true,
+        "blocked_event": true,
+        "open_decisions": [
+          {
+            "key": "access",
+            "verb": "blocked",
+            "summary": "reopened access"
+          },
+          {
+            "key": "new-choice",
+            "verb": "needs-decision",
+            "summary": "a new choice"
+          }
+        ],
+        "scout_report_present": false,
+        "last_event_text": "note: more cleanup"
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-ship-done",
+        "steer": "bin/fm-send.sh fm-ship-done '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    },
+    {
+      "id": "ship-failed",
+      "kind": "ship",
+      "harness": "claude",
+      "mode": "",
+      "yolo": "",
+      "branch": null,
+      "project": "",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.Njo4Q5/terminal-cleanup/state/ship-failed.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.Njo4Q5/terminal-cleanup/state/ship-failed.status",
+          "present": true,
+          "kind": "event_history",
+          "last_event": {
+            "state": "note",
+            "note": "more cleanup",
+            "raw": "note: more cleanup",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.Njo4Q5/terminal-cleanup/projects/task",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.Njo4Q5/terminal-cleanup/data/ship-failed/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "conversation": {
+        "status": "unknown",
+        "tokens": null,
+        "context_window": null,
+        "percentage": null,
+        "over_threshold": null,
+        "age_seconds": null,
+        "model": null,
+        "reason": "no session log"
+      },
+      "current_state": {
+        "state": "parked",
+        "source": "status-log",
+        "detail": "a new choice",
+        "raw": "state: parked · source: status-log · a new choice",
+        "observed_at": "2026-10-18T06:41:40Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": "firstmate:fm-ship-failed",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-10-18T06:41:40Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": true,
+        "blocked_event": true,
+        "open_decisions": [
+          {
+            "key": "access",
+            "verb": "blocked",
+            "summary": "reopened access"
+          },
+          {
+            "key": "new-choice",
+            "verb": "needs-decision",
+            "summary": "a new choice"
+          }
+        ],
+        "scout_report_present": false,
+        "last_event_text": "note: more cleanup"
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-ship-failed",
+        "steer": "bin/fm-send.sh fm-ship-failed '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    }
+  ],
+  "main_inventory": {
+    "valid": true,
+    "reason": null,
+    "orphan_in_flight": [],
+    "unstructured_current_count": 0
+  },
+  "contributions": {
+    "known": 0,
+    "checked": 0,
+    "counts": {
+      "captain": 0,
+      "fleet": 0,
+      "maintainer": 0,
+      "nobody": 0
+    },
+    "unmeasured": 0,
+    "complete": false,
+    "proven_clear": false,
+    "stale_verdicts": 0,
+    "missing_verdicts": 0,
+    "unreadable_records": 1,
+    "valid_until": 900,
+    "captain": [],
+    "captain_omitted": 0
+  },
+  "scout_reports": [],
+  "secondmate_current": {
+    "registry": {
+      "present": false,
+      "available": true,
+      "complete": true,
+      "reason": null,
+      "provenance": "registered-table",
+      "path": "/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.Njo4Q5/terminal-cleanup/data/secondmates.md",
+      "freshness": {
+        "status": "fresh",
+        "observed_at": "2026-10-18T06:41:40Z"
+      },
+      "records": [],
+      "input_truncated": false,
+      "records_truncated": false,
+      "reasons": [],
+      "lines_in_window": 0,
+      "records_in_window": 0
+    },
+    "records": [
+      {
+        "id": "secondmate-done",
+        "home": null,
+        "host": null,
+        "remote": false,
+        "registered": false,
+        "spawn_gen": null,
+        "current": {
+          "state": "unknown",
+          "reason": "secondmate metadata is not registered"
+        },
+        "invalidity": null,
+        "reconcile_inventory": null,
+        "provenance": {
+          "selected": "parent-event-fallback",
+          "structured_home": null,
+          "parent_event_role": "fallback-only-not-current"
+        },
+        "freshness": {
+          "status": "historical-event",
+          "observed_at": "2026-10-18T06:41:40Z",
+          "age_seconds": 0
+        },
+        "active_children": [],
+        "decisions_open": [],
+        "holds": [],
+        "queued": [],
+        "landed": [],
+        "endpoints": [],
+        "counts": {
+          "active_children": 0,
+          "decisions_open": 0,
+          "holds": 0,
+          "queued": 0,
+          "landed": 0,
+          "endpoints": 0
+        },
+        "omitted": [],
+        "parent_event": {
+          "raw": "note: more cleanup",
+          "note": "more cleanup",
+          "age_seconds": null,
+          "open_activities": [],
+          "open_decisions": [
+            {
+              "key": "choice",
+              "verb": "needs-decision",
+              "summary": "choose a route"
+            },
+            {
+              "key": "access",
+              "verb": "blocked",
+              "summary": "reopened access"
+            },
+            {
+              "key": "new-choice",
+              "verb": "needs-decision",
+              "summary": "a new choice"
+            }
+          ],
+          "activity_scan": {
+            "records": [],
+            "available": true,
+            "input_truncated": false,
+            "retained_truncated": false,
+            "reasons": [],
+            "lines_in_window": 7,
+            "records_in_window": 0
+          }
+        },
+        "terminal_evidence": {
+          "provenance": "parent-direct-report-terminal",
+          "trust": "untrusted-supplement",
+          "captured": true,
+          "observed_at": "2026-10-18T06:41:40Z",
+          "freshness": "fresh",
+          "reason": null,
+          "lines": 2,
+          "bytes": 12,
+          "event_note_seen": false,
+          "contradiction": false
+        },
+        "contradiction": false
+      },
+      {
+        "id": "secondmate-failed",
+        "home": null,
+        "host": null,
+        "remote": false,
+        "registered": false,
+        "spawn_gen": null,
+        "current": {
+          "state": "unknown",
+          "reason": "secondmate metadata is not registered"
+        },
+        "invalidity": null,
+        "reconcile_inventory": null,
+        "provenance": {
+          "selected": "parent-event-fallback",
+          "structured_home": null,
+          "parent_event_role": "fallback-only-not-current"
+        },
+        "freshness": {
+          "status": "historical-event",
+          "observed_at": "2026-10-18T06:41:40Z",
+          "age_seconds": 0
+        },
+        "active_children": [],
+        "decisions_open": [],
+        "holds": [],
+        "queued": [],
+        "landed": [],
+        "endpoints": [],
+        "counts": {
+          "active_children": 0,
+          "decisions_open": 0,
+          "holds": 0,
+          "queued": 0,
+          "landed": 0,
+          "endpoints": 0
+        },
+        "omitted": [],
+        "parent_event": {
+          "raw": "note: more cleanup",
+          "note": "more cleanup",
+          "age_seconds": null,
+          "open_activities": [],
+          "open_decisions": [
+            {
+              "key": "choice",
+              "verb": "needs-decision",
+              "summary": "choose a route"
+            },
+            {
+              "key": "access",
+              "verb": "blocked",
+              "summary": "reopened access"
+            },
+            {
+              "key": "new-choice",
+              "verb": "needs-decision",
+              "summary": "a new choice"
+            }
+          ],
+          "activity_scan": {
+            "records": [],
+            "available": true,
+            "input_truncated": false,
+            "retained_truncated": false,
+            "reasons": [],
+            "lines_in_window": 7,
+            "records_in_window": 0
+          }
+        },
+        "terminal_evidence": {
+          "provenance": "parent-direct-report-terminal",
+          "trust": "untrusted-supplement",
+          "captured": true,
+          "observed_at": "2026-10-18T06:41:40Z",
+          "freshness": "fresh",
+          "reason": null,
+          "lines": 2,
+          "bytes": 12,
+          "event_note_seen": false,
+          "contradiction": false
+        },
+        "contradiction": false
+      }
+    ],
+    "total_registered": 0,
+    "total": 2,
+    "shown": 2,
+    "truncated": 0
+  },
+  "secondmate_landed": {
+    "records": [],
+    "truncated": [],
+    "unreadable": [
+      "<secondmate-done: unavailable>",
+      "<secondmate-failed: unavailable>"
+    ],
+    "partial": []
+  },
+  "secondmate_guidance": {
+    "note": "For kind=secondmate, bearings selects validated structured state from that registered home; parent events and bounded terminal evidence are fallback-only supplements and never current-state authority."
+  }
+}
+FM_TEST_END 2026-10-18T06:41:42Z tests/fm-fleet-snapshot-view.test.sh exit=1 duration_ms=33025 gate_skip=false
+FM_TEST_BEGIN 2026-10-18T06:41:42Z tests/fm-bearings-snapshot.test.sh family=snapshot-bearings expected_gate_skip=optional-binary
+ok - task teardown during metadata capture is omitted without aborting the snapshot
+ok - current state and decision hints share one captured status observation
+ok - reused live state is discarded when task generation changes
+not ok - concurrent local observation changed the fm-bearings.v1 projection
+FM_TEST_END 2026-10-18T06:42:00Z tests/fm-bearings-snapshot.test.sh exit=1 duration_ms=17560 gate_skip=false
+FM_TEST_BEGIN 2026-10-18T06:42:00Z tests/fm-home-summary-refresh.test.sh family=snapshot-bearings expected_gate_skip=optional-binary
+ok - watcher-carried status append publishes the real home summary
+ok - large backlog snapshots and home-summary publication stay within exec limits
+ok - fleet snapshot transport does not require or mutate operational state
+ok - parent snapshot consumes large child ledgers without argument transport
+ok - live watcher cadence bounds publication staleness without signals
+ok - fleet snapshot consumes the published local ledger by default
+ok - writer kill and replacement preserve an atomic JSON ledger
+ok - best-effort publication logs and continues
+Terminated: 15             sleep 0.1
+Terminated: 15             sleep 0.1
+ok - best-effort refresh bounds publication lock acquisition
+Terminated: 15             env FM_ROOT_OVERRIDE="$FM_ROOT" FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" FM_CONFIG_OVERRIDE="$CONFIG" FM_PROJECTS_OVERRIDE="$PROJECTS" "$SCRIPT_DIR/fm-fleet-snapshot.sh" --secondmate-home-summary > "$HOME_SUMMARY_TMP" 2> "$HOME_SUMMARY_ERR_TMP"
+ok - best-effort refresh bounds validation and publication
+ok - best-effort refresh bounds state initialization
+ok - best-effort refresh logs worker termination
+ok - best-effort refresh bounds failure reporting fallback
+ok - valid publication ignores an unavailable failure record
+ok - publication completes on a home carrying accumulated status history
+ok - producer skips remote per-task state probes
+ok - a stalled publication does not delay the watcher liveness beacon
+ok - publication remains single-flight across watcher restart
+ok - bootstrap scopes retained failures to the current publication
+Terminated: 15             sleep 0.1
+ok - failure records preserve refresh attempt ordering
+ok - repeated publication failure is reported at session start until it clears
+FM_TEST_END 2026-10-18T06:43:01Z tests/fm-home-summary-refresh.test.sh exit=0 duration_ms=61174 gate_skip=false
+FM_TEST_SUMMARY total=4 failed=2 skipped_gate=0 duration_ms=117704
+FM_TEST_SUMMARY_FAMILY family=snapshot-bearings count=4 duration_ms=117402 failed=2
+FM_TEST_SLOWEST rank=1 script=tests/fm-home-summary-refresh.test.sh duration_ms=61174
+FM_TEST_SLOWEST rank=2 script=tests/fm-fleet-snapshot-view.test.sh duration_ms=33025
+FM_TEST_SLOWEST rank=3 script=tests/fm-bearings-snapshot.test.sh duration_ms=17560
+FM_TEST_SLOWEST rank=4 script=tests/fm-context-size.test.sh duration_ms=5643

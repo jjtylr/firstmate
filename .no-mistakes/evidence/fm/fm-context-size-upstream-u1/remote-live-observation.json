@@ -1,0 +1,10 @@
+{
+  "status": "read",
+  "tokens": 324,
+  "context_window": 1000,
+  "percentage": 32.4,
+  "over_threshold": true,
+  "age_seconds": 7,
+  "model": "remote-model",
+  "reason": null
+}

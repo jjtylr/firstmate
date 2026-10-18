@@ -1,0 +1,111 @@
+inventory failure: target==firstmate output=fm-mate PATH=/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.1VVvHU/summary-secondmate-only/fakebin:/Users/josh/.pi/agent/bin:/Users/josh/.local/bin:/Users/josh/Library/Python/3.13/bin:/Users/josh/.local/bin:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/make/libexec/gnubin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/Users/josh/.nix-profile/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/josh/.orbstack/bin:/Users/josh/go/bin:/Users/josh/.cargo/bin:/Users/josh/bin:/usr/local/sbin
+inventory failure: target=firstmate output=fm-mate PATH=/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.1VVvHU/summary-secondmate-only/fakebin:/Users/josh/.pi/agent/bin:/Users/josh/.local/bin:/Users/josh/Library/Python/3.13/bin:/Users/josh/.local/bin:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/make/libexec/gnubin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/Users/josh/.nix-profile/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/josh/.orbstack/bin:/Users/josh/go/bin:/Users/josh/.cargo/bin:/Users/josh/bin:/usr/local/sbin
+inventory failure: target==firstmate output=fm-masked-decision PATH=/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.1VVvHU/masking/fakebin:/Users/josh/.pi/agent/bin:/Users/josh/.local/bin:/Users/josh/Library/Python/3.13/bin:/Users/josh/.local/bin:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/make/libexec/gnubin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/Users/josh/.nix-profile/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/josh/.orbstack/bin:/Users/josh/go/bin:/Users/josh/.cargo/bin:/Users/josh/bin:/usr/local/sbin
+inventory failure: target=firstmate output=fm-masked-decision PATH=/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.1VVvHU/masking/fakebin:/Users/josh/.pi/agent/bin:/Users/josh/.local/bin:/Users/josh/Library/Python/3.13/bin:/Users/josh/.local/bin:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/make/libexec/gnubin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/Users/josh/.nix-profile/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/josh/.orbstack/bin:/Users/josh/go/bin:/Users/josh/.cargo/bin:/Users/josh/bin:/usr/local/sbin
+inventory failure: target==firstmate output=fm-transferred-decision PATH=/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.1VVvHU/captain-held-transfer/fakebin:/Users/josh/.pi/agent/bin:/Users/josh/.local/bin:/Users/josh/Library/Python/3.13/bin:/Users/josh/.local/bin:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/make/libexec/gnubin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/Users/josh/.nix-profile/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/josh/.orbstack/bin:/Users/josh/go/bin:/Users/josh/.cargo/bin:/Users/josh/bin:/usr/local/sbin
+inventory failure: target=firstmate output=fm-transferred-decision PATH=/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.1VVvHU/captain-held-transfer/fakebin:/Users/josh/.pi/agent/bin:/Users/josh/.local/bin:/Users/josh/Library/Python/3.13/bin:/Users/josh/.local/bin:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/make/libexec/gnubin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/Users/josh/.nix-profile/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/josh/.orbstack/bin:/Users/josh/go/bin:/Users/josh/.cargo/bin:/Users/josh/bin:/usr/local/sbin
+inventory failure: target==firstmate output=fm-scout-done
+fm-scout-failed
+fm-secondmate-done
+fm-secondmate-failed
+fm-ship-done
+fm-ship-failed PATH=/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.1VVvHU/terminal-cleanup/fakebin:/Users/josh/.pi/agent/bin:/Users/josh/.local/bin:/Users/josh/Library/Python/3.13/bin:/Users/josh/.local/bin:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/make/libexec/gnubin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/Users/josh/.nix-profile/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/josh/.orbstack/bin:/Users/josh/go/bin:/Users/josh/.cargo/bin:/Users/josh/bin:/usr/local/sbin
+inventory failure: target==firstmate output=fm-scout-done
+fm-scout-failed
+fm-secondmate-done
+fm-secondmate-failed
+fm-ship-done
+fm-ship-failed PATH=/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.1VVvHU/terminal-cleanup/fakebin:/Users/josh/.pi/agent/bin:/Users/josh/.local/bin:/Users/josh/Library/Python/3.13/bin:/Users/josh/.local/bin:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/make/libexec/gnubin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/Users/josh/.nix-profile/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/josh/.orbstack/bin:/Users/josh/go/bin:/Users/josh/.cargo/bin:/Users/josh/bin:/usr/local/sbin
+inventory failure: target=firstmate output=fm-scout-done
+fm-scout-failed
+fm-secondmate-done
+fm-secondmate-failed
+fm-ship-done
+fm-ship-failed PATH=/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.1VVvHU/terminal-cleanup/fakebin:/Users/josh/.pi/agent/bin:/Users/josh/.local/bin:/Users/josh/Library/Python/3.13/bin:/Users/josh/.local/bin:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/make/libexec/gnubin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/Users/josh/.nix-profile/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/josh/.orbstack/bin:/Users/josh/go/bin:/Users/josh/.cargo/bin:/Users/josh/bin:/usr/local/sbin
+inventory failure: target=firstmate output=fm-scout-done
+fm-scout-failed
+fm-secondmate-done
+fm-secondmate-failed
+fm-ship-done
+fm-ship-failed PATH=/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.1VVvHU/terminal-cleanup/fakebin:/Users/josh/.pi/agent/bin:/Users/josh/.local/bin:/Users/josh/Library/Python/3.13/bin:/Users/josh/.local/bin:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/make/libexec/gnubin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/Users/josh/.nix-profile/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/josh/.orbstack/bin:/Users/josh/go/bin:/Users/josh/.cargo/bin:/Users/josh/bin:/usr/local/sbin
+inventory failure: target==firstmate output=fm-scout-done
+fm-scout-failed
+fm-secondmate-done
+fm-secondmate-failed
+fm-ship-done
+fm-ship-failed PATH=/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.1VVvHU/terminal-cleanup/fakebin:/Users/josh/.pi/agent/bin:/Users/josh/.local/bin:/Users/josh/Library/Python/3.13/bin:/Users/josh/.local/bin:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/make/libexec/gnubin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/Users/josh/.nix-profile/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/josh/.orbstack/bin:/Users/josh/go/bin:/Users/josh/.cargo/bin:/Users/josh/bin:/usr/local/sbin
+inventory failure: target==firstmate output=fm-scout-done
+fm-scout-failed
+fm-secondmate-done
+fm-secondmate-failed
+fm-ship-done
+fm-ship-failed PATH=/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.1VVvHU/terminal-cleanup/fakebin:/Users/josh/.pi/agent/bin:/Users/josh/.local/bin:/Users/josh/Library/Python/3.13/bin:/Users/josh/.local/bin:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/make/libexec/gnubin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/Users/josh/.nix-profile/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/josh/.orbstack/bin:/Users/josh/go/bin:/Users/josh/.cargo/bin:/Users/josh/bin:/usr/local/sbin
+inventory failure: target==firstmate output=fm-scout-done
+fm-scout-failed
+fm-secondmate-done
+fm-secondmate-failed
+fm-ship-done
+fm-ship-failed PATH=/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.1VVvHU/terminal-cleanup/fakebin:/Users/josh/.pi/agent/bin:/Users/josh/.local/bin:/Users/josh/Library/Python/3.13/bin:/Users/josh/.local/bin:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/make/libexec/gnubin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/Users/josh/.nix-profile/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/josh/.orbstack/bin:/Users/josh/go/bin:/Users/josh/.cargo/bin:/Users/josh/bin:/usr/local/sbin
+inventory failure: target==firstmate output=fm-scout-done
+fm-scout-failed
+fm-secondmate-done
+fm-secondmate-failed
+fm-ship-done
+fm-ship-failed PATH=/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.1VVvHU/terminal-cleanup/fakebin:/Users/josh/.pi/agent/bin:/Users/josh/.local/bin:/Users/josh/Library/Python/3.13/bin:/Users/josh/.local/bin:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/make/libexec/gnubin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/Users/josh/.nix-profile/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/josh/.orbstack/bin:/Users/josh/go/bin:/Users/josh/.cargo/bin:/Users/josh/bin:/usr/local/sbin
+inventory failure: target==firstmate output=fm-scout-done
+fm-scout-failed
+fm-secondmate-done
+fm-secondmate-failed
+fm-ship-done
+fm-ship-failed PATH=/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.1VVvHU/terminal-cleanup/fakebin:/Users/josh/.pi/agent/bin:/Users/josh/.local/bin:/Users/josh/Library/Python/3.13/bin:/Users/josh/.local/bin:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/make/libexec/gnubin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/Users/josh/.nix-profile/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/josh/.orbstack/bin:/Users/josh/go/bin:/Users/josh/.cargo/bin:/Users/josh/bin:/usr/local/sbin
+inventory failure: target==firstmate output=fm-scout-done
+fm-scout-failed
+fm-secondmate-done
+fm-secondmate-failed
+fm-ship-done
+fm-ship-failed PATH=/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.1VVvHU/terminal-cleanup/fakebin:/Users/josh/.pi/agent/bin:/Users/josh/.local/bin:/Users/josh/Library/Python/3.13/bin:/Users/josh/.local/bin:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/make/libexec/gnubin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/Users/josh/.nix-profile/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/josh/.orbstack/bin:/Users/josh/go/bin:/Users/josh/.cargo/bin:/Users/josh/bin:/usr/local/sbin
+inventory failure: target=firstmate output=fm-scout-done
+fm-scout-failed
+fm-secondmate-done
+fm-secondmate-failed
+fm-ship-done
+fm-ship-failed PATH=/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.1VVvHU/terminal-cleanup/fakebin:/Users/josh/.pi/agent/bin:/Users/josh/.local/bin:/Users/josh/Library/Python/3.13/bin:/Users/josh/.local/bin:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/make/libexec/gnubin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/Users/josh/.nix-profile/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/josh/.orbstack/bin:/Users/josh/go/bin:/Users/josh/.cargo/bin:/Users/josh/bin:/usr/local/sbin
+inventory failure: target=firstmate output=fm-scout-done
+fm-scout-failed
+fm-secondmate-done
+fm-secondmate-failed
+fm-ship-done
+fm-ship-failed PATH=/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.1VVvHU/terminal-cleanup/fakebin:/Users/josh/.pi/agent/bin:/Users/josh/.local/bin:/Users/josh/Library/Python/3.13/bin:/Users/josh/.local/bin:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/make/libexec/gnubin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/Users/josh/.nix-profile/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/josh/.orbstack/bin:/Users/josh/go/bin:/Users/josh/.cargo/bin:/Users/josh/bin:/usr/local/sbin
+inventory failure: target==firstmate output=surface
+fm-scout-task
+fm-secondmate-task
+fm-ship-task PATH=/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.1VVvHU/view/fakebin:/Users/josh/.pi/agent/bin:/Users/josh/.local/bin:/Users/josh/Library/Python/3.13/bin:/Users/josh/.local/bin:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/make/libexec/gnubin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/Users/josh/.nix-profile/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/josh/.orbstack/bin:/Users/josh/go/bin:/Users/josh/.cargo/bin:/Users/josh/bin:/usr/local/sbin
+inventory failure: target==firstmate output=surface
+fm-scout-task
+fm-secondmate-task
+fm-ship-task PATH=/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.1VVvHU/view/fakebin:/Users/josh/.pi/agent/bin:/Users/josh/.local/bin:/Users/josh/Library/Python/3.13/bin:/Users/josh/.local/bin:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/make/libexec/gnubin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/Users/josh/.nix-profile/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/josh/.orbstack/bin:/Users/josh/go/bin:/Users/josh/.cargo/bin:/Users/josh/bin:/usr/local/sbin
+inventory failure: target==firstmate output=surface
+fm-scout-task
+fm-secondmate-task
+fm-ship-task PATH=/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.1VVvHU/view/fakebin:/Users/josh/.pi/agent/bin:/Users/josh/.local/bin:/Users/josh/Library/Python/3.13/bin:/Users/josh/.local/bin:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/make/libexec/gnubin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/Users/josh/.nix-profile/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/josh/.orbstack/bin:/Users/josh/go/bin:/Users/josh/.cargo/bin:/Users/josh/bin:/usr/local/sbin
+inventory failure: target=firstmate output=surface
+fm-scout-task
+fm-secondmate-task
+fm-ship-task PATH=/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.1VVvHU/view/fakebin:/Users/josh/.pi/agent/bin:/Users/josh/.local/bin:/Users/josh/Library/Python/3.13/bin:/Users/josh/.local/bin:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/make/libexec/gnubin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/Users/josh/.nix-profile/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/josh/.orbstack/bin:/Users/josh/go/bin:/Users/josh/.cargo/bin:/Users/josh/bin:/usr/local/sbin
+inventory failure: target==firstmate output=surface
+fm-scout-task
+fm-secondmate-task
+fm-ship-task PATH=/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.1VVvHU/view/fakebin:/Users/josh/.pi/agent/bin:/Users/josh/.local/bin:/Users/josh/Library/Python/3.13/bin:/Users/josh/.local/bin:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/make/libexec/gnubin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/Users/josh/.nix-profile/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/josh/.orbstack/bin:/Users/josh/go/bin:/Users/josh/.cargo/bin:/Users/josh/bin:/usr/local/sbin
+inventory failure: target==firstmate output=surface
+fm-scout-task
+fm-secondmate-task
+fm-ship-task PATH=/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.1VVvHU/view/fakebin:/Users/josh/.pi/agent/bin:/Users/josh/.local/bin:/Users/josh/Library/Python/3.13/bin:/Users/josh/.local/bin:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/make/libexec/gnubin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/Users/josh/.nix-profile/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/josh/.orbstack/bin:/Users/josh/go/bin:/Users/josh/.cargo/bin:/Users/josh/bin:/usr/local/sbin
+inventory failure: target=firstmate output=surface
+fm-scout-task
+fm-secondmate-task
+fm-ship-task PATH=/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.1VVvHU/view/fakebin:/Users/josh/.pi/agent/bin:/Users/josh/.local/bin:/Users/josh/Library/Python/3.13/bin:/Users/josh/.local/bin:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/make/libexec/gnubin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/Users/josh/.nix-profile/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/josh/.orbstack/bin:/Users/josh/go/bin:/Users/josh/.cargo/bin:/Users/josh/bin:/usr/local/sbin
+inventory failure: target=firstmate output=surface
+fm-scout-task
+fm-secondmate-task
+fm-ship-task PATH=/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-fleet-snapshot.1VVvHU/view/fakebin:/Users/josh/.pi/agent/bin:/Users/josh/.local/bin:/Users/josh/Library/Python/3.13/bin:/Users/josh/.local/bin:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/make/libexec/gnubin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/Users/josh/.nix-profile/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/josh/.orbstack/bin:/Users/josh/go/bin:/Users/josh/.cargo/bin:/Users/josh/bin:/usr/local/sbin
+inventory failure: target==fixture output= PATH=/private/var/folders/pj/0w06npv93jgfl0t6hf_fb3wh0000gn/T/fm-bearings.nPawMn/endpoint-generation-race/fakebin:/Users/josh/.pi/agent/bin:/Users/josh/.local/bin:/Users/josh/Library/Python/3.13/bin:/Users/josh/.local/bin:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/make/libexec/gnubin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/Users/josh/.nix-profile/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/josh/.orbstack/bin:/Users/josh/go/bin:/Users/josh/.cargo/bin:/Users/josh/bin:/usr/local/sbin

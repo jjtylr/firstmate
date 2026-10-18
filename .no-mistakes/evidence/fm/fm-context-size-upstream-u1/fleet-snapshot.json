@@ -1,0 +1,1109 @@
+{
+  "schema": "fm-fleet-snapshot.v1",
+  "generated": "2026-10-18T06:46:39Z",
+  "fm_home": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet",
+  "roots": {
+    "fm_root": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V",
+    "state": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/state",
+    "data": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/data",
+    "config": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/config",
+    "projects": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/projects"
+  },
+  "backlog": {
+    "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/data/backlog.md",
+    "present": false,
+    "records": []
+  },
+  "tasks": [
+    {
+      "id": "above",
+      "kind": "ship",
+      "harness": "claude",
+      "mode": "",
+      "yolo": "",
+      "branch": null,
+      "project": "sandbox",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/state/above.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/state/above.status",
+          "present": false,
+          "kind": "event_history",
+          "last_event": {
+            "state": "",
+            "note": "",
+            "raw": "",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/projects/above",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/data/above/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "conversation": {
+        "status": "read",
+        "tokens": 200001,
+        "context_window": 1000000,
+        "percentage": 20.0001,
+        "over_threshold": true,
+        "age_seconds": 70,
+        "model": "claude-opus-5-5",
+        "reason": null
+      },
+      "current_state": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "no backend target recorded",
+        "raw": "state: unknown · source: none · no backend target recorded",
+        "observed_at": "2026-10-18T06:46:39Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": null,
+        "exists": null,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-10-18T06:46:39Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": false,
+        "open_decisions": [],
+        "scout_report_present": false,
+        "last_event_text": ""
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-above",
+        "steer": "bin/fm-send.sh fm-above '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    },
+    {
+      "id": "below",
+      "kind": "ship",
+      "harness": "claude",
+      "mode": "",
+      "yolo": "",
+      "branch": null,
+      "project": "sandbox",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/state/below.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/state/below.status",
+          "present": false,
+          "kind": "event_history",
+          "last_event": {
+            "state": "",
+            "note": "",
+            "raw": "",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/projects/below",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/data/below/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "conversation": {
+        "status": "read",
+        "tokens": 199999,
+        "context_window": 1000000,
+        "percentage": 19.9999,
+        "over_threshold": false,
+        "age_seconds": 70,
+        "model": "claude-opus-5-5",
+        "reason": null
+      },
+      "current_state": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "no backend target recorded",
+        "raw": "state: unknown · source: none · no backend target recorded",
+        "observed_at": "2026-10-18T06:46:39Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": null,
+        "exists": null,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-10-18T06:46:39Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": false,
+        "open_decisions": [],
+        "scout_report_present": false,
+        "last_event_text": ""
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-below",
+        "steer": "bin/fm-send.sh fm-below '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    },
+    {
+      "id": "boundary",
+      "kind": "ship",
+      "harness": "claude",
+      "mode": "",
+      "yolo": "",
+      "branch": null,
+      "project": "sandbox",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/state/boundary.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/state/boundary.status",
+          "present": false,
+          "kind": "event_history",
+          "last_event": {
+            "state": "",
+            "note": "",
+            "raw": "",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/projects/boundary",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/data/boundary/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "conversation": {
+        "status": "read",
+        "tokens": 200000,
+        "context_window": 1000000,
+        "percentage": 20.0,
+        "over_threshold": false,
+        "age_seconds": 70,
+        "model": "claude-opus-5-5",
+        "reason": null
+      },
+      "current_state": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "no backend target recorded",
+        "raw": "state: unknown · source: none · no backend target recorded",
+        "observed_at": "2026-10-18T06:46:39Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": null,
+        "exists": null,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-10-18T06:46:39Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": false,
+        "open_decisions": [],
+        "scout_report_present": false,
+        "last_event_text": ""
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-boundary",
+        "steer": "bin/fm-send.sh fm-boundary '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    },
+    {
+      "id": "bounded-tail",
+      "kind": "ship",
+      "harness": "claude",
+      "mode": "",
+      "yolo": "",
+      "branch": null,
+      "project": "sandbox",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/state/bounded-tail.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/state/bounded-tail.status",
+          "present": false,
+          "kind": "event_history",
+          "last_event": {
+            "state": "",
+            "note": "",
+            "raw": "",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/projects/bounded-tail",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/data/bounded-tail/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "conversation": {
+        "status": "unknown",
+        "tokens": null,
+        "context_window": null,
+        "percentage": null,
+        "over_threshold": null,
+        "age_seconds": null,
+        "model": null,
+        "reason": "no assistant usage in bounded tail"
+      },
+      "current_state": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "no backend target recorded",
+        "raw": "state: unknown · source: none · no backend target recorded",
+        "observed_at": "2026-10-18T06:46:39Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": null,
+        "exists": null,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-10-18T06:46:39Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": false,
+        "open_decisions": [],
+        "scout_report_present": false,
+        "last_event_text": ""
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-bounded-tail",
+        "steer": "bin/fm-send.sh fm-bounded-tail '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    },
+    {
+      "id": "claude-real",
+      "kind": "ship",
+      "harness": "claude",
+      "mode": "",
+      "yolo": "",
+      "branch": null,
+      "project": "sandbox",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/state/claude-real.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/state/claude-real.status",
+          "present": false,
+          "kind": "event_history",
+          "last_event": {
+            "state": "",
+            "note": "",
+            "raw": "",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/projects/claude-real",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/data/claude-real/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "conversation": {
+        "status": "read",
+        "tokens": 250100,
+        "context_window": 1000000,
+        "percentage": 25.01,
+        "over_threshold": true,
+        "age_seconds": 6,
+        "model": "claude-opus-5-5",
+        "reason": null
+      },
+      "current_state": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "no backend target recorded",
+        "raw": "state: unknown · source: none · no backend target recorded",
+        "observed_at": "2026-10-18T06:46:39Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": null,
+        "exists": null,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-10-18T06:46:39Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": false,
+        "open_decisions": [],
+        "scout_report_present": false,
+        "last_event_text": ""
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-claude-real",
+        "steer": "bin/fm-send.sh fm-claude-real '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    },
+    {
+      "id": "missing",
+      "kind": "ship",
+      "harness": "pi",
+      "mode": "",
+      "yolo": "",
+      "branch": null,
+      "project": "sandbox",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/state/missing.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/state/missing.status",
+          "present": false,
+          "kind": "event_history",
+          "last_event": {
+            "state": "",
+            "note": "",
+            "raw": "",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/projects/missing",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/data/missing/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "conversation": {
+        "status": "unknown",
+        "tokens": null,
+        "context_window": null,
+        "percentage": null,
+        "over_threshold": null,
+        "age_seconds": null,
+        "model": null,
+        "reason": "no session log"
+      },
+      "current_state": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "no backend target recorded",
+        "raw": "state: unknown · source: none · no backend target recorded",
+        "observed_at": "2026-10-18T06:46:39Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": null,
+        "exists": null,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-10-18T06:46:39Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": false,
+        "open_decisions": [],
+        "scout_report_present": false,
+        "last_event_text": ""
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-missing",
+        "steer": "bin/fm-send.sh fm-missing '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    },
+    {
+      "id": "newest",
+      "kind": "ship",
+      "harness": "claude",
+      "mode": "",
+      "yolo": "",
+      "branch": null,
+      "project": "sandbox",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/state/newest.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/state/newest.status",
+          "present": false,
+          "kind": "event_history",
+          "last_event": {
+            "state": "",
+            "note": "",
+            "raw": "",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/projects/newest",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/data/newest/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "conversation": {
+        "status": "read",
+        "tokens": 17,
+        "context_window": 1000000,
+        "percentage": 0.0017,
+        "over_threshold": false,
+        "age_seconds": 69,
+        "model": "claude-opus-5-5",
+        "reason": null
+      },
+      "current_state": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "no backend target recorded",
+        "raw": "state: unknown · source: none · no backend target recorded",
+        "observed_at": "2026-10-18T06:46:39Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": null,
+        "exists": null,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-10-18T06:46:39Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": false,
+        "open_decisions": [],
+        "scout_report_present": false,
+        "last_event_text": ""
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-newest",
+        "steer": "bin/fm-send.sh fm-newest '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    },
+    {
+      "id": "pi-real",
+      "kind": "ship",
+      "harness": "pi",
+      "mode": "",
+      "yolo": "",
+      "branch": null,
+      "project": "sandbox",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/state/pi-real.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/state/pi-real.status",
+          "present": false,
+          "kind": "event_history",
+          "last_event": {
+            "state": "",
+            "note": "",
+            "raw": "",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/projects/pi-real",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/data/pi-real/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "conversation": {
+        "status": "read",
+        "tokens": 130000,
+        "context_window": 500000,
+        "percentage": 26.0,
+        "over_threshold": true,
+        "age_seconds": 7,
+        "model": "sandbox-model",
+        "reason": null
+      },
+      "current_state": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "no backend target recorded",
+        "raw": "state: unknown · source: none · no backend target recorded",
+        "observed_at": "2026-10-18T06:46:39Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": null,
+        "exists": null,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-10-18T06:46:39Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": false,
+        "open_decisions": [],
+        "scout_report_present": false,
+        "last_event_text": ""
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-pi-real",
+        "steer": "bin/fm-send.sh fm-pi-real '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    },
+    {
+      "id": "remote-stall",
+      "kind": "secondmate",
+      "harness": "pi",
+      "mode": "",
+      "yolo": "",
+      "branch": null,
+      "project": "",
+      "spawn_gen": null,
+      "backend": "unknown",
+      "remote": {
+        "host": "sandbox-stall",
+        "root": ""
+      },
+      "paths": {
+        "meta": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/state/remote-stall.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/state/remote-stall.status",
+          "present": false,
+          "kind": "event_history",
+          "last_event": {
+            "state": "",
+            "note": "",
+            "raw": "",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": null,
+          "present": false
+        },
+        "home": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/remote-home",
+          "present": null
+        },
+        "report": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/data/remote-stall/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "conversation": {
+        "status": "unknown",
+        "tokens": null,
+        "context_window": null,
+        "percentage": null,
+        "over_threshold": null,
+        "age_seconds": null,
+        "model": null,
+        "reason": "conversation read unavailable or timed out"
+      },
+      "current_state": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "remote endpoint liveness not collected by fleet snapshot",
+        "raw": "",
+        "observed_at": "2026-10-18T06:46:39Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": null,
+        "exists": null,
+        "agent_alive": "unknown",
+        "status": "unknown",
+        "observed_at": "2026-10-18T06:46:39Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": false,
+        "open_decisions": [],
+        "scout_report_present": false,
+        "last_event_text": ""
+      },
+      "actions": {
+        "send": "bin/fm-send.sh fm-remote-stall '<request>'",
+        "watch": "read status/doc return channel; do not routinely fm-peek a secondmate for answers",
+        "return_channel_note": "Secondmate answers come back through status/doc paths after a marked fm-send request."
+      },
+      "backlog": null
+    },
+    {
+      "id": "unknown-window",
+      "kind": "ship",
+      "harness": "claude",
+      "mode": "",
+      "yolo": "",
+      "branch": null,
+      "project": "sandbox",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/state/unknown-window.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/state/unknown-window.status",
+          "present": false,
+          "kind": "event_history",
+          "last_event": {
+            "state": "",
+            "note": "",
+            "raw": "",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/projects/unknown-window",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/data/unknown-window/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "conversation": {
+        "status": "read",
+        "tokens": 23456,
+        "context_window": null,
+        "percentage": null,
+        "over_threshold": null,
+        "age_seconds": null,
+        "model": "unlisted-model",
+        "reason": "unknown model window"
+      },
+      "current_state": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "no backend target recorded",
+        "raw": "state: unknown · source: none · no backend target recorded",
+        "observed_at": "2026-10-18T06:46:39Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": null,
+        "exists": null,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-10-18T06:46:39Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": false,
+        "open_decisions": [],
+        "scout_report_present": false,
+        "last_event_text": ""
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-unknown-window",
+        "steer": "bin/fm-send.sh fm-unknown-window '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    },
+    {
+      "id": "unsupported",
+      "kind": "ship",
+      "harness": "codex",
+      "mode": "",
+      "yolo": "",
+      "branch": null,
+      "project": "sandbox",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/state/unsupported.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/state/unsupported.status",
+          "present": false,
+          "kind": "event_history",
+          "last_event": {
+            "state": "",
+            "note": "",
+            "raw": "",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/projects/unsupported",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/data/unsupported/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "conversation": {
+        "status": "not_read",
+        "tokens": null,
+        "context_window": null,
+        "percentage": null,
+        "over_threshold": null,
+        "age_seconds": null,
+        "model": null,
+        "reason": "unsupported harness"
+      },
+      "current_state": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "no backend target recorded",
+        "raw": "state: unknown · source: none · no backend target recorded",
+        "observed_at": "2026-10-18T06:46:39Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": null,
+        "exists": null,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-10-18T06:46:39Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": false,
+        "open_decisions": [],
+        "scout_report_present": false,
+        "last_event_text": ""
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-unsupported",
+        "steer": "bin/fm-send.sh fm-unsupported '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    }
+  ],
+  "main_inventory": {
+    "valid": true,
+    "reason": null,
+    "orphan_in_flight": [],
+    "unstructured_current_count": 0
+  },
+  "contributions": {
+    "known": 0,
+    "checked": 0,
+    "counts": {
+      "captain": 0,
+      "fleet": 0,
+      "maintainer": 0,
+      "nobody": 0
+    },
+    "unmeasured": 0,
+    "complete": false,
+    "proven_clear": false,
+    "stale_verdicts": 0,
+    "missing_verdicts": 0,
+    "unreadable_records": 1,
+    "valid_until": 900,
+    "captain": [],
+    "captain_omitted": 0
+  },
+  "scout_reports": [],
+  "secondmate_current": {
+    "registry": {
+      "present": true,
+      "available": true,
+      "reason": null,
+      "provenance": "registered-table",
+      "path": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/fleet/data/secondmates.md",
+      "freshness": {
+        "status": "fresh",
+        "observed_at": "2026-10-18T06:46:39Z"
+      },
+      "records": [
+        {
+          "id": "remote-stall",
+          "home": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/remote-home",
+          "host": "sandbox-stall",
+          "root": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V",
+          "remote": true,
+          "registered": true,
+          "registry_error": null
+        }
+      ],
+      "input_truncated": false,
+      "records_truncated": false,
+      "complete": true,
+      "reasons": [],
+      "lines_in_window": 1,
+      "records_in_window": 1
+    },
+    "records": [
+      {
+        "id": "remote-stall",
+        "home": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/remote-home",
+        "host": "sandbox-stall",
+        "remote": true,
+        "registered": true,
+        "spawn_gen": null,
+        "current": {
+          "state": "unknown",
+          "reason": "structured home ledger collection timed out and no valid cached copy is available"
+        },
+        "invalidity": null,
+        "reconcile_inventory": null,
+        "provenance": {
+          "selected": "unknown",
+          "structured_home": "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/remote-home",
+          "parent_event_role": "fallback-only-not-current"
+        },
+        "freshness": {
+          "status": "unknown",
+          "observed_at": "2026-10-18T06:46:39Z",
+          "age_seconds": null
+        },
+        "active_children": [],
+        "decisions_open": [],
+        "holds": [],
+        "queued": [],
+        "landed": [],
+        "endpoints": [],
+        "counts": {
+          "active_children": 0,
+          "decisions_open": 0,
+          "holds": 0,
+          "queued": 0,
+          "landed": 0,
+          "endpoints": 0
+        },
+        "omitted": [],
+        "parent_event": {
+          "raw": "",
+          "note": "",
+          "age_seconds": null,
+          "open_activities": [],
+          "open_decisions": [],
+          "activity_scan": {
+            "records": [],
+            "available": true,
+            "input_truncated": false,
+            "retained_truncated": false,
+            "reasons": [],
+            "lines_in_window": 0,
+            "records_in_window": 0
+          }
+        },
+        "terminal_evidence": {
+          "provenance": "parent-direct-report-terminal",
+          "trust": "untrusted-supplement",
+          "captured": false,
+          "observed_at": "2026-10-18T06:46:39Z",
+          "freshness": "not-collected",
+          "reason": "no parent event to compare",
+          "lines": 0,
+          "bytes": 0,
+          "event_note_seen": false,
+          "contradiction": false
+        },
+        "contradiction": false
+      }
+    ],
+    "total_registered": 1,
+    "total": 1,
+    "shown": 1,
+    "truncated": 0
+  },
+  "secondmate_landed": {
+    "records": [],
+    "truncated": [],
+    "unreadable": [
+      "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/live/remote-home"
+    ],
+    "partial": []
+  },
+  "secondmate_guidance": {
+    "note": "For kind=secondmate, bearings selects validated structured state from that registered home; parent events and bounded terminal evidence are fallback-only supplements and never current-state authority."
+  }
+}

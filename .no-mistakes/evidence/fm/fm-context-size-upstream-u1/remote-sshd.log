@@ -1,0 +1,35 @@
+/etc/ssh/sshd_config line 7: Unsupported option UsePAM
+Server listening on 0.0.0.0 port 2222.
+rexec line 7: Unsupported option UsePAM
+Connection from 192.168.215.1 port 39492 on 192.168.215.5 port 2222 rdomain ""
+rexec line 7: Unsupported option UsePAM [preauth]
+Accepted key ED25519 SHA256:/72b0g/cP2KftTKOaEzpIeDsB0w+6VmqUWBeOpM0Q7A found at /root/.ssh/authorized_keys:1
+Postponed publickey for root from 192.168.215.1 port 39492 ssh2 [preauth]
+Accepted key ED25519 SHA256:/72b0g/cP2KftTKOaEzpIeDsB0w+6VmqUWBeOpM0Q7A found at /root/.ssh/authorized_keys:1
+Accepted publickey for root from 192.168.215.1 port 39492 ssh2: ED25519 SHA256:/72b0g/cP2KftTKOaEzpIeDsB0w+6VmqUWBeOpM0Q7A
+User child is on pid 8
+Starting session: command for root from 192.168.215.1 port 39492 id 0
+Received disconnect from 192.168.215.1 port 39492:11: disconnected by user
+Disconnected from user root 192.168.215.1 port 39492
+rexec line 7: Unsupported option UsePAM
+Connection from 192.168.215.1 port 39500 on 192.168.215.5 port 2222 rdomain ""
+rexec line 7: Unsupported option UsePAM [preauth]
+Accepted key ED25519 SHA256:/72b0g/cP2KftTKOaEzpIeDsB0w+6VmqUWBeOpM0Q7A found at /root/.ssh/authorized_keys:1
+Postponed publickey for root from 192.168.215.1 port 39500 ssh2 [preauth]
+Accepted key ED25519 SHA256:/72b0g/cP2KftTKOaEzpIeDsB0w+6VmqUWBeOpM0Q7A found at /root/.ssh/authorized_keys:1
+Accepted publickey for root from 192.168.215.1 port 39500 ssh2: ED25519 SHA256:/72b0g/cP2KftTKOaEzpIeDsB0w+6VmqUWBeOpM0Q7A
+User child is on pid 1003
+Starting session: command for root from 192.168.215.1 port 39500 id 0
+Received disconnect from 192.168.215.1 port 39500:11: disconnected by user
+Disconnected from user root 192.168.215.1 port 39500
+rexec line 7: Unsupported option UsePAM
+Connection from 192.168.215.1 port 43896 on 192.168.215.5 port 2222 rdomain ""
+rexec line 7: Unsupported option UsePAM [preauth]
+Accepted key ED25519 SHA256:/72b0g/cP2KftTKOaEzpIeDsB0w+6VmqUWBeOpM0Q7A found at /root/.ssh/authorized_keys:1
+Postponed publickey for root from 192.168.215.1 port 43896 ssh2 [preauth]
+Accepted key ED25519 SHA256:/72b0g/cP2KftTKOaEzpIeDsB0w+6VmqUWBeOpM0Q7A found at /root/.ssh/authorized_keys:1
+Accepted publickey for root from 192.168.215.1 port 43896 ssh2: ED25519 SHA256:/72b0g/cP2KftTKOaEzpIeDsB0w+6VmqUWBeOpM0Q7A
+User child is on pid 1732
+Starting session: command for root from 192.168.215.1 port 43896 id 0
+Received disconnect from 192.168.215.1 port 43896:11: disconnected by user
+Disconnected from user root 192.168.215.1 port 43896

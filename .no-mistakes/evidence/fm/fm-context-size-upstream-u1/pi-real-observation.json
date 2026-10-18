@@ -1,0 +1,10 @@
+{
+  "status": "read",
+  "tokens": 130000,
+  "context_window": 500000,
+  "percentage": 26.0,
+  "over_threshold": true,
+  "age_seconds": 0,
+  "model": "sandbox-model",
+  "reason": null
+}

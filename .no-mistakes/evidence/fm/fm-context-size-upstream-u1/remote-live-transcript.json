@@ -1,0 +1,136 @@
+[
+  {
+    "argv": [
+      "git",
+      "init",
+      "--quiet",
+      "--separate-git-dir=/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/remote-index.git",
+      "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/index"
+    ],
+    "exit": 0,
+    "seconds": 0.014887957979226485,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "argv": [
+      "git",
+      "--git-dir=/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/remote-index.git",
+      "--work-tree=/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V",
+      "add",
+      "bin"
+    ],
+    "exit": 0,
+    "seconds": 0.014323917013825849,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "argv": [
+      "docker",
+      "run",
+      "-d",
+      "--name",
+      "fm-context-gate-01m56",
+      "-p",
+      "127.0.0.1::2222",
+      "-v",
+      "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V:/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V:ro",
+      "-v",
+      "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/remote-git-pointer:/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.git:ro",
+      "-v",
+      "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/linux/root:/root",
+      "-v",
+      "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/linux/home:/home",
+      "fm-context-gate-01m56:test",
+      "/usr/sbin/sshd",
+      "-D",
+      "-e",
+      "-f",
+      "/etc/ssh/sshd_config"
+    ],
+    "exit": 0,
+    "seconds": 1.0985266669886187,
+    "stdout": "c1427a9ddc818b30807ebbf1f6b2708ebcf125d1360807818524ed35d7bc294e\n",
+    "stderr": ""
+  },
+  {
+    "argv": [
+      "docker",
+      "port",
+      "fm-context-gate-01m56",
+      "2222/tcp"
+    ],
+    "exit": 0,
+    "seconds": 0.043359958013752475,
+    "stdout": "127.0.0.1:32784\n",
+    "stderr": ""
+  },
+  {
+    "argv": [
+      "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/bin/fm-on.sh",
+      "mate",
+      "fm-remote-doctor.sh",
+      "--fix"
+    ],
+    "exit": 1,
+    "seconds": 1.2954096669855062,
+    "stdout": "mode=fix\npath=/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/bin:/root/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin\nentrypoint=yes\nplatform=linux\nfix remote-job-worker=applied: installed or reloaded dev.firstmate.remote-job\nrequired git=/usr/bin/git\nrequired jq=/usr/bin/jq\nrequired herdr=MISSING\nrequired tasks-axi=MISSING\nrequired treehouse=MISSING\nrequired harness=MISSING\noptional tmux=absent\noptional no-mistakes=absent\noptional gh=absent\ncheck herdr=human: the herdr CLI does not resolve on the remote runtime PATH\ncheck gui-session=skip: no Aqua login session applies on linux\ncheck remote-job-worker=ok: the Linux remote job worker is running\ncheck remote-job-worker-loaded=skip: Aqua launch agents do not apply on linux\ncheck remote-job-probe=ok: the remote job worker completed the required-tool probe\ncheck launchagent=skip: launch agents apply only on darwin\ncheck launchagent-scope=skip: launch agents apply only on darwin\ncheck launchagent-loaded=skip: launch agents apply only on darwin\ncheck herdr-server=human: herdr server status cannot be read without both herdr and jq on the runtime PATH\ncheck entrypoint-link=ok: /root/.local/bin/fm-remote-entrypoint.sh\naction: herdr: install herdr from https://herdr.dev on that account, or add a ~/.local/bin wrapper for it; a remote second mate always runs on the Herdr backend\naction: herdr-server: install the missing tool reported above, then rerun this command\n",
+    "stderr": "error: required tools do not resolve on the remote runtime PATH: herdr tasks-axi treehouse harness\nfix: install each one where it resolves on the path reported above, or put a wrapper script for it in /root/.local/bin, which is always on that PATH.\nfix: tools in an unselected nvm version or outside the discovered asdf or mise paths need an absolute wrapper; see docs/remote-secondmates.md for the wrapper recipe.\nerror: this host is not ready for a remote second mate; unresolved: herdr herdr-server\n"
+  },
+  {
+    "argv": [
+      "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/bin/fm-context-size.sh",
+      "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/parent/state/mate.meta"
+    ],
+    "exit": 0,
+    "seconds": 1.2528064169746358,
+    "stdout": "{\"status\": \"read\", \"tokens\": 324, \"context_window\": 1000, \"percentage\": 32.4, \"over_threshold\": true, \"age_seconds\": 7, \"model\": \"remote-model\", \"reason\": null}\n",
+    "stderr": ""
+  },
+  {
+    "argv": [
+      "/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/bin/fm-fleet-snapshot.sh",
+      "--json"
+    ],
+    "exit": 0,
+    "seconds": 1.7725398330076132,
+    "stdout": "{\n  \"schema\": \"fm-fleet-snapshot.v1\",\n  \"generated\": \"2026-10-18T06:53:08Z\",\n  \"fm_home\": \"/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/parent\",\n  \"roots\": {\n    \"fm_root\": \"/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V\",\n    \"state\": \"/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/parent/state\",\n    \"data\": \"/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/parent/data\",\n    \"config\": \"/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/parent/config\",\n    \"projects\": \"/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/parent/projects\"\n  },\n  \"backlog\": {\n    \"path\": \"/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/parent/data/backlog.md\",\n    \"present\": false,\n    \"records\": []\n  },\n  \"tasks\": [\n    {\n      \"id\": \"mate\",\n      \"kind\": \"secondmate\",\n      \"harness\": \"pi\",\n      \"mode\": \"\",\n      \"yolo\": \"\",\n      \"branch\": null,\n      \"project\": \"\",\n      \"spawn_gen\": null,\n      \"backend\": \"unknown\",\n      \"remote\": {\n        \"host\": \"sandbox-remote\",\n        \"root\": \"\"\n      },\n      \"paths\": {\n        \"meta\": {\n          \"path\": \"/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/parent/state/mate.meta\",\n          \"present\": true\n        },\n        \"status_log\": {\n          \"path\": \"/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/parent/state/mate.status\",\n          \"present\": false,\n          \"kind\": \"event_history\",\n          \"last_event\": {\n            \"state\": \"\",\n            \"note\": \"\",\n            \"raw\": \"\",\n            \"age_seconds\": null\n          }\n        },\n        \"worktree\": {\n          \"path\": null,\n          \"present\": false\n        },\n        \"home\": {\n          \"path\": \"/home/mate\",\n          \"present\": null\n        },\n        \"report\": {\n          \"path\": \"/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/parent/data/mate/report.md\",\n          \"present\": false\n        }\n      },\n      \"secondmate_projects\": [],\n      \"conversation\": {\n        \"status\": \"read\",\n        \"tokens\": 324,\n        \"context_window\": 1000,\n        \"percentage\": 32.4,\n        \"over_threshold\": true,\n        \"age_seconds\": 9,\n        \"model\": \"remote-model\",\n        \"reason\": null\n      },\n      \"current_state\": {\n        \"state\": \"unknown\",\n        \"source\": \"none\",\n        \"detail\": \"remote endpoint liveness not collected by fleet snapshot\",\n        \"raw\": \"\",\n        \"observed_at\": \"2026-10-18T06:53:08Z\",\n        \"freshness\": \"fresh\"\n      },\n      \"endpoint\": {\n        \"target\": null,\n        \"exists\": null,\n        \"agent_alive\": \"unknown\",\n        \"status\": \"unknown\",\n        \"observed_at\": \"2026-10-18T06:53:08Z\",\n        \"freshness\": \"fresh\"\n      },\n      \"pr\": {\n        \"url\": null,\n        \"source\": \"absent\",\n        \"head\": null\n      },\n      \"hints\": {\n        \"pending_decision\": false,\n        \"blocked_event\": false,\n        \"open_decisions\": [],\n        \"scout_report_present\": false,\n        \"last_event_text\": \"\"\n      },\n      \"actions\": {\n        \"send\": \"bin/fm-send.sh fm-mate '<request>'\",\n        \"watch\": \"read status/doc return channel; do not routinely fm-peek a secondmate for answers\",\n        \"return_channel_note\": \"Secondmate answers come back through status/doc paths after a marked fm-send request.\"\n      },\n      \"backlog\": null\n    }\n  ],\n  \"main_inventory\": {\n    \"valid\": true,\n    \"reason\": null,\n    \"orphan_in_flight\": [],\n    \"unstructured_current_count\": 0\n  },\n  \"contributions\": {\n    \"known\": 0,\n    \"checked\": 0,\n    \"counts\": {\n      \"captain\": 0,\n      \"fleet\": 0,\n      \"maintainer\": 0,\n      \"nobody\": 0\n    },\n    \"unmeasured\": 0,\n    \"complete\": false,\n    \"proven_clear\": false,\n    \"stale_verdicts\": 0,\n    \"missing_verdicts\": 0,\n    \"unreadable_records\": 1,\n    \"valid_until\": 900,\n    \"captain\": [],\n    \"captain_omitted\": 0\n  },\n  \"scout_reports\": [],\n  \"secondmate_current\": {\n    \"registry\": {\n      \"present\": true,\n      \"available\": false,\n      \"complete\": false,\n      \"reason\": \"registered secondmate table is unreadable\",\n      \"provenance\": \"registered-table\",\n      \"path\": \"/Users/josh/.no-mistakes/worktrees/5f3851664bb8/01M56VFYB9Y6YSB3NDE00SPB9V/.test-local/parent/data/secondmates.md\",\n      \"freshness\": {\n        \"status\": \"unavailable\",\n        \"observed_at\": \"2026-10-18T06:53:08Z\"\n      },\n      \"records\": [],\n      \"input_truncated\": false,\n      \"records_truncated\": false,\n      \"reasons\": [\n        \"registered secondmate table is unreadable\"\n      ],\n      \"lines_in_window\": 0,\n      \"records_in_window\": 0\n    },\n    \"records\": [\n      {\n        \"id\": \"mate\",\n        \"home\": \"/home/mate\",\n        \"host\": null,\n        \"remote\": false,\n        \"registered\": null,\n        \"spawn_gen\": null,\n        \"current\": {\n          \"state\": \"unknown\",\n          \"reason\": \"secondmate registration is unknown because the registry read is incomplete or unavailable\"\n        },\n        \"invalidity\": null,\n        \"reconcile_inventory\": null,\n        \"provenance\": {\n          \"selected\": \"unknown\",\n          \"structured_home\": \"/home/mate\",\n          \"parent_event_role\": \"fallback-only-not-current\"\n        },\n        \"freshness\": {\n          \"status\": \"unknown\",\n          \"observed_at\": \"2026-10-18T06:53:08Z\",\n          \"age_seconds\": null\n        },\n        \"active_children\": [],\n        \"decisions_open\": [],\n        \"holds\": [],\n        \"queued\": [],\n        \"landed\": [],\n        \"endpoints\": [],\n        \"counts\": {\n          \"active_children\": 0,\n          \"decisions_open\": 0,\n          \"holds\": 0,\n          \"queued\": 0,\n          \"landed\": 0,\n          \"endpoints\": 0\n        },\n        \"omitted\": [],\n        \"parent_event\": {\n          \"raw\": \"\",\n          \"note\": \"\",\n          \"age_seconds\": null,\n          \"open_activities\": [],\n          \"open_decisions\": [],\n          \"activity_scan\": {\n            \"records\": [],\n            \"available\": true,\n            \"input_truncated\": false,\n            \"retained_truncated\": false,\n            \"reasons\": [],\n            \"lines_in_window\": 0,\n            \"records_in_window\": 0\n          }\n        },\n        \"terminal_evidence\": {\n          \"provenance\": \"parent-direct-report-terminal\",\n          \"trust\": \"untrusted-supplement\",\n          \"captured\": false,\n          \"observed_at\": \"2026-10-18T06:53:08Z\",\n          \"freshness\": \"not-collected\",\n          \"reason\": \"no parent event to compare\",\n          \"lines\": 0,\n          \"bytes\": 0,\n          \"event_note_seen\": false,\n          \"contradiction\": false\n        },\n        \"contradiction\": false\n      }\n    ],\n    \"total_registered\": 0,\n    \"total\": 1,\n    \"shown\": 1,\n    \"truncated\": 0\n  },\n  \"secondmate_landed\": {\n    \"records\": [],\n    \"truncated\": [],\n    \"unreadable\": [\n      \"/home/mate\"\n    ],\n    \"partial\": []\n  },\n  \"secondmate_guidance\": {\n    \"note\": \"For kind=secondmate, bearings selects validated structured state from that registered home; parent events and bounded terminal evidence are fallback-only supplements and never current-state authority.\"\n  }\n}\n",
+    "stderr": ""
+  },
+  {
+    "argv": [
+      "docker",
+      "logs",
+      "fm-context-gate-01m56"
+    ],
+    "exit": 0,
+    "seconds": 0.026194667007075623,
+    "stdout": "",
+    "stderr": "/etc/ssh/sshd_config line 7: Unsupported option UsePAM\nServer listening on 0.0.0.0 port 2222.\nrexec line 7: Unsupported option UsePAM\nConnection from 192.168.215.1 port 39492 on 192.168.215.5 port 2222 rdomain \"\"\nrexec line 7: Unsupported option UsePAM [preauth]\nAccepted key ED25519 SHA256:/72b0g/cP2KftTKOaEzpIeDsB0w+6VmqUWBeOpM0Q7A found at /root/.ssh/authorized_keys:1\nPostponed publickey for root from 192.168.215.1 port 39492 ssh2 [preauth]\nAccepted key ED25519 SHA256:/72b0g/cP2KftTKOaEzpIeDsB0w+6VmqUWBeOpM0Q7A found at /root/.ssh/authorized_keys:1\nAccepted publickey for root from 192.168.215.1 port 39492 ssh2: ED25519 SHA256:/72b0g/cP2KftTKOaEzpIeDsB0w+6VmqUWBeOpM0Q7A\nUser child is on pid 8\nStarting session: command for root from 192.168.215.1 port 39492 id 0\nReceived disconnect from 192.168.215.1 port 39492:11: disconnected by user\nDisconnected from user root 192.168.215.1 port 39492\nrexec line 7: Unsupported option UsePAM\nConnection from 192.168.215.1 port 39500 on 192.168.215.5 port 2222 rdomain \"\"\nrexec line 7: Unsupported option UsePAM [preauth]\nAccepted key ED25519 SHA256:/72b0g/cP2KftTKOaEzpIeDsB0w+6VmqUWBeOpM0Q7A found at /root/.ssh/authorized_keys:1\nPostponed publickey for root from 192.168.215.1 port 39500 ssh2 [preauth]\nAccepted key ED25519 SHA256:/72b0g/cP2KftTKOaEzpIeDsB0w+6VmqUWBeOpM0Q7A found at /root/.ssh/authorized_keys:1\nAccepted publickey for root from 192.168.215.1 port 39500 ssh2: ED25519 SHA256:/72b0g/cP2KftTKOaEzpIeDsB0w+6VmqUWBeOpM0Q7A\nUser child is on pid 1003\nStarting session: command for root from 192.168.215.1 port 39500 id 0\nReceived disconnect from 192.168.215.1 port 39500:11: disconnected by user\nDisconnected from user root 192.168.215.1 port 39500\nrexec line 7: Unsupported option UsePAM\nConnection from 192.168.215.1 port 43896 on 192.168.215.5 port 2222 rdomain \"\"\nrexec line 7: Unsupported option UsePAM [preauth]\nAccepted key ED25519 SHA256:/72b0g/cP2KftTKOaEzpIeDsB0w+6VmqUWBeOpM0Q7A found at /root/.ssh/authorized_keys:1\nPostponed publickey for root from 192.168.215.1 port 43896 ssh2 [preauth]\nAccepted key ED25519 SHA256:/72b0g/cP2KftTKOaEzpIeDsB0w+6VmqUWBeOpM0Q7A found at /root/.ssh/authorized_keys:1\nAccepted publickey for root from 192.168.215.1 port 43896 ssh2: ED25519 SHA256:/72b0g/cP2KftTKOaEzpIeDsB0w+6VmqUWBeOpM0Q7A\nUser child is on pid 1732\nStarting session: command for root from 192.168.215.1 port 43896 id 0\nReceived disconnect from 192.168.215.1 port 43896:11: disconnected by user\nDisconnected from user root 192.168.215.1 port 43896\n"
+  },
+  {
+    "argv": [
+      "docker",
+      "rm",
+      "-f",
+      "fm-context-gate-01m56"
+    ],
+    "exit": 0,
+    "seconds": 0.1727349170250818,
+    "stdout": "fm-context-gate-01m56\n",
+    "stderr": ""
+  },
+  {
+    "argv": [
+      "docker",
+      "image",
+      "rm",
+      "fm-context-gate-01m56:test"
+    ],
+    "exit": 0,
+    "seconds": 0.15085387500585057,
+    "stdout": "Untagged: fm-context-gate-01m56:test\nDeleted: sha256:d7252157e1afa096de2d3f20863f526349535c1b7039303281be2f96b3603ec2\n",
+    "stderr": ""
+  }
+]
