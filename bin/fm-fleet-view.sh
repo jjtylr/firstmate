@@ -4,6 +4,12 @@
 # This command intentionally does not parse fleet state itself.
 # It shells out to fm-fleet-snapshot.sh --json and renders that stable
 # structured contract for humans.
+# The Under Way table's Conversation column renders tasks[].conversation;
+# fm-fleet-snapshot.sh's header owns the measurement and availability contract.
+# Measured rows show tokens / window, percentage rounded to one decimal place,
+# an OVER marker when over_threshold is true, and the last call's age in seconds.
+# An unknown window keeps the token count with "window unknown" and no percentage;
+# unavailable observations show "unknown", unsupported harnesses "not read".
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

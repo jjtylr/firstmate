@@ -49,7 +49,7 @@
 #   tasks[]: one row per task metadata record captured at snapshot start, sorted
 #     by id. A record removed before capture is omitted. If a captured task's
 #     generation changes while observations run, its selected metadata remains
-#     but mutable current-state, status, report, and endpoint evidence is discarded
+#     but mutable current-state, status, report, endpoint, and conversation evidence is discarded
 #     rather than attributed to the replacement generation.
 #     Local current_state is parsed from bin/fm-crew-state.sh <id> and preserves
 #     state, source, detail, and raw line separately. Remote secondmate rows use
@@ -68,17 +68,32 @@
 #     endpoint.agent_alive is populated for local secondmates only, where it is
 #     useful return-channel supervision data; remote secondmates use "unknown"
 #     without a probe, and other tasks use "not_checked".
-#     conversation: read-only direct-report conversation observation with status
-#     "read", "unknown", or "not_read"; tokens, context_window, percentage,
-#     over_threshold (>20%), age_seconds since the last assistant model call,
-#     model, and reason. Unknown values are null, never guessed. Claude Code and
-#     Pi (including pi-signed) use the newest session log's bounded tail and the
-#     recorded account root when pinned; unrecorded ambient account overrides
-#     are not discoverable. Pi windows are read on the agent's host. Each read
-#     runs alongside current-state reads with a three-second hard bound; remote
-#     secondmates use fm-on's selected-home transport, not a cross-home sweep.
-#     Conversation reads neither refresh nor consume the remote-summary cache.
-#     A changed task generation discards the conversation observation too.
+#     conversation: read-only direct-report observation; status is "read" when
+#     assistant usage is found, "not_read" for an unsupported harness, otherwise
+#     "unknown". Claude Code and Pi (including pi-signed) select the session log
+#     with the newest mtime for the task's working directory (the home for a
+#     secondmate), then the last valid assistant usage in its bounded tail.
+#     fm-context-size.py owns the tail limit and model-window lookup data.
+#     tokens sums that call's input and cache-read/cache-write tokens, excluding
+#     output tokens; it is not cumulative session usage or transcript file size.
+#     context_window comes from Pi's models-store.json on the agent's host or
+#     the reader's named Claude model table. An unknown window preserves tokens
+#     but leaves context_window, percentage, and over_threshold null.
+#     percentage is tokens * 100 / context_window; over_threshold is strictly
+#     >20%, not >=20%. age_seconds is the elapsed time since that usage-bearing
+#     call's timestamp, not log mtime; missing or future timestamps leave it null.
+#     model identifies the observed model (recorded launch model as fallback);
+#     reason explains missing data. Other unknown values are null, never guessed.
+#     Reads use the recorded account root when pinned, otherwise vendor defaults;
+#     unrecorded ambient account overrides are not discoverable.
+#     Each read runs alongside current-state reads with a three-second hard bound;
+#     remote secondmates use fm-on's selected-home transport, not a cross-home sweep.
+#     Failure or timeout affects only that row's conversation observation.
+#     Conversation reads neither refresh nor consume the remote-summary cache,
+#     publish conversation data in home summaries, nor trigger lifecycle actions.
+#     No transcript text, log paths, or transport diagnostics enter this object.
+#     Regression coverage: tests/fm-context-size.test.sh and
+#     tests/fm-fleet-snapshot-view.test.sh.
 #   scout_reports[]: present data/<id>/report.md pointers.
 #   main_inventory: {valid,reason,orphan_in_flight[],unstructured_current_count} -
 #     main-home current-inventory checks shared with secondmate_home_summary_json
