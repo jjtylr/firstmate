@@ -50,8 +50,16 @@ printf '%s\n' "$SNAPSHOT" | jq -r '
   def action_of($t):
     if $t.kind == "secondmate" then "\($t.actions.send) - \($t.actions.watch)"
     else $t.actions.watch end;
+  def conversation_of($c):
+    if $c.status == "not_read" then "not read"
+    elif $c.status != "read" then "unknown"
+    else "\($c.tokens) / \($c.context_window // "unknown") tokens"
+      + (if $c.percentage != null then " (\(($c.percentage * 10 | round) / 10)%)" else " (window unknown)" end)
+      + (if $c.over_threshold then " OVER" else "" end)
+      + (if $c.age_seconds != null then ", last call \($c.age_seconds)s ago" else ", last call unknown" end)
+    end;
   def task_row($t):
-    "| \($t.id) | \($t.current_state.state) / \($t.current_state.source) | \($t.kind) | \(dash($t.backlog.repo // $t.project)) | \($t.backend) | \(endpoint_of($t)) | \(artifact($t)) | \(path_of($t)) | \(action_of($t)) |";
+    "| \($t.id) | \($t.current_state.state) / \($t.current_state.source) | \($t.kind) | \(dash($t.backlog.repo // $t.project)) | \($t.backend) | \(endpoint_of($t)) | \(artifact($t)) | \(path_of($t)) | \(action_of($t)) | \(conversation_of($t.conversation)) |";
   def blocker($r):
     if ($r.blocked_by // "") == "" then "-"
     elif ($r.blocked_reason // "") == "" then $r.blocked_by
@@ -68,8 +76,8 @@ printf '%s\n' "$SNAPSHOT" | jq -r '
   (if (.tasks | length) == 0 then
     "No live task metadata found."
    else
-    "| ID | Current | Kind | Repo/Project | Backend | Endpoint | Artifact | Path | Watch / return channel |",
-    "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    "| ID | Current | Kind | Repo/Project | Backend | Endpoint | Artifact | Path | Watch / return channel | Conversation |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     (.tasks[] | task_row(.))
    end),
   "",

@@ -68,6 +68,17 @@
 #     endpoint.agent_alive is populated for local secondmates only, where it is
 #     useful return-channel supervision data; remote secondmates use "unknown"
 #     without a probe, and other tasks use "not_checked".
+#     conversation: read-only direct-report conversation observation with status
+#     "read", "unknown", or "not_read"; tokens, context_window, percentage,
+#     over_threshold (>20%), age_seconds since the last assistant model call,
+#     model, and reason. Unknown values are null, never guessed. Claude Code and
+#     Pi (including pi-signed) use the newest session log's bounded tail and the
+#     recorded account root when pinned; unrecorded ambient account overrides
+#     are not discoverable. Pi windows are read on the agent's host. Each read
+#     runs alongside current-state reads with a three-second hard bound; remote
+#     secondmates use fm-on's selected-home transport, not a cross-home sweep.
+#     Conversation reads neither refresh nor consume the remote-summary cache.
+#     A changed task generation discards the conversation observation too.
 #   scout_reports[]: present data/<id>/report.md pointers.
 #   main_inventory: {valid,reason,orphan_in_flight[],unstructured_current_count} -
 #     main-home current-inventory checks shared with secondmate_home_summary_json
@@ -630,13 +641,36 @@ snapshot_task_generation_is_current() {  # <captured-meta> <id>
   fi
 }
 
+conversation_json() {  # <captured-meta>
+  local observation
+  observation=''
+  # Home-summary publication remains local-only and does not project this field.
+  if [ "$OUTPUT_MODE" = json ]; then
+    observation=$("$SCRIPT_DIR/fm-context-size.sh" "$1" 2>/dev/null) || observation=''
+  fi
+  if printf '%s' "$observation" | jq -e '
+    type == "object" and (.status == "read" or .status == "unknown" or .status == "not_read")
+    and has("tokens") and has("context_window") and has("percentage")
+    and has("over_threshold") and has("age_seconds") and has("model") and has("reason")
+  ' >/dev/null 2>&1; then
+    printf '%s\n' "$observation"
+  else
+    jq -n '{status:"unknown",tokens:null,context_window:null,percentage:null,
+      over_threshold:null,age_seconds:null,model:null,reason:"conversation read unavailable"}'
+  fi
+}
+
 prefetch_task_observations() {  # <meta> <id>
   local meta=$1 id=$2 remote_host current_file endpoint_file current_pid='' current_rc=0
+  local conversation_file conversation_pid
   local status_log status_capture report_path report_capture
   local kind backend target endpoint_exists=null agent_alive=not_checked generation_current=1
   remote_host=$(meta_value "$meta" remote_host)
   current_file="$SNAPSHOT_TASK_DIR/$id.json"
   endpoint_file="$SNAPSHOT_TASK_DIR/$id.endpoint"
+  conversation_file="$SNAPSHOT_TASK_DIR/$id.conversation"
+  conversation_json "$meta" > "$conversation_file" &
+  conversation_pid=$!
   status_log="$STATE/$id.status"
   status_capture="$SNAPSHOT_TASK_DIR/$id.status"
   report_path="$DATA/$id/report.md"
@@ -675,6 +709,7 @@ prefetch_task_observations() {  # <meta> <id>
   fi
 
   [ -z "$current_pid" ] || wait "$current_pid" || current_rc=1
+  wait "$conversation_pid" || current_rc=1
   # All mutable observations must belong to the metadata generation captured in
   # the manifest. If teardown/relaunch raced any read, discard the whole sample.
   if ! snapshot_task_generation_is_current "$meta" "$id"; then
@@ -683,6 +718,9 @@ prefetch_task_observations() {  # <meta> <id>
       > "$current_file" || current_rc=1
     endpoint_exists=null
     agent_alive=unknown
+    jq -n '{status:"unknown",tokens:null,context_window:null,percentage:null,
+      over_threshold:null,age_seconds:null,model:null,reason:"task generation changed during snapshot"}' \
+      > "$conversation_file" || current_rc=1
   fi
   printf 'endpoint_exists=%s\nagent_alive=%s\n' "$endpoint_exists" "$agent_alive" > "$endpoint_file" || current_rc=1
   return "$current_rc"
@@ -877,6 +915,7 @@ task_json_lines() {
       --arg agent_alive "$agent_alive" \
       --arg observed_at "$SNAPSHOT_NOW" \
       --arg last_event_raw "$last_event_raw" \
+      --slurpfile conversation "$SNAPSHOT_TASK_DIR/$id.conversation" \
       --argjson current_state "$current_json" \
       --argjson meta_path "$meta_json" \
       --argjson status_log "$status_json" \
@@ -907,6 +946,7 @@ task_json_lines() {
           report:$report
         },
         secondmate_projects:($projects | if . == "" then [] else split(",") | map(gsub("^[[:space:]]+|[[:space:]]+$"; "")) | map(select(. != "")) end),
+        conversation:$conversation[0],
         current_state:($current_state + {observed_at:$observed_at,freshness:"fresh"}),
         endpoint:{target:($target | if . == "" then null else . end),exists:$endpoint_exists,agent_alive:$agent_alive,
           status:(if $endpoint_exists == false then "absent"
