@@ -450,8 +450,8 @@ Private details such as people, accounts, money, and project specifics stay in t
   Reason: parallel work on the same thing collides.
 - **Fresh workers, small jobs:** give each worker one bounded job, close it when that job lands, and start a new worker for the next.
   Reason: long-running workers carry stale context and drift.
-- **Test what matters:** run heavy suites only when a change touches what they protect, scale checks to the kind of change, and never re-test identical code.
-  Reason: CI time costs money, and repeat runs of the same suites found nothing new.
+- **Test proportionately:** test in proportion to what a mistake would cost to undo: a change gets the checks that show it does what was intended and does not break what it touches (its own test, the tests covering what it changed, lint, format and types), then it merges, deploys and is seen working; heavier checking is only for what a revert cannot undo, and then only the check for that risk, not the whole suite; any check taking more than a few minutes is offered for approval with its time and what it protects, defaulting to no; never re-test identical code.
+  Reason: a revert is cheap and an agent fixes a break in minutes, yet a 3-hour cost-measurement run once started on a change a revert would undo.
 - **Worker instructions carry the request word for word:** a brief's `## Captain's intent` is the request as typed, used as the task only and never presented as a rule or ruling.
   Reason: retellings were where meaning drifted.
 - **Quality is part of correctness:** consistency, accessibility, and workflow quality are requirements, so verify contrast, never encode meaning by colour alone, and avoid red/green opposition.
