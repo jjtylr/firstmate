@@ -1,4 +1,0 @@
-# Custom label of the self-hosted CI runner on stojack.
-self-hosted-runner:
-  labels:
-    - stojack

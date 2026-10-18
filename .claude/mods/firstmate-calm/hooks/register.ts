@@ -299,9 +299,8 @@ async function startNotes($: EngineInterface): Promise<void> {
 /**
  * A line per outcome the tail copy gained. The first tail this session sees is the
  * startup replay, whether it existed at session start or appeared later, judged against
- * the read cursor and processed marker as they were at session start: routine rows
- * already read and captain rows already processed are skipped, while a captain row
- * merely read by the drain is still due.
+ * the read cursor and processed marker as they were at session start: a row read or
+ * processed before then is never shown, and one the drain read since still is.
  */
 async function followTail($: EngineInterface, current: NotesState): Promise<void> {
   const tail = await readIfChanged($, `${current.state}/.branch-outcomes-tail.jsonl`, current.tailStamp);

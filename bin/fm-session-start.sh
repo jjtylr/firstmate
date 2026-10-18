@@ -221,7 +221,9 @@
 #             already treats a lock owned through shared ancestry or a trusted
 #             same-session Claude id as its own, so the re-emit proceeds, while
 #             a lock another live session took meanwhile still produces the
-#             ordinary read-only path.
+#             ordinary read-only path. A re-emit prints a short RE-EMIT CUE
+#             first, so a harness that spills a large output and shows only its
+#             head still tells the model to read the saved full output.
 #
 #   --source  The native session-open source, supplied only by
 #             fm-sessionstart-run.sh. A genuine `startup` that owns the active
@@ -580,10 +582,8 @@ print_status_tail() {
 # a per-task backend liveness read that dies mid-read would otherwise take
 # every later stage with it. Isolation turns any death, hang, or nonzero
 # surprise in one task's read into that task's own endpoint line - never a
-# silently missing rest of digest. Only timeout and signal-death statuses are
-# read errors; other nonzero statuses retain the probe's endpoint-gone verdict.
-# The inner bash re-sources fm-backend.sh per read; the child boundary keeps
-# a signal death out of the digest process.
+# silently missing rest of digest. The inner bash re-sources fm-backend.sh
+# per read; that cost is a few milliseconds per task and buys the isolation.
 fm_session_start_endpoint_read() {  # <backend> <target> [expected-label]
   local backend=$1 target=$2 label=${3:-}
   # shellcheck disable=SC2016  # Positional parameters expand inside the child bash, not here.
@@ -671,6 +671,12 @@ if [ "$REEMIT" -eq 0 ] && [ "$SESSION_SOURCE" = startup ]; then
 fi
 
 if [ "$REEMIT" -eq 1 ]; then
+  # First in the output on purpose: a harness that spills a large hook output
+  # delivers only a short head inline (Claude: about 2,000 characters), and
+  # CONTEXT prints last, so this cue is the part that must survive the spill.
+  printf 'RE-EMIT CUE: if this output ends with "Output too large ... Full output saved to <path>",\n'
+  printf 'read that whole file now, before acting. Otherwise read data/captain.md, data/captain-shared.md,\n'
+  printf 'and data/learnings.md under %s now if any of them is missing below.\n' "$DATA"
   section "SESSION START (CONTEXT RE-EMIT) - $FM_HOME"
   printf 'This session already took the helm at its own startup and has only lost its\n'
   printf 'context. Lock ownership is re-verified and the durable records below are\n'
@@ -888,7 +894,9 @@ Go to a source directly only when:
   - the NETWORK CHECKS section reported its checks still IN PROGRESS and this
     turn needs their verdict (bin/fm-startup-network.sh report),
   - or a STARTUP TRUNCATED banner named the stage that would have printed it, in
-    which case that stage's sources were never emitted and must be reconciled.
+    which case that stage's sources were never emitted and must be reconciled,
+  - or a context re-emit opened with a read cue because the
+    harness cut the digest short.
 EOF
 
 # --- 6. fleet-state digest ---------------------------------------------
