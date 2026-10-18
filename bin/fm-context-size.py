@@ -136,10 +136,8 @@ def local_observation(meta):
             else:
                 provider = message.get("provider")
                 model_id = model
-                if model and "/" in model:
+                if not message.get("model") and model and "/" in model:
                     provider, model_id = model.split("/", 1)
-                elif not provider and meta.get("model", "").endswith("/" + (model or "")):
-                    provider = meta["model"].split("/", 1)[0]
                 window = pi_window(root, model_id, provider)
             percent = tokens * 100 / window if window else None
             return dict(status="read", tokens=tokens, context_window=window,

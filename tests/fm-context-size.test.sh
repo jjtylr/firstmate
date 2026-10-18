@@ -90,6 +90,29 @@ log(pi_root, 'pi', pi_cwd, 'model-a', dict(input=40, cacheRead=80, cacheWrite=10
 row = read(pi_meta)
 assert row['tokens'] == 130 and row['context_window'] == 500 and row['percentage'] == 26, row
 assert row['over_threshold'] is True and 60 <= row['age_seconds'] < 70, row
+(pi_root / 'models-store.json').write_text(json.dumps({
+    'provider-a': dict(models=[dict(id='model-a', contextWindow=500)]),
+    'provider-b': dict(models=[dict(id='model-a', contextWindow=1000)]),
+    'openrouter': dict(models=[dict(id='anthropic/claude-sonnet-4-5', contextWindow=1000)]),
+    'anthropic': dict(models=[dict(id='claude-sonnet-4-5', contextWindow=500)])}))
+for harness in ('pi', 'pi-signed'):
+    for model, provider, configured, window in (
+        ('anthropic/claude-sonnet-4-5', 'openrouter', 'provider-a/model-a', 1000),
+        ('model-a', 'provider-b', 'provider-a/model-a', 1000),
+        ('model-a', None, 'provider-a/model-a', None),
+        ('anthropic/claude-sonnet-4-5', None, 'provider-a/model-a', 1000),
+        (None, None, 'openrouter/anthropic/claude-sonnet-4-5', 1000),
+        (None, None, 'provider-a/model-a', 500),
+    ):
+        case_meta = meta('pi-model', harness=harness, kind='ship', worktree=pi_cwd,
+                         account=pi_root, model=configured)
+        log(pi_root, 'pi', pi_cwd, model, dict(input=40, cacheRead=80, cacheWrite=10),
+            provider=provider)
+        row = read(case_meta)
+        assert row['status'] == 'read' and row['tokens'] == 130, row
+        assert row['model'] == (model or configured) and row['context_window'] == window, row
+        assert row['percentage'] == (13000 / window if window else None), row
+        assert row['over_threshold'] == (13000 / window > 20 if window else None), row
 (pi_root / 'models-store.json').unlink()
 assert read(pi_meta)['context_window'] is None
 assert read(meta('missing', harness='pi', kind='ship', worktree='/missing'))['reason'] == 'no session log'
@@ -106,9 +129,10 @@ remote_home = tmp / 'remote-home'
 remote_login = tmp / 'remote-login'
 remote_login.mkdir()
 remote_root = remote_login / '.pi/agent'
-log(remote_root, 'pi', str(remote_home), 'remote-model', dict(input=300, cacheRead=20, cacheWrite=4), provider='remote-provider')
+log(remote_root, 'pi', str(remote_home), 'anthropic/remote-model', dict(input=300, cacheRead=20, cacheWrite=4), provider='remote-provider')
 (remote_root / 'models-store.json').write_text(json.dumps({
-    'remote-provider': dict(models=[dict(id='remote-model', contextWindow=1000)])}))
+    'remote-provider': dict(models=[dict(id='anthropic/remote-model', contextWindow=1000)]),
+    'anthropic': dict(models=[dict(id='remote-model', contextWindow=500)])}))
 (remote_home / 'state/parent-route/mate.meta').write_text(
     'kind=secondmate\nharness=pi\nhome=' + str(remote_home) + '\n')
 parent = tmp / 'parent'
