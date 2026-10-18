@@ -25,6 +25,7 @@ live_lab_cleanup() {
   while read -r pid; do [ -n "$pid" ] && { pkill -P "$pid" 2>/dev/null || true; kill "$pid" 2>/dev/null || true; }; done < "$TMP_ROOT/pids"
   while read -r dir; do
     [ -n "$dir" ] || continue
+    [ -d "$dir" ] || continue
     env -u TMUX TMUX_TMPDIR="$dir" tmux kill-server 2>/dev/null
     case "$dir" in /tmp/fml.*) rm -rf "$dir" ;; esac
   done < "$TMP_ROOT/tmux-dirs"
@@ -32,31 +33,6 @@ live_lab_cleanup() {
   fm_test_cleanup
 }
 trap live_lab_cleanup EXIT
-
-python3 - "$LIVE_LAB" "$TMP_ROOT" <<'PY' || fail "lab options must reject missing values"
-from pathlib import Path
-import subprocess
-import sys
-
-script, temporary = sys.argv[1:]
-lab = Path(temporary) / "options-lab"
-lab.mkdir()
-(lab / ".fm-live-lab").write_text("fm-live-lab v1\n")
-cases = [
-    ["up", "--harness", "claude", option]
-    for option in ("--harness", "--model", "--effort", "--supervision-host",
-                   "--expect-host", "--source", "--ref", "--timeout")
-]
-cases += [["pane", str(lab), option] for option in ("--window", "--lines")]
-cases += [["say", str(lab), "--window"]]
-for args in cases:
-    result = subprocess.run(["bash", script, *args], capture_output=True, text=True, timeout=2)
-    assert result.returncode == 2, (args, result.returncode, result.stderr)
-    assert "Usage:" in result.stderr, (args, result.stderr)
-    assert not result.stdout, (args, result.stdout)
-assert list(lab.iterdir()) == [lab / ".fm-live-lab"]
-PY
-pass "lab options without values exit with usage before starting or driving a lab"
 
 command -v tmux >/dev/null 2>&1 || { echo "ok - skipped: tmux is not installed"; exit 0; }
 

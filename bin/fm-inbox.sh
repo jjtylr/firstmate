@@ -865,9 +865,7 @@ cmd_ready() {
       posture=unknown
     fi
   elif [ -e "$STATE/.afk-contract" ]; then
-    # shellcheck source=bin/fm-afk-contract.sh
-    . "$SELF_DIR/fm-afk-contract.sh"
-    posture=$(fm_afk_contract_mode "$STATE") || posture=unknown
+    posture=away
   else
     posture=present
   fi

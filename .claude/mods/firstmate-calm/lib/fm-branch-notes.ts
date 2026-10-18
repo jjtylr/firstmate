@@ -66,7 +66,7 @@ export function parseOutcomeTail(text: string | undefined): OutcomeRow[] {
   return rows;
 }
 
-/** Display recovery errs toward replay on an unreadable marker; it never advances the authoritative markers. */
+/** A sidecar marker's sequence: absent or unreadable reads as 0, as the store owner reads it. */
 export function parseOutcomeMarker(text: string | undefined): number {
   const value = (text ?? "").trim();
   return /^(0|[1-9][0-9]*)$/.test(value) && Number.isSafeInteger(Number(value)) ? Number(value) : 0;

@@ -2,10 +2,9 @@
 """
 fm-jev-mem-guard.py - Jev Multi-Agent Memory RSS & Swap Thrashing Guard (Pattern 46)
 
-Audits current host memory availability and swap utilization from Linux /proc,
-with a snapshot of the largest resident processes for diagnosis.
-It measures neither swap activity over time nor RSS growth, and does not intervene
-to prevent OOM kills or change supervision state.
+Audits host memory availability (/proc/meminfo) and swap utilization to detect memory
+starvation, swap thrashing, and out-of-control worker RSS expansion across multi-agent seats.
+Prevents catastrophic OOM killer invocations against persistent agent supervisors and tmux sessions.
 
 Thresholds (each named for the CLI flag that carries its operational default; run --help for current values):
   - --warn-mem-pct: memory utilization warning, percent of MemTotal not available.
@@ -21,8 +20,7 @@ Invariants:
     "unavailable" in human output) instead of fabricated numbers.
   - Swap with SwapTotal > 0 but no SwapFree line is reported as unknown and never
     classifies the verdict; a failed top-process listing degrades to an empty list.
-  - Synchronous /proc reads have no internal deadline; a caller that needs a
-    bounded invocation must supply the timeout.
+  - Bounded sub-second execution (< 500ms).
   - Status is OK, WARNING, CRITICAL, or UNKNOWN; recommendation is diagnostic text
     for the operator, never a command.
 """

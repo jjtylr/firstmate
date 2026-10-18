@@ -97,11 +97,7 @@ fm_test_fake_gh_axi() {
 # set, each send-keys -l payload is appended one per line. When FM_FAKE_PANE_LOG
 # is set, each send-keys TEXT-LINE payload (the pre-launch pane exports, which
 # carry no -l) is appended there instead, one per line in send order. Optional
-# FM_FAKE_DUPLICATE_WINDOW is printed from list-windows. A Pi spawn fixture can
-# set FM_FAKE_PI_LAUNCH_MARKER, FM_FAKE_PI_STATE_DIR, FM_FAKE_PI_ID, and
-# FM_FAKE_BUSY_EVENT: the fake pane then renders a nonempty worker viewport and
-# writes the same public pi-ext launch-message-start receipt a real launched
-# extension emits after the launch command's Enter.
+# FM_FAKE_DUPLICATE_WINDOW is printed from list-windows.
 #
 # The pane path defaults to empty when FM_FAKE_PANE_PATH is unset. Window
 # cleanup and option operations are no-ops. Launch logging is env-gated, so
@@ -111,92 +107,63 @@ fm_test_fake_tmux_spawn() {
   cat > "$fakebin/tmux" <<'SH'
 #!/usr/bin/env bash
 set -u
-record_pi_ready() {
-  local event=$1 state=$2 id=$3 gen
-  "$event" apply "$state" "$id" busy \
-    --current-gen --source pi-ext --event launch-message-start >/dev/null 2>&1 || return 0
-  gen=$(cat "$state/$id.busy-gen" 2>/dev/null) || return 0
-  printf '%s\n' "$gen" >"$state/$id.pi-ready.tmp.$$" &&
-    mv -f "$state/$id.pi-ready.tmp.$$" "$state/$id.pi-ready"
-}
 case "$*" in
   *"#{pane_current_path}"*) printf '%s\n' "${FM_FAKE_PANE_PATH:-}"; exit 0 ;;
 esac
+window_file="$(dirname "$0")/.spawn-window"
 case "${1:-}" in
   display-message) printf 'firstmate\n'; exit 0 ;;
   list-windows)
     if [ -n "${FM_FAKE_DUPLICATE_WINDOW:-}" ]; then
       printf '%s\n' "$FM_FAKE_DUPLICATE_WINDOW"
     fi
+    [ ! -s "$window_file" ] || cat "$window_file"
     exit 0
     ;;
-  has-session|new-session|new-window|kill-window|set-window-option) exit 0 ;;
-  capture-pane)
-    if [ -n "${FM_FAKE_PI_LAUNCH_MARKER:-}" ] || \
-      [ -f "${FM_FAKE_LAUNCH_LOG:-/nonexistent}.pi-info" ]; then
-      printf '%s\n' 'pi worker viewport' '── ⠋ Working ──'
-    fi
+  new-window)
+    name=
+    previous=
+    for arg in "$@"; do
+      [ "$previous" = -n ] && name=$arg
+      previous=$arg
+    done
+    printf '%s\n' "$name" > "$window_file"
     exit 0
     ;;
+  kill-window)
+    : > "$window_file"
+    exit 0
+    ;;
+  has-session|new-session|set-window-option) exit 0 ;;
   send-keys)
-    literal=
-    prev=
-    for a in "$@"; do
-      if [ "$prev" = "-l" ]; then
-        # A spawn types a short line sourcing its staged launch file; resolve
-        # the staged command itself so suites assert what the pane runs and so
-        # the Pi receipt below reads the real launch command rather than the
-        # source line that carries it.
-        resolved=$a
-        case "$a" in
-          ". '"*"'")
-            staged=${a#". '"}
-            staged=${staged%"'"}
-            [ ! -f "$staged" ] || resolved=$(cat "$staged")
-            ;;
-        esac
-        literal=$resolved
-        if [ -n "${FM_FAKE_LAUNCH_LOG:-}" ]; then
-          logged=$resolved
+    if [ -n "${FM_FAKE_LAUNCH_LOG:-}" ]; then
+      prev=
+      for a in "$@"; do
+        if [ "$prev" = "-l" ]; then
+          # A spawn types a short line sourcing its staged launch file; log
+          # the staged command itself so suites assert what the pane runs.
           # Direct literals past the terminal line buffer are truncated, so a
           # long launch only survives when it arrived through that short source.
-          if [ "$resolved" = "$a" ] && [ "${#logged}" -gt 1024 ]; then
-            logged=${logged:0:1024}
-          fi
-          printf '%s\n' "$logged" >> "$FM_FAKE_LAUNCH_LOG"
+          case "$a" in
+            ". '"*"'")
+              staged=${a#". '"}
+              staged=${staged%"'"}
+              if [ -f "$staged" ]; then
+                a=$(cat "$staged")
+              elif [ "${#a}" -gt 1024 ]; then
+                a=${a:0:1024}
+              fi
+              ;;
+            *)
+              if [ "${#a}" -gt 1024 ]; then
+                a=${a:0:1024}
+              fi
+              ;;
+          esac
+          printf '%s\n' "$a" >> "$FM_FAKE_LAUNCH_LOG"
         fi
-      fi
-      prev=$a
-    done
-    if [ -n "$literal" ]; then
-      case "$literal" in
-        *FM_PI_HARNESS=pi*)
-          if [ -n "${FM_FAKE_PI_LAUNCH_MARKER:-}" ]; then
-            : >"$FM_FAKE_PI_LAUNCH_MARKER"
-          fi
-          if [ -n "${FM_FAKE_LAUNCH_LOG:-}" ]; then
-            pi_ext=$(printf '%s\n' "$literal" | sed -n "s/.*-e '\([^']*\\.pi-ext\\.ts\)'.*/\1/p")
-            if [ -n "$pi_ext" ]; then
-              pi_state=${pi_ext%/*}
-              pi_id=${pi_ext##*/}
-              pi_id=${pi_id%.pi-ext.ts}
-              pi_event=$(sed -n 's/.*execFile("\([^"]*fm-busy-event.sh\)".*/\1/p' "$pi_ext" | head -n 1)
-              printf '%s\t%s\t%s\n' "$pi_event" "$pi_state" "$pi_id" >"$FM_FAKE_LAUNCH_LOG.pi-info"
-            fi
-          fi
-          ;;
-      esac
-    else
-      case " $* " in
-        *' Enter '*)
-          if [ -n "${FM_FAKE_PI_LAUNCH_MARKER:-}" ] && [ -f "$FM_FAKE_PI_LAUNCH_MARKER" ]; then
-            record_pi_ready "$FM_FAKE_BUSY_EVENT" "$FM_FAKE_PI_STATE_DIR" "$FM_FAKE_PI_ID"
-          elif [ -f "${FM_FAKE_LAUNCH_LOG:-/nonexistent}.pi-info" ]; then
-            IFS=$'\t' read -r pi_event pi_state pi_id <"$FM_FAKE_LAUNCH_LOG.pi-info"
-            record_pi_ready "$pi_event" "$pi_state" "$pi_id"
-          fi
-          ;;
-      esac
+        prev=$a
+      done
     fi
     # The pre-launch pane exports ride the text-line form
     # (`send-keys -t <target> <text> Enter`), which carries no -l flag, so a

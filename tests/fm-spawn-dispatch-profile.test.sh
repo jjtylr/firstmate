@@ -39,11 +39,24 @@ make_spawn_fakebin() {
   fakebin=$(fm_test_make_spawn_fakebin "$dir")
   cat > "$fakebin/timeout" <<'SH'
 #!/usr/bin/env bash
+# Match GNU timeout's option shape from bin/fm-timeout-lib.sh fm_run_timed:
+# `timeout -k <grace> <secs> cmd...` or plain `timeout <secs> cmd...`.
+if [ "${1:-}" = -k ]; then
+  shift 2
+fi
 shift
 exec "$@"
 SH
   cat > "$fakebin/cursor-agent" <<'SH'
 #!/usr/bin/env bash
+# Launch resolution runs a bounded --help probe (bin/fm-cursor-lib.sh
+# fm_cursor_verify_executable) before accepting any candidate. Empty success
+# is not Cursor identity, so the fixture must mark itself the same way the
+# real CLI does or spawn falls through to a host agent / fails closed on CI.
+if [ "${1:-}" = --help ]; then
+  printf '%s\n' 'Start the Cursor Agent'
+  exit 0
+fi
 if [ "${1:-}" = --list-models ]; then
   [ "${FM_FAKE_CURSOR_LIST_STATUS:-0}" -eq 0 ] || exit "${FM_FAKE_CURSOR_LIST_STATUS}"
   printf '%b\n' "${FM_FAKE_CURSOR_MODELS:-Available models\ncursor-grok-4.5-high - Grok 4.5 High}"
@@ -61,12 +74,11 @@ make_spawn_case() {
   shift 2
   case_dir="$TMP_ROOT/$name"
   home="$case_dir/home"
-  proj="$home/projects/project"
+  proj="$case_dir/project"
   wt="$case_dir/wt"
   launchlog="$case_dir/launch.log"
   fakebin=$(make_spawn_fakebin "$case_dir/fake")
   fm_test_spawn_home "$home" "$harness"
-  printf '%s\n' '- project [no-mistakes] - dispatch fixture (added 2026-09-18)' > "$home/data/projects.md"
   fm_git_worktree "$proj" "$wt" "wt-$name"
   for id in "$@"; do
     fm_test_spawn_brief "$home" "$id"
@@ -96,18 +108,11 @@ task_inbox_export() {  # <home> <id>
   printf "export FM_TASK_INBOX='%s'; " "$state/$2.inbox"
 }
 
-ai_trailer_hooks_prefix() {  # <home> <id>
-  local state
-  state=$(CDPATH='' cd -- "$1/state" && pwd -P) || fail "cannot resolve state dir $1/state"
-  printf "export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0='%s'; " "$state/$2.git-hooks"
-}
 
 run_spawn() {
-  local home=$1 wt=$2 fakebin=$3 launchlog=$4 id
+  local home=$1 wt=$2 fakebin=$3 launchlog=$4
   shift 4
-  id=${1:-}
   : > "$launchlog"
-  rm -f "$home/state/.fake-pi-launched-$id"
   # CLAUDE_CONFIG_DIR is forwarded onto claude launches by fm-spawn, so pin it
   # explicitly (empty by default) instead of leaking the invoking shell's value,
   # which would make launch assertions depend on the developer's environment.
@@ -115,9 +120,6 @@ run_spawn() {
   CLAUDE_CONFIG_DIR="${FM_TEST_CLAUDE_CONFIG_DIR:-}" \
     FM_FAKE_LAUNCH_LOG="$launchlog" FM_FAKE_PANE_LOG="${FM_TEST_PANE_LOG:-}" \
     FM_FAKE_PI_VERSION="${FM_TEST_PI_VERSION:-0.84.0}" \
-    FM_FAKE_PI_LAUNCH_MARKER="$home/state/.fake-pi-launched-$id" \
-    FM_FAKE_PI_STATE_DIR="$home/state" FM_FAKE_PI_ID="$id" \
-    FM_FAKE_BUSY_EVENT="$ROOT/bin/fm-busy-event.sh" \
     FM_FAKE_CURSOR_MODELS="${FM_TEST_CURSOR_MODELS:-}" \
     FM_FAKE_CURSOR_LIST_STATUS="${FM_TEST_CURSOR_LIST_STATUS:-0}" \
     GROK_HOME="$home/grok-home" \
@@ -473,8 +475,94 @@ test_active_dispatch_profile_allows_positional_harness() {
   pass "active crew-dispatch profile allows the legacy positional harness form"
 }
 
-test_active_dispatch_profile_refuses_executable_harness_string() {
-  local rec id out status
+# Replacing inherited config rather than appending the hooks entry loses the
+# scoped HTTPS credential helper. Execute the real emitted launch and ask Git,
+# rather than inspecting command text, to catch that credential widening. Every
+# pane shell runs with its startup files pointed at the case directory, so a
+# developer's rc file cannot prompt, exec a multiplexer or export GIT_CONFIG_*.
+isolated_pane_env() {  # <assignment-or-command...>
+  env HOME="$CASE_DIR" ZDOTDIR="$CASE_DIR" XDG_CONFIG_HOME="$CASE_DIR" ENV= BASH_ENV= "$@"
+}
+
+test_launch_preserves_inherited_git_config() {
+  local rec id=git-config-append out status launch result pane_shell count launch_file expected prefix
+  rec=$(make_spawn_case "$id" codex "$id")
+  read_case_record "$rec"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --harness 'echo WORKER-RAN >&2; git config --get-all credential.helper; git config --get core.hooksPath')
+  status=$?
+  expect_code 0 "$status" "Git configuration probe should spawn: $out"
+  launch=$(cat "$LAUNCH_LOG")
+  launch_file="$CASE_DIR/git-config-launch.sh"
+  printf '%s\n' "$launch" > "$launch_file"
+  expected=$'\n!gh auth git-credential\n'"$(cd "$HOME_DIR/state" && pwd -P)/$id.git-hooks"
+  for pane_shell in /bin/sh /bin/bash /bin/zsh; do
+    [ -x "$pane_shell" ] || continue
+    for count in 2 02; do
+      result=$(isolated_pane_env GIT_CONFIG_COUNT="$count" \
+        GIT_CONFIG_KEY_0=credential.helper GIT_CONFIG_VALUE_0='' \
+        GIT_CONFIG_KEY_1=credential.helper GIT_CONFIG_VALUE_1='!gh auth git-credential' \
+        "$pane_shell" -c "$launch") || fail "Git configuration launch failed in $pane_shell"
+      [ "$result" = "$expected" ] \
+        || fail "launch dropped the inherited credential-helper entries in $pane_shell"
+    done
+    result=$(isolated_pane_env GIT_CONFIG_COUNT=bad "$pane_shell" -c "$launch" 2>&1)
+    status=$?
+    [ "$status" -ne 0 ] || fail "an invalid Git config count silently launched"
+    assert_not_contains "$result" WORKER-RAN "an invalid Git config count still started the worker in $pane_shell"
+    for count in bad 2147483647; do
+      # shellcheck disable=SC2016 # The child pane expands its own arguments and source status.
+      result=$(isolated_pane_env GIT_CONFIG_COUNT="$count" "$pane_shell" -i -c \
+        '. "$1"; fm_status=$?; [ "$fm_status" -ne 0 ] || exit 2; printf "\nSHELL-STILL-ALIVE\n"' _ "$launch_file" 2>&1)
+      status=$?
+      expect_code 0 "$status" "invalid count must preserve the interactive $pane_shell pane"
+      assert_contains "$result" 'error: ' "count refusal must remain visible in $pane_shell"
+      assert_contains "$result" SHELL-STILL-ALIVE "count refusal killed the interactive $pane_shell pane"
+      assert_not_contains "$result" WORKER-RAN "count refusal still started the worker in $pane_shell"
+    done
+  done
+  # A fish pane sources the same launch file, so fish runs the same append and
+  # refusal cases. Without fish, check the emitted launch prefix (the staged
+  # launch-file contract) for POSIX-only syntax fish cannot parse.
+  if command -v fish >/dev/null 2>&1; then
+    for count in 2 02; do
+      result=$(isolated_pane_env GIT_CONFIG_COUNT="$count" \
+        GIT_CONFIG_KEY_0=credential.helper GIT_CONFIG_VALUE_0='' \
+        GIT_CONFIG_KEY_1=credential.helper GIT_CONFIG_VALUE_1='!gh auth git-credential' \
+        fish -c "source '$launch_file'") || fail "Git configuration launch failed in fish"
+      [ "$result" = "$expected" ] || fail "launch dropped the inherited credential-helper entries in fish"
+    done
+    result=$(isolated_pane_env GIT_CONFIG_COUNT=bad fish -c "source '$launch_file'" 2>&1)
+    status=$?
+    [ "$status" -ne 0 ] || fail "an invalid Git config count silently launched in fish"
+    assert_not_contains "$result" WORKER-RAN "an invalid Git config count still started the worker in fish"
+    for count in bad 2147483647; do
+      result=$(isolated_pane_env GIT_CONFIG_COUNT="$count" fish -i -c \
+        "source '$launch_file'; and exit 2; printf '\nSHELL-STILL-ALIVE\n'" 2>&1)
+      status=$?
+      expect_code 0 "$status" "invalid count must preserve the interactive fish pane"
+      assert_contains "$result" 'error: ' "count refusal must remain visible in fish"
+      assert_contains "$result" SHELL-STILL-ALIVE "count refusal killed the interactive fish pane"
+      assert_not_contains "$result" WORKER-RAN "count refusal still started the worker in fish"
+    done
+  else
+    prefix=$(fm_test_launch_git_prefix "$launch")
+    # shellcheck disable=SC2016 # These are literal shell tokens fish rejects.
+    case "$prefix" in
+      *'$('* | *'${'* | *'`'* | *'case '* | *'while '* | *'esac'* | *'done'*)
+        fail "the Git configuration launch prefix uses syntax fish cannot parse: $prefix" ;;
+    esac
+    # A token check cannot prove fish sources the launch, so report fish as
+    # skipped rather than letting the pass line claim it ran.
+    echo "skip: fish not found (fish pane launch); only a static syntax check ran"
+    pass "launch appends the hooks config while preserving inherited Git credentials in sh, bash and zsh"
+    return
+  fi
+  pass "launch appends the hooks config while preserving inherited Git credentials in every pane shell, fish included"
+}
+
+test_active_dispatch_profile_allows_raw_launch_command() {
+  local rec id out status launch
   id=profile-raw-z15
   rec=$(make_spawn_case profile-raw claude "$id")
   read_case_record "$rec"
@@ -483,12 +571,38 @@ test_active_dispatch_profile_refuses_executable_harness_string() {
   out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
     "$id" "$PROJ_DIR" "custom-agent --flag")
   status=$?
-  expect_code 1 "$status" "an executable harness string should be refused"
-  assert_contains "$out" "select an exact verified canonical adapter token" \
-    "executable harness refusal lacked the canonical-token requirement"
-  assert_absent "$HOME_DIR/state/$id.meta" "executable harness refusal published metadata"
-  [ ! -s "$LAUNCH_LOG" ] || fail "executable harness string launched an agent"
-  pass "active dispatch requires an exact verified canonical adapter token"
+  expect_code 0 "$status" "raw launch command should satisfy active dispatch-profile requirement"
+  assert_contains "$out" "spawned $id harness=custom-agent" "spawn did not report raw command harness"
+  assert_meta_profile "$HOME_DIR/state/$id.meta" custom-agent default default
+  launch=$(cat "$LAUNCH_LOG")
+  # The unverified-adapter escape hatch is still an agent this fleet launched,
+  # so it carries the compact-adviser floor and the AI-trailer strip; nothing
+  # else may rewrite the captain's own command.
+  [ "$launch" = "export COMPACT_ADVISER_DISABLE=1; $(task_inbox_export "$HOME_DIR" "$id")$(fm_test_launch_git_prefix "$launch")custom-agent --flag" ] || fail "raw launch command changed"$'\n'"actual: $launch"
+  pass "active crew-dispatch profile allows the raw launch-command escape hatch"
+}
+
+test_chained_raw_launch_strips_ai_trailer_in_every_step() {
+  local rec id out status launch body
+  id=chained-raw-z15
+  rec=$(make_spawn_case chained-raw claude "$id")
+  read_case_record "$rec"
+
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" "cd . && git commit -q --allow-empty --trailer 'Co-authored-by: Cursor <cursoragent@cursor.com>' -m 'fix: chained raw launch'")
+  status=$?
+  expect_code 0 "$status" "chained raw launch should spawn: $out"
+  launch=$(cat "$LAUNCH_LOG")
+  (
+    cd "$WT_DIR" || exit 1
+    unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
+    fm_git_identity 'Captain Tests' 'captain@example.invalid'
+    bash -c "$launch"
+  ) || fail "executing the chained raw launch failed"$'\n'"launch: $launch"
+  body=$(git -C "$WT_DIR" log -1 --format=%B)
+  assert_contains "$body" "fix: chained raw launch" "the chained launch did not commit"
+  assert_not_contains "$body" "cursoragent@cursor.com" "the AI trailer reached a commit made after the first step of a chained raw launch"
+  pass "a chained raw launch commits through the AI-trailer strip in every step"
 }
 
 test_claude_threads_model_and_effort() {
@@ -848,9 +962,9 @@ test_native_pi_ultra_is_explicit_and_model_scoped() {
   read_case_record "$rec"
   out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
     'pi --offline' --model codex-native/gpt-6-astra --effort ultra 2>&1)
-  expect_code 1 "$?" "executable harness string silently omitted the native Ultra flag"
+  expect_code 1 "$?" "raw launch silently omitted the native Ultra flag"
   [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "raw Ultra launch published metadata"
-  assert_contains "$out" "select an exact verified canonical adapter token" "executable harness refusal was not actionable"
+  assert_contains "$out" "canonical --harness pi or pi-signed" "raw launch refusal was not actionable"
   pass "Ultra is explicit for native Pi and Pi-signed, including direct-PR, and refuses unsupported profiles before provisioning"
 }
 
@@ -927,10 +1041,8 @@ test_pi_signed_threads_shared_pi_profile_and_preserves_identity() {
     "pi-signed launch lost the canonical typed launch-brief envelope"
   assert_present "$HOME_DIR/state/$id.pi-ext.ts" "pi-signed launch did not install Pi's turn-end extension"
   assert_present "$HOME_DIR/state/$id.busy-gen" "pi-signed spawn did not arm the busy-state contract"
-  assert_contains "$(cat "$HOME_DIR/state/$id.busy-state")" "state=busy source=pi-ext event=launch-message-start" \
-    "pi-signed spawn reported success without the launch message_start receipt"
-  [ "$(cat "$HOME_DIR/state/$id.pi-ready")" = "$(cat "$HOME_DIR/state/$id.busy-gen")" ] ||
-    fail "pi-signed spawn did not bind readiness to the current busy generation"
+  assert_contains "$(cat "$HOME_DIR/state/$id.busy-state")" "state=busy source=fm-spawn" \
+    "pi-signed spawn did not seed the busy-state record from the launch brief"
   pass "pi-signed shares Pi launch semantics while preserving its configured and recorded identity"
 }
 
@@ -1058,11 +1170,9 @@ test_pi_worker_launch_omits_seeded_home_approve() {
   launch=$(cat "$LAUNCH_LOG")
   assert_contains "$launch" "FM_PI_HARNESS=pi '$FAKEBIN_DIR/pi' --tui-mode regular" \
     "pi worker launch lost its regular TUI probe"
-  # The fork's registered-clone launch carries its own per-launch --approve;
-  # the seeded-home secondmate grant must not add a second one.
-  [ "$(printf '%s' "$launch" | grep -o -- '--approve' | wc -l | tr -d ' ')" = 1 ] ||
-    fail "ordinary Pi worker launches must carry only the per-launch --approve"$'\n'"actual: $launch"
-  pass "ordinary Pi worker launches omit the seeded-home --approve"
+  assert_not_contains "$launch" "--approve" \
+    "ordinary Pi worker launches must not receive secondmate seeded-home --approve"
+  pass "ordinary Pi worker launches omit --approve"
 }
 
 test_pi_approve_probe_omits_unsupported_flag() {
@@ -1167,8 +1277,7 @@ const busy = () => {
   return record;
 };
 const seeded = busy();
-// This fork's spawn returns only after Pi's launch message_start receipt.
-assert.deepEqual(seeded, { gen, seq: "2", state: "busy", source: "pi-ext", event: "launch-message-start" });
+assert.deepEqual(seeded, { gen, seq: "1", state: "busy", source: "fm-spawn", event: "launch-brief" });
 const handlers = {};
 let tools = [];
 const extension = await import(pathToFileURL(process.env.EXT_PATH).href);
@@ -1184,7 +1293,7 @@ if (process.env.SCENARIO !== "unverified") {
 }
 rmSync(process.env.TURNEND, { force: true });
 await handlers.agent_start();
-const started = { gen, seq: "3", state: "busy", source: "pi-ext", event: "agent-start" };
+const started = { gen, seq: "2", state: "busy", source: "pi-ext", event: "agent-start" };
 assert.deepEqual(busy(), started, "agent_start must publish a generation-bound Pi busy event");
 const after = status();
 if (process.env.SCENARIO === "matched") {
@@ -1210,14 +1319,14 @@ for (let attempt = 0; attempt < 100 && !existsSync(process.env.TURNEND); attempt
 assert.ok(existsSync(process.env.TURNEND), "reporting must preserve turn-end notification");
 assert.deepEqual(busy(), started, "an inner turn boundary must not mark the worker idle");
 await handlers.agent_settled({}, { isIdle: () => true });
-assert.deepEqual(busy(), { gen, seq: "4", state: "idle", source: "pi-ext", event: "agent-settled" });
+assert.deepEqual(busy(), { gen, seq: "3", state: "idle", source: "pi-ext", event: "agent-settled" });
 await handlers.agent_start();
-assert.deepEqual(busy(), { gen, seq: "5", state: "busy", source: "pi-ext", event: "agent-start" });
+assert.deepEqual(busy(), { gen, seq: "4", state: "busy", source: "pi-ext", event: "agent-start" });
 assert.equal(status(), after, "report once per worker incarnation, not on every turn");
 appendFileSync(process.env.STATUS_FILE, "done: completed task\n");
 const completed = status();
 await handlers.agent_settled({}, { isIdle: () => true });
-assert.deepEqual(busy(), { gen, seq: "6", state: "idle", source: "pi-ext", event: "agent-settled" });
+assert.deepEqual(busy(), { gen, seq: "5", state: "idle", source: "pi-ext", event: "agent-settled" });
 assert.equal(status(), completed, "a reporting extension must not supersede a terminal worker status");
 const replacementGen = execFileSync(process.env.BUSY_EVENT, ["arm", stateDir, process.env.TASK_ID], { encoding: "utf8" }).trim();
 assert.notEqual(replacementGen, gen, "relaunch must mint a new generation");
@@ -1292,8 +1401,7 @@ test_exclude_tools_non_pi_runtime_refuses_non_empty_list() {
     [ ! -s "$LAUNCH_LOG" ] || fail "$harness launched despite an unhonorable exclusion list"
     [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "$harness refusal still wrote a task record"
   done
-  # A raw launch command cannot receive the flag, Pi-named or not; this fork
-  # refuses every raw launch command before the exclusion list is read.
+  # A raw launch command cannot receive the flag, Pi-named or not.
   id=excl-refuse-raw-z9j
   rec=$(make_spawn_case excl-refuse-raw pi "$id")
   read_case_record "$rec"
@@ -1301,7 +1409,7 @@ test_exclude_tools_non_pi_runtime_refuses_non_empty_list() {
   out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" "pi Verify this adapter")
   status=$?
   expect_code 1 "$status" "a raw launch with a non-empty exclusion list must refuse"
-  assert_contains "$out" "select an exact verified canonical adapter token" "the raw-launch refusal must name the canonical-token rule"
+  assert_contains "$out" "config/crew-exclude-tools" "the raw-launch refusal must name the config file"
   [ ! -s "$LAUNCH_LOG" ] || fail "a raw launch ignored the exclusion list"
   pass "a runtime that cannot hide tools, or a raw launch, refuses a non-empty exclusion list"
 }
@@ -1620,83 +1728,11 @@ test_keep_ai_trailers_omits_attribution_settings_and_strip_hooks() {
   expect_code 0 "$status" "claude spawn with keep-ai-trailers should succeed"$'\n'"$out"
   launch=$(cat "$LAUNCH_LOG")
   assert_attribution_policy_absent "$launch" "opted-in claude"
-  assert_not_contains "$launch" 'GIT_CONFIG_KEY_0=core.hooksPath' \
+  assert_not_contains "$launch" 'fm-git-strip-ai-trailers.sh' \
     "opted-in launch still overrides the repository hooksPath"
   [ ! -e "$HOME_DIR/state/$id.git-hooks" ] \
     || fail "opted-in launch installed AI trailer strip hooks"
   pass "keep-ai-trailers omits Claude attribution settings and the pane strip hooks"
-}
-
-test_keep_ai_trailers_relaunch_clears_only_its_own_override() {
-  local rec id out status body
-  id=profile-keep-relaunch-z28
-  rec=$(make_spawn_case profile-keep-relaunch codex "$id")
-  read_case_record "$rec"
-  mkdir -p "$CASE_DIR/hooks" "$CASE_DIR/other-hooks"
-  git -C "$WT_DIR" config core.hooksPath "$CASE_DIR/hooks"
-  cat > "$CASE_DIR/hooks/commit-msg" <<'SH'
-#!/bin/sh
-printf 'project\n' >> "$FM_TEST_TRAILER_REPO/hooks.log"
-SH
-  cat > "$CASE_DIR/other-hooks/commit-msg" <<'SH'
-#!/bin/sh
-printf 'other\n' >> "$FM_TEST_TRAILER_REPO/hooks.log"
-SH
-  cat > "$FAKEBIN_DIR/codex" <<'SH'
-#!/bin/sh
-git -C "$FM_TEST_TRAILER_REPO" -c user.name=Tests -c user.email=tests@example.invalid \
-  commit -q --allow-empty -m 'probe: launch attribution' \
-  --trailer 'Co-authored-by: Cursor <cursoragent@cursor.com>'
-SH
-  chmod +x "$CASE_DIR/hooks/commit-msg" "$CASE_DIR/other-hooks/commit-msg" "$FAKEBIN_DIR/codex"
-
-  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
-  status=$?
-  expect_code 0 "$status" "initial stripping launch should succeed: $out"
-  cp "$LAUNCH_LOG" "$CASE_DIR/first-launch.sh"
-  : > "$HOME_DIR/config/keep-ai-trailers"
-  mv "$FAKEBIN_DIR/tmux" "$FAKEBIN_DIR/tmux-spawn"
-  cat > "$FAKEBIN_DIR/tmux" <<'SH'
-#!/bin/sh
-case "$*" in
-  *'#{pane_current_command}'*) printf 'bash\n'; exit 0 ;;
-esac
-exec "$(dirname "$0")/tmux-spawn" "$@"
-SH
-  chmod +x "$FAKEBIN_DIR/tmux"
-  out=$(FM_FAKE_DUPLICATE_WINDOW="fm-$id" \
-    run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" --relaunch)
-  status=$?
-  expect_code 0 "$status" "opted-in relaunch should succeed: $out"
-
-  # shellcheck disable=SC2016
-  out=$(env -i HOME="$HOME_DIR/user-home" PATH="$FAKEBIN_DIR:$PATH" \
-    GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 FM_TEST_TRAILER_REPO="$WT_DIR" \
-    /bin/sh -eu -c '
-      . "$1"
-      git -C "$FM_TEST_TRAILER_REPO" log -1 --format=%B > "$3/before.txt"
-      . "$2"
-      git -C "$FM_TEST_TRAILER_REPO" log -1 --format=%B > "$3/after.txt"
-      git -C "$FM_TEST_TRAILER_REPO" config --get core.hooksPath
-    ' _ "$CASE_DIR/first-launch.sh" "$LAUNCH_LOG" "$CASE_DIR" 2>&1)
-  status=$?
-  expect_code 0 "$status" "successive launches in the same pane shell should execute: $out"
-  assert_equals "$CASE_DIR/hooks" "$out" "relaunch should restore the repository's hooks"
-  assert_not_contains "$(cat "$CASE_DIR/before.txt")" 'Co-authored-by: Cursor' "initial launch should strip AI trailers"
-  body=$(cat "$CASE_DIR/after.txt")
-  assert_contains "$body" 'Co-authored-by: Cursor' "opted-in replacement still stripped AI trailers"
-  assert_equals $'project\nproject' "$(cat "$WT_DIR/hooks.log")" "both launches should run the repository hook"
-
-  # shellcheck disable=SC2016
-  out=$(env -i HOME="$HOME_DIR/user-home" PATH="$FAKEBIN_DIR:$PATH" \
-    GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 FM_TEST_TRAILER_REPO="$WT_DIR" \
-    GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0="$CASE_DIR/other-hooks" \
-    /bin/sh -eu -c '. "$1"; git -C "$FM_TEST_TRAILER_REPO" config --get core.hooksPath' _ "$LAUNCH_LOG" 2>&1)
-  status=$?
-  expect_code 0 "$status" "launch with an unrelated hook override should execute: $out"
-  assert_equals "$CASE_DIR/other-hooks" "$out" "opted-in launch cleared an override it does not own"
-  assert_equals $'project\nproject\nother' "$(cat "$WT_DIR/hooks.log")" "the unrelated hook should still run"
-  pass "keep-ai-trailers relaunch clears its earlier strip override and preserves unrelated hooks"
 }
 
 test_keep_ai_trailers_reaches_secondmate_crew_launches() {
@@ -1722,7 +1758,7 @@ test_keep_ai_trailers_reaches_secondmate_crew_launches() {
   expect_code 0 "$status" "secondmate crew spawn should succeed"$'\n'"$out"
   launch=$(cat "$LAUNCH_LOG")
   assert_attribution_policy_absent "$launch" "secondmate crew claude"
-  assert_not_contains "$launch" 'GIT_CONFIG_KEY_0=core.hooksPath' \
+  assert_not_contains "$launch" 'fm-git-strip-ai-trailers.sh' \
     "secondmate crew launch still overrides the repository hooksPath"
   [ ! -e "$HOME_DIR/state/$crew_id.git-hooks" ] \
     || fail "secondmate crew launch installed AI trailer strip hooks"
@@ -1768,41 +1804,38 @@ test_active_dispatch_profile_does_not_block_secondmate_launch() {
 # fake backend records delivery, while real shells exercise the env boundary.
 # No developer environment or credential values are inspected by these probes.
 test_launch_environment_allowlist() {
-  local setting rec id out status result expected launch value pane_shell pane_path
+  local setting rec id out status probe result expected launch value pane_shell pane_path
   # shellcheck disable=SC2016
   value='synthetic value; $(touch SHOULD_NOT_EXIST) `false` "quoted"'
   for setting in absent missing-config enabled empty; do
     id="env-$setting"
-    rec=$(make_spawn_case "$id" pi "$id")
+    rec=$(make_spawn_case "$id" codex "$id")
     read_case_record "$rec"
     case "$setting" in
       missing-config) rm "$HOME_DIR/config/crew-harness"; rmdir "$HOME_DIR/config" ;;
       enabled) printf '# Synthetic credential name\nFM_TEST_ALLOWED\nFM_TEST_EMPTY\nFM_TEST_UNSET\n' > "$HOME_DIR/config/launch-env-allowlist" ;;
       empty) : > "$HOME_DIR/config/launch-env-allowlist" ;;
     esac
-    cat > "$FAKEBIN_DIR/pi" <<'SH'
+    probe="$CASE_DIR/probe.sh"
+    cat > "$probe" <<'SH'
 #!/bin/sh
-if [ "${1:-}" = --help ]; then
-  printf '%s\n' 'Pi 0.84.0' 'Options: --help --tui-mode <mode>'
-  exit 0
-fi
 printf '%s\n' "${FM_TEST_AMBIENT_SENTINEL-unset}" "${FM_TEST_ALLOWED-unset}" \
   "${FM_TEST_EMPTY-unset}" "${FM_TEST_UNSET-unset}" "$HOME" "$PATH" "$TERM" "$TMUX" "$GOTMPDIR"
+printf 'hooksPath=%s\n' "$(git config --get core.hooksPath || :)"
 SH
-    chmod +x "$FAKEBIN_DIR/pi"
     out=$(FM_TEST_AMBIENT_SENTINEL=synthetic-unrelated \
       run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
-      "$id" "$PROJ_DIR" --harness pi)
+      "$id" "$PROJ_DIR" --harness "/bin/sh '$probe'")
     status=$?
     expect_code 0 "$status" "allowlist=$setting spawn should succeed: $out"
     launch=$(cat "$LAUNCH_LOG")
     for pane_shell in /bin/sh /bin/bash /bin/zsh; do
       [ -x "$pane_shell" ] || continue
-      pane_path=$(env -i HOME="$HOME_DIR/user-home" PATH="$FAKEBIN_DIR:/usr/bin:/bin" TERM=xterm \
+      pane_path=$(env -i HOME="$HOME_DIR/user-home" PATH=/usr/bin:/bin TERM=xterm \
         TMUX=synthetic-pane GOTMPDIR=/synthetic/gotmp \
         "$pane_shell" -c "printf %s \"\$PATH\"") \
         || fail "could not read $pane_shell startup PATH"
-      result=$(env -i HOME="$HOME_DIR/user-home" PATH="$FAKEBIN_DIR:/usr/bin:/bin" TERM=xterm \
+      result=$(env -i HOME="$HOME_DIR/user-home" PATH=/usr/bin:/bin TERM=xterm \
       TMUX=synthetic-pane GOTMPDIR=/synthetic/gotmp \
       FM_TEST_AMBIENT_SENTINEL=synthetic-unrelated FM_TEST_ALLOWED="$value" FM_TEST_EMPTY='' \
       "$pane_shell" -c "$launch") || fail "allowlist=$setting emitted launch failed in $pane_shell"
@@ -1812,6 +1845,8 @@ SH
         empty) expected=$(printf '%s\n' unset unset unset unset) ;;
       esac
       expected="$expected"$'\n'"$HOME_DIR/user-home"$'\n'"$pane_path"$'\nxterm\nsynthetic-pane\n/synthetic/gotmp'
+      # The strip-hook entry must also survive the env -i boundary.
+      expected="$expected"$'\n'"hooksPath=$(cd "$HOME_DIR/state" && pwd -P)/$id.git-hooks"
       [ "$result" = "$expected" ] || fail "allowlist=$setting worker environment mismatch: $result"
     done
     pass "allowlist=$setting preserves the operational floor and filters only when opted in"
@@ -2075,36 +2110,30 @@ SH
 # must both produce today's launch byte-for-byte, `auto` swaps only the
 # permission flag, and any other token refuses before endpoint or metadata.
 claude_settings_json_arg() {  # <launch>
-  local probe="$TMP_ROOT/settings-probe"
-  mkdir -p "$probe"
-  cat > "$probe/claude" <<'SH'
-#!/bin/sh
-while [ "$#" -gt 0 ]; do
-  if [ "$1" = --settings ]; then
+  local command
+  command=$(fm_test_launch_command "$1")
+  eval "set -- $command"
+  while [ "$#" -gt 0 ]; do
+    if [ "$1" = --settings ]; then
+      shift
+      # Claude Code's --settings takes inline JSON or a file path; a
+      # secondmate launch passes the path form.
+      case "$1" in
+      \{*) printf '%s' "$1" ;;
+      *) cat "$1" ;;
+      esac
+      return 0
+    fi
     shift
-    # Claude Code's --settings takes inline JSON or a file path; a
-    # secondmate launch passes the path form.
-    case "$1" in
-    \{*) printf '%s' "$1" ;;
-    *) cat "$1" ;;
-    esac
-    exit 0
-  fi
-  shift
-done
-exit 1
-SH
-  chmod +x "$probe/claude"
-  PATH="$probe:$PATH" /bin/sh -c "$1"
+  done
+  return 1
 }
 
 claude_launch_brief_arg() {  # <launch>
-  local command=$1
-  while [[ "$command" == export\ *\;* ]]; do
-    command=${command#*; }
-  done
+  local command
+  command=$(fm_test_launch_command "$1")
   (
-    eval "set -- ${command#*; }"
+    eval "set -- $command"
     eval "printf '%s' \"\${$#}\""
   )
 }
@@ -2127,7 +2156,7 @@ claude_expected_launch() {  # <launch> <home> <id> <permission-flag>
   [ "$(printf '%s' "$doorbell" | "$ROOT/bin/fm-operational-input.sh" doorbell-kind)" = launch-brief ] \
     || doorbell="not a launch-brief doorbell"
   quoted="'$(printf '%s' "$doorbell" | sed "s/'/'\\\\''/g")'"
-  printf '%s' "export COMPACT_ADVISER_DISABLE=1; $(task_inbox_export "$2" "$3")$(ai_trailer_hooks_prefix "$2" "$3")env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude $4 $(claude_worker_add_dirs "$2" "$3")--settings '{\"feedbackDrafts\":\"off\",\"attribution\":{\"commit\":\"\",\"pr\":\"\",\"sessionUrl\":false}}' $CLAUDE_CONTROL_CHANNEL_FLAG $quoted"
+  printf '%s' "export COMPACT_ADVISER_DISABLE=1; $(task_inbox_export "$2" "$3")$(fm_test_launch_git_prefix "$1")env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude $4 $(claude_worker_add_dirs "$2" "$3")--settings '{\"feedbackDrafts\":\"off\",\"attribution\":{\"commit\":\"\",\"pr\":\"\",\"sessionUrl\":false}}' $CLAUDE_CONTROL_CHANNEL_FLAG $quoted"
 }
 
 test_claude_permission_mode_bypass_matches_absent_launch() {
@@ -2254,6 +2283,7 @@ test_non_claude_harness_ignores_claude_permission_mode() {
   pass "config/claude-permission-mode changes claude launches only"
 }
 
+test_launch_preserves_inherited_git_config
 test_worker_launch_delivers_role_scope
 test_no_profile_keeps_claude_profile_defaults
 test_claude_launch_brief_publishes_record_doorbell
@@ -2268,7 +2298,8 @@ test_active_dispatch_profile_requires_explicit_harness_for_ship
 test_active_dispatch_profile_requires_explicit_harness_for_scout
 test_active_dispatch_profile_allows_explicit_harness
 test_active_dispatch_profile_allows_positional_harness
-test_active_dispatch_profile_refuses_executable_harness_string
+test_active_dispatch_profile_allows_raw_launch_command
+test_chained_raw_launch_strips_ai_trailer_in_every_step
 test_claude_threads_model_and_effort
 test_codex_threads_model_and_effort
 test_codex_threads_model_and_max_effort
@@ -2321,7 +2352,6 @@ test_claude_secondmate_launch_omits_task_control_channel_authority
 test_claude_long_launch_is_delivered_intact
 test_claude_crewmate_launch_carries_the_attribution_policy
 test_keep_ai_trailers_omits_attribution_settings_and_strip_hooks
-test_keep_ai_trailers_relaunch_clears_only_its_own_override
 test_keep_ai_trailers_reaches_secondmate_crew_launches
 test_claude_secondmate_launch_carries_the_attribution_policy
 test_active_dispatch_profile_does_not_block_secondmate_launch
