@@ -1039,6 +1039,62 @@ test_squash_merged_pr_allows_replayed_unpushed_patch() {
   pass "squash-merged PR accepts replayed unpushed local patches contained in the PR head"
 }
 
+test_merged_pr_patch_matching_preserves_indentation() {
+  local case_dir mode rc pr_head local_head expected
+  for mode in exact amended old-git; do
+    case_dir=$(make_case "pr-indentation-$mode")
+    write_meta "$case_dir" no-mistakes ship
+    # A pushed parent makes the YAML patch the only unpushed commit, while
+    # giving the local replay a different parent from the recorded PR head.
+    wt_commit_file "$case_dir" local-parent.txt parent "local parent"
+    git -C "$case_dir/wt" push -q origin HEAD:refs/heads/fm/task-x1
+    git -C "$case_dir/project" fetch -q origin fm/task-x1
+    wt_commit_file "$case_dir" config.yml $'a:\n  b: 1' "add YAML"
+    append_pr_meta_url "$case_dir"
+    pr_head=$(land_equivalent_patch_on_origin_branch "$case_dir" pr-head config.yml $'a:\n  b: 1' "add YAML")
+    printf 'pr_head=%s\n' "$pr_head" >> "$case_dir/state/task-x1.meta"
+    add_gh_pr_merged_for_head "$case_dir" "$pr_head"
+    if [ "$mode" = amended ]; then
+      printf 'a:\nb: 1\n' > "$case_dir/wt/config.yml"
+      git -C "$case_dir/wt" add -- config.yml
+      git -C "$case_dir/wt" commit -q --amend --no-edit
+    elif [ "$mode" = old-git ]; then
+      cat > "$case_dir/fakebin/git" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = patch-id ]; then
+  printf '%s\n' "$*" >> "$FM_PATCH_ID_LOG"
+  if [ "${2:-}" = --verbatim ]; then
+    echo 'error: unknown option `verbatim`' >&2
+    exit 129
+  fi
+fi
+exec "$REAL_GIT_FOR_TEST" "$@"
+SH
+      chmod +x "$case_dir/fakebin/git"
+    fi
+    local_head=$(git -C "$case_dir/wt" rev-parse HEAD)
+    [ "$local_head" != "$pr_head" ] || fail "$mode: fixture did not diverge"
+
+    set +e
+    FM_PATCH_ID_LOG="$case_dir/patch-id.log" run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+    rc=$?
+    set -e
+
+    expected=1
+    [ "$mode" != exact ] || expected=0
+    expect_code "$expected" "$rc" "pr-indentation-$mode: teardown exit"$'\n'"$(cat "$case_dir/stderr")"
+    if [ "$expected" = 1 ]; then
+      assert_grep REFUSED "$case_dir/stderr" "$mode: no refusal diagnostic"
+      assert_refusal_retained_task_state "$case_dir" "$mode" "$local_head"
+    fi
+    if [ "$mode" = old-git ]; then
+      assert_grep 'patch-id --verbatim' "$case_dir/patch-id.log" "old-git: capability rejection was not exercised"
+      ! grep -q -- --stable "$case_dir/patch-id.log" || fail "old-git: fell back to whitespace-insensitive matching"
+    fi
+  done
+  pass "merged PR patch matching preserves indentation, allows exact replays, and refuses unsupported Git"
+}
+
 test_merged_pr_with_later_local_commit_refuses() {
   local case_dir rc pr_head
   case_dir=$(make_case stale-pr-head)
@@ -1262,6 +1318,90 @@ test_pr_check_records_remote_head_when_local_lags() {
   pass "fm-pr-check records the remote PR head when the local worktree lags"
 }
 
+# Exercise Git's capability/error boundary through the real teardown entry point.
+# Only merge-tree is intercepted; history, fetches, and preservation checks are real.
+test_content_fallback_git_capability_boundary() {
+  local mode case_dir rc head
+  for mode in unsupported contained conflict unlanded error; do
+    case_dir=$(make_case "content-git-$mode")
+    write_meta "$case_dir" no-mistakes ship
+    wt_commit_file "$case_dir" feature.txt hello "add feature"
+    case "$mode" in
+      conflict) land_on_origin_main "$case_dir" feature.txt different ;;
+      unlanded) ;;
+      *) land_on_origin_main "$case_dir" feature.txt hello ;;
+    esac
+    head=$(git -C "$case_dir/wt" rev-parse HEAD)
+    cat > "$case_dir/fakebin/git" <<'SH'
+#!/usr/bin/env bash
+args=("$@")
+if [ "${1:-}" = -C ]; then shift 2; fi
+if [ "${1:-}" = merge-tree ]; then
+  printf '%s\n' "$*" >> "${FM_TEST_MERGE_TREE_LOG:?}"
+  case "${FM_TEST_MERGE_TREE_MODE:?}" in
+    unsupported)
+      echo "error: unknown option 'write-tree'" >&2
+      exit 129 ;;
+    error)
+      echo 'fatal: unable to read tree object' >&2
+      exit 128 ;;
+  esac
+fi
+exec "$REAL_GIT_FOR_TEST" "${args[@]}"
+SH
+    cat > "$case_dir/fakebin/treehouse" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${FM_TEST_TREEHOUSE_LOG:?}"
+exit 0
+SH
+    chmod +x "$case_dir/fakebin/git" "$case_dir/fakebin/treehouse"
+
+    set +e
+    FM_TEST_MERGE_TREE_MODE="$mode" \
+      FM_TEST_MERGE_TREE_LOG="$case_dir/merge-tree.log" \
+      FM_TEST_TREEHOUSE_LOG="$case_dir/treehouse.log" \
+      run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+    rc=$?
+    set -e
+
+    grep -q -- 'merge-tree --write-tree' "$case_dir/merge-tree.log" \
+      || fail "content-git-$mode: never attempted the containment proof"
+    if [ "$mode" = contained ]; then
+      expect_code 0 "$rc" "content-git-contained: supported containment should allow cleanup"
+      assert_present "$case_dir/treehouse.log" "content-git-contained: cleanup never ran"
+      assert_absent "$case_dir/state/task-x1.meta" "content-git-contained: task record survived cleanup"
+      continue
+    fi
+    expect_code 1 "$rc" "content-git-$mode: teardown must refuse"
+    assert_refusal_retained_task_state "$case_dir" "content-git-$mode" "$head"
+    assert_absent "$case_dir/treehouse.log" "content-git-$mode: cleanup ran despite refusal"
+    case "$mode" in
+      unsupported|error)
+        grep -q 'content-landed proof unavailable' "$case_dir/stderr" \
+          || fail "content-git-$mode: unavailable proof was reported as unlanded work"
+        ! grep -q 'not landed' "$case_dir/stderr" \
+          || fail "content-git-$mode: unavailable proof still claims work is not landed"
+        if [ "$mode" = unsupported ]; then
+          grep -q -- 'merge-tree --write-tree.*Git 2.38' "$case_dir/stderr" \
+            || fail 'content-git-unsupported: missing capability and Git requirement were not named'
+        else
+          grep -q 'Git exit 128' "$case_dir/stderr" \
+            || fail 'content-git-error: unrelated Git failure was not identified'
+          ! grep -q 'Git 2.38' "$case_dir/stderr" \
+            || fail 'content-git-error: unrelated failure was mislabeled as old Git'
+        fi
+        ;;
+      *)
+        grep -q 'not landed' "$case_dir/stderr" \
+          || fail "content-git-$mode: genuine unlanded-work refusal changed"
+        ! grep -q 'proof unavailable' "$case_dir/stderr" \
+          || fail "content-git-$mode: supported Git was reported as unavailable"
+        ;;
+    esac
+  done
+  pass 'content fallback distinguishes unavailable Git proof, containment, conflicts, and unlanded content'
+}
+
 test_content_in_default_fallback_allows() {
   local case_dir rc
   case_dir=$(make_case content-landed)
@@ -1381,6 +1521,50 @@ test_dirty_worktree_refuses() {
   grep -q REFUSED "$case_dir/stderr" || fail "dirty-wt: no REFUSED line in stderr"
   grep -q "uncommitted changes" "$case_dir/stderr" || fail "dirty-wt: refusal did not cite uncommitted changes"
   pass "dirty worktree is refused even when its committed work has landed (dirty always wins)"
+}
+
+test_hidden_untracked_work_refuses_before_return() {
+  local case_dir rc head state
+  for state in dirty clean; do
+    case_dir=$(make_case "hidden-untracked-$state")
+    write_meta "$case_dir" no-mistakes ship
+    git -C "$case_dir/wt" config status.showUntrackedFiles no
+    head=$(git -C "$case_dir/wt" rev-parse HEAD)
+    cp "$case_dir/state/task-x1.meta" "$case_dir/meta-before"
+    cat > "$case_dir/fakebin/treehouse" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = return ]; then
+  printf '%s\n' return >> "$FM_STATE_OVERRIDE/returned"
+fi
+exit 0
+SH
+    if [ "$state" = dirty ]; then
+      mkdir "$case_dir/wt/new directory"
+      printf '%s\n' 'unadded work' > "$case_dir/wt/new directory/newfile.txt"
+      [ -z "$(git -C "$case_dir/wt" status --porcelain)" ] \
+        || fail "hidden-untracked: fixture did not hide the unadded file"
+    fi
+
+    rc=0
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+    if [ "$state" = dirty ]; then
+      expect_code 1 "$rc" "hidden-untracked: teardown must refuse hidden unadded work"
+      assert_grep 'REFUSED: worktree' "$case_dir/stderr" "hidden-untracked: no refusal"
+      assert_grep 'uncommitted changes' "$case_dir/stderr" "hidden-untracked: no dirty-state diagnostic"
+      assert_grep 'new directory/newfile.txt' "$case_dir/stderr" "hidden-untracked: unadded path not named"
+      assert_absent "$case_dir/state/returned" "hidden-untracked: pool return ran before refusal"
+      assert_refusal_retained_task_state "$case_dir" hidden-untracked "$head"
+      cmp -s "$case_dir/meta-before" "$case_dir/state/task-x1.meta" \
+        || fail "hidden-untracked: refusal changed task metadata"
+      [ "$(cat "$case_dir/wt/new directory/newfile.txt")" = 'unadded work' ] \
+        || fail "hidden-untracked: refusal changed or erased unadded work"
+    else
+      expect_code 0 "$rc" "hidden-untracked: clean control should complete teardown"
+      assert_grep 'return' "$case_dir/state/returned" "hidden-untracked: clean control never reached pool return"
+      assert_absent "$case_dir/state/task-x1.meta" "hidden-untracked: clean control kept task metadata"
+    fi
+  done
+  pass "hidden untracked work is refused before return while a clean control returns"
 }
 
 assert_dirty_diagnostic() {
@@ -3748,6 +3932,80 @@ test_herdr_projection_teardown_surfaces_restore_failure_without_blocking_cleanup
   pass "herdr projection teardown surfaces failed focus restoration without turning confirmed cleanup into a hard failure"
 }
 
+# A fresh Herdr task's pane shell lives in its leased copy, and `treehouse
+# return` ends every process there, so returning the copy first kills the pane
+# outside the focus-preserving close; Herdr below 0.8.0 then moves focus to a
+# neighbouring workspace with nothing to restore it. This fake return models
+# exactly that pane death and focus move.
+test_herdr_projection_teardown_closes_pane_before_returning_its_copy() {
+  local case_dir log closed restored
+  case_dir=$(make_case herdr-projection-close-before-return)
+  write_meta "$case_dir" local-only ship
+  configure_herdr_projection_teardown_case "$case_dir"
+  log="$case_dir/herdr.log"; closed="$case_dir/closed"; restored="$case_dir/restored"; : > "$log"
+  cat > "$case_dir/fakebin/treehouse" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = return ]; then
+  printf 'treehouse %s\n' "$*" >> "${FM_FAKE_HERDR_LOG:?}"
+  : > "${FM_FAKE_HERDR_CLOSED:?}"
+fi
+exit 0
+SH
+  chmod +x "$case_dir/fakebin/treehouse"
+
+  FM_FAKE_HERDR_LOG="$log" FM_FAKE_HERDR_CLOSED="$closed" FM_FAKE_HERDR_RESTORED="$restored" \
+    run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" \
+    || fail "herdr-projection-close-before-return: forced teardown failed: $(cat "$case_dir/stderr")"
+  assert_contains "$(cat "$log")" "treehouse return" \
+    "herdr-projection-close-before-return: regression did not exercise the copy return"
+  [ "$(awk '/pane close/ { print "close"; exit } /treehouse return/ { print "return"; exit }' "$log")" = close ] \
+    || fail "herdr-projection-close-before-return: teardown returned the copy before closing the exact pane: $(cat "$log")"
+  assert_contains "$(cat "$log")" "tab focus w2:t2" \
+    "herdr-projection-close-before-return: teardown did not restore the exact pre-close active tab"
+  pass "herdr projection teardown closes its exact pane, restoring focus, before returning the copy that holds its shell"
+}
+
+test_herdr_projection_teardown_refused_close_preserves_task_and_copy() {
+  local case_dir log closed restored wt process_pid rc=0 process_survived=0
+  case_dir=$(make_case herdr-projection-refused-close)
+  write_meta "$case_dir" local-only ship
+  configure_herdr_projection_teardown_case "$case_dir"
+  printf 'running\n' > "$case_dir/state/task-x1.status"
+  wt="$case_dir/wt"
+  log="$case_dir/herdr.log"; closed="$case_dir/closed"; restored="$case_dir/restored"; : > "$log"
+  cat > "$case_dir/fakebin/treehouse" <<'SH'
+#!/usr/bin/env bash
+printf 'treehouse %s\n' "$*" >> "${FM_FAKE_HERDR_LOG:?}"
+exit 0
+SH
+  chmod +x "$case_dir/fakebin/treehouse"
+
+  perl -e 'chdir $ARGV[0] or die $!; exec "sleep", "300" or die $!' "$wt" &
+  process_pid=$!
+  sleep 0.1
+  FM_FAKE_HERDR_LOG="$log" FM_FAKE_HERDR_CLOSED="$closed" FM_FAKE_HERDR_RESTORED="$restored" \
+    FM_FAKE_HERDR_CLOSE_FAIL=1 \
+    run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  kill -0 "$process_pid" 2>/dev/null && process_survived=1
+  kill "$process_pid" 2>/dev/null || true
+  wait "$process_pid" 2>/dev/null || true
+
+  expect_code 1 "$rc" "herdr-projection-refused-close: teardown should fail after the exact pane remains present"
+  [ "$process_survived" = 1 ] \
+    || fail "herdr-projection-refused-close: teardown reaped the pane shell in the task copy after the close was refused"
+  assert_not_contains "$(cat "$log")" "treehouse return" \
+    "herdr-projection-refused-close: teardown returned the task copy after the close was refused"
+  assert_present "$case_dir/state/task-x1.meta" \
+    "herdr-projection-refused-close: refusal erased the task metadata"
+  assert_present "$case_dir/state/task-x1.status" \
+    "herdr-projection-refused-close: refusal erased the task status"
+  assert_present "$case_dir/state/task-x1.herdr-presentation" \
+    "herdr-projection-refused-close: refusal erased the presentation journal"
+  assert_grep "not confirmed gone" "$case_dir/stderr" \
+    "herdr-projection-refused-close: refusal did not explain why teardown stopped"
+  pass "herdr projection teardown retains the task, pane shell, and leased copy after a refused close"
+}
+
 # A task's per-task watcher markers (.seen-<id>_status, .seen-<id>_turn-ended,
 # .hb-surfaced-<id>) and an orphaned presentation journal - one whose pane the
 # close path proved gone without retiring it - must not outlive teardown, while
@@ -5761,6 +6019,8 @@ test_status_archive_nested_secondmate_children() {
   pass "forced secondmate retirement preserves two descendant levels and refuses linked child directories"
 }
 
+test_hidden_untracked_work_refuses_before_return
+test_content_fallback_git_capability_boundary
 test_status_archive_opt_in
 test_record_export_config_absent_never_reads_the_exporter
 test_record_export_unopted_symlinked_config_does_not_block_teardown
@@ -5812,6 +6072,8 @@ test_forced_teardown_retains_nested_secondmate_home_when_grandchild_close_unconf
 test_herdr_projection_teardown_retires_journal_only_after_confirmed_close
 test_herdr_projection_teardown_retains_journal_when_close_unconfirmed
 test_herdr_projection_teardown_surfaces_restore_failure_without_blocking_cleanup
+test_herdr_projection_teardown_closes_pane_before_returning_its_copy
+test_herdr_projection_teardown_refused_close_preserves_task_and_copy
 test_teardown_retires_task_watcher_markers_and_orphan_journal
 test_teardown_retains_journal_bound_to_another_pane
 test_teardown_retires_v1_journal_when_projected_workspace_gone
@@ -5821,6 +6083,7 @@ test_squash_merged_branch_deleted_allows
 test_squash_merged_pr_allows_when_head_ancestor_of_pr_head
 test_no_pr_recorded_discovers_merged_pr_by_branch_allows
 test_squash_merged_pr_allows_replayed_unpushed_patch
+test_merged_pr_patch_matching_preserves_indentation
 test_merged_pr_with_later_local_commit_refuses
 test_squash_merged_rebased_branch_allows
 test_squash_merged_forgejo_pr_allows_when_main_moved_on
