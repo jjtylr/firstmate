@@ -186,7 +186,16 @@ case "${1:-}" in
 esac
 exit 0
 SH
-  chmod +x "$fakebin/treehouse" "$fakebin/tmux" "$fakebin/gh-axi" "$fakebin/gh" "$fakebin/no-mistakes"
+  # Hermetic playwright-cli stub: appends "<cwd> <args>" to
+  # FM_FAKE_PLAYWRIGHT_LOG when set and exits FM_FAKE_PLAYWRIGHT_RC (default 0),
+  # so teardown's browser-session close never reaches a real browser.
+  cat > "$fakebin/playwright-cli" <<'SH'
+#!/usr/bin/env bash
+[ -z "${FM_FAKE_PLAYWRIGHT_LOG:-}" ] || printf '%s %s\n' "$(pwd -P)" "$*" >> "$FM_FAKE_PLAYWRIGHT_LOG"
+exit "${FM_FAKE_PLAYWRIGHT_RC:-0}"
+SH
+  chmod +x "$fakebin/treehouse" "$fakebin/tmux" "$fakebin/gh-axi" "$fakebin/gh" "$fakebin/no-mistakes" \
+    "$fakebin/playwright-cli"
 
   # Bare origin so the clone has an `origin` remote and origin/HEAD.
   git init -q --bare "$case_dir/origin.git"
@@ -918,6 +927,38 @@ test_no_mistakes_origin_remote_allows() {
   grep -F 'blockers are gone and date is due' "$case_dir/stdout" >/dev/null \
     || fail "nm-origin: teardown manual prompt did not preserve date-gate check"
   pass "no-mistakes worktree with HEAD on origin is torn down (no regression)"
+}
+
+# A worker's browser must not outlive its job: teardown closes the task-named
+# Playwright session from the task data directory and from the task copy, and a
+# failed close warns without blocking cleanup.
+test_teardown_closes_the_task_browser_session() {
+  local case_dir rc data_dir wt_dir
+  case_dir=$(make_case browser-close)
+  write_meta "$case_dir" no-mistakes ship
+  wt_commit "$case_dir" "shippable work"
+  git -C "$case_dir/wt" push -q origin fm/task-x1
+  git -C "$case_dir/project" fetch -q origin
+  mkdir -p "$case_dir/data/task-x1"
+  data_dir=$(cd "$case_dir/data/task-x1" && pwd -P)
+  wt_dir=$(cd "$case_dir/wt" && pwd -P)
+
+  set +e
+  FM_FAKE_PLAYWRIGHT_LOG="$case_dir/playwright.log" FM_FAKE_PLAYWRIGHT_RC=1 \
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "browser-close: a failed browser close must not block cleanup"
+  grep -Fxq "$data_dir -s=task-x1 close" "$case_dir/playwright.log" \
+    || fail "browser-close: teardown did not close the task session from its data directory"
+  grep -Fxq "$wt_dir -s=task-x1 close" "$case_dir/playwright.log" \
+    || fail "browser-close: teardown did not close the task session from its copy"
+  [ "$(wc -l < "$case_dir/playwright.log" | tr -d ' ')" = 2 ] \
+    || fail "browser-close: teardown ran playwright-cli for more than the task's own session"
+  grep -Fq "could not close task-x1's browser session" "$case_dir/stderr" \
+    || fail "browser-close: a failed close was not reported as a warning"
+  pass "teardown closes the task's named browser session and a failed close only warns"
 }
 
 test_no_mistakes_truly_unpushed_refuses() {
@@ -6049,6 +6090,7 @@ test_teardown_manual_backend_leaves_the_backlog_to_the_operator
 test_local_only_truly_unpushed_refuses
 test_local_only_merged_to_local_main_allows
 test_no_mistakes_origin_remote_allows
+test_teardown_closes_the_task_browser_session
 test_no_mistakes_truly_unpushed_refuses
 test_local_only_force_overrides_unpushed
 test_secondmate_pr_registration_publishes_ready_line
