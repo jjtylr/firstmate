@@ -317,6 +317,15 @@
 #     root still exists, so the account's healthy LaunchAgent worker and every
 #     live remote secondmate worker are out of scope. Best effort: a sweep
 #     failure never blocks this teardown.
+# Before Fix 2, a ship or scout teardown closes the task's Playwright browser
+# session - the one the brief tells the worker to open as `playwright-cli
+# -s=<task-id>` - so a worker that forgot to close it leaves no headless
+# browser behind. It runs the close from data/<id>/ (where a ship worker runs
+# the browser) and from the task's own copy (where a scout worker does),
+# because playwright-cli keys sessions by the nearest .playwright folder above
+# its working directory. It closes only that one named session, never sweeps
+# other browser processes, is bounded, and is best effort: no playwright-cli on
+# PATH is a silent no-op and a failed close warns without blocking cleanup.
 # After Fix 1 and Fix 2, when config/pipeline-spend opts this home in, a ship
 # task whose local copy this teardown owns has its no-mistakes pipeline spend
 # recorded by bin/fm-pipeline-spend.sh, which owns the attribution and the
@@ -2272,6 +2281,20 @@ task_status_is_run_not_found() {  # <status-error> <run-id>
 # fleet slot. Only KIND=ship drives a no-mistakes validation of its own
 # worktree (scouts and secondmates never do, mirroring bin/fm-crew-state.sh);
 # a run not attributed to this exact branch+head is left completely alone.
+# Best-effort close of the task's named Playwright browser session (see the
+# script header). <dir>... are the working directories to close it from.
+close_task_browser_session() {  # <dir>...
+  local dir rc
+  command -v playwright-cli >/dev/null 2>&1 || return 0
+  for dir in "$@"; do
+    [ -n "$dir" ] && [ -d "$dir" ] || continue
+    rc=0
+    ( cd "$dir" && fm_run_timed 20 playwright-cli -s="$ID" close ) >/dev/null 2>&1 || rc=$?
+    [ "$rc" -eq 0 ] \
+      || echo "warning: could not close $ID's browser session from $dir (exit $rc); cleanup continues" >&2
+  done
+}
+
 conclude_task_no_mistakes_run() {  # <worktree>
   local wt=$1 out run_id
   [ "$KIND" = ship ] || return 0
@@ -3828,6 +3851,11 @@ fi
 # not by task-worktree cleanup.
 if [ "$KIND" != secondmate ] && teardown_owns_worktree; then
   conclude_task_no_mistakes_run "$WT"
+fi
+if [ "$KIND" != secondmate ] && teardown_owns_worktree; then
+  close_task_browser_session "$DATA/$ID" "$WT"
+elif [ "$KIND" != secondmate ]; then
+  close_task_browser_session "$DATA/$ID"
 fi
 
 # A Herdr pane's top-level shell lives in its leased copy, so the reap and the

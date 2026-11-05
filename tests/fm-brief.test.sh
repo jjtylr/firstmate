@@ -236,7 +236,7 @@ test_forge_selection_renders_correct_cli() {
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-forge-default some-proj --mode direct-PR >/dev/null 2>&1 \
     || fail "a ship brief with no --forge should still scaffold"
   brief="$home/data/brief-forge-default/brief.md"
-  assert_grep "3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations." "$brief" \
+  assert_grep "3. Use gh-axi for GitHub operations and playwright-cli for browser operations." "$brief" \
     "a brief with no --forge must render the exact pre-existing gh-axi Rule 3 line"
   # shellcheck disable=SC2016 # Backticks are literal generated brief text.
   assert_grep 'open a PR with `gh-axi`' "$brief" \
@@ -247,7 +247,7 @@ test_forge_selection_renders_correct_cli() {
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-forge-forgejo some-proj --mode direct-PR --forge forgejo >/dev/null 2>&1 \
     || fail "--forge forgejo should scaffold a direct-PR ship brief"
   brief="$home/data/brief-forge-forgejo/brief.md"
-  assert_grep "3. Use tea for Forgejo operations and chrome-devtools-axi for browser operations." "$brief" \
+  assert_grep "3. Use tea for Forgejo operations and playwright-cli for browser operations." "$brief" \
     "--forge forgejo must render the tea Rule 3 line"
   # shellcheck disable=SC2016 # Backticks are literal generated brief text.
   assert_grep 'open a PR with `tea`' "$brief" \
@@ -268,7 +268,7 @@ test_forge_selection_renders_correct_cli() {
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-forge-nm some-proj --mode no-mistakes --forge forgejo >/dev/null 2>&1 \
     || fail "--forge forgejo should scaffold a no-mistakes ship brief"
   brief="$home/data/brief-forge-nm/brief.md"
-  assert_grep "3. Use tea for Forgejo operations and chrome-devtools-axi for browser operations." "$brief" \
+  assert_grep "3. Use tea for Forgejo operations and playwright-cli for browser operations." "$brief" \
     "a no-mistakes --forge forgejo brief must render the tea Rule 3 line"
   grep -qx "Delivery contract: mode=no-mistakes forge=forgejo" "$brief" \
     || fail "a no-mistakes --forge forgejo brief must mark the delivery contract line"
@@ -622,6 +622,41 @@ test_ask_user_escalation_format() {
 # forbids adding a new rule and routes a proposed rule to firstmate instead,
 # keeps entries short because those files tax every agent session, and never
 # runs the ensure helper.
+# Workers use Playwright's own Chromium under a session named after the task,
+# run it from a place that keeps the task copy clean (a ship's data directory,
+# a scout's scratch copy), and close it when done; cleanup closes it otherwise.
+test_browser_session_is_named_bundled_and_closed() {
+  local home brief
+  home="$TMP_ROOT/browser-home"
+  mkdir -p "$home/data"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-browser-ship some-proj --mode direct-PR >/dev/null 2>&1 \
+    || fail "a ship brief should scaffold"
+  brief="$home/data/brief-browser-ship/brief.md"
+  # shellcheck disable=SC2016 # Backticks are literal generated brief text.
+  assert_grep 'Run playwright-cli from `'"$home"'/data/brief-browser-ship/` as `playwright-cli -s=brief-browser-ship ...`' "$brief" \
+    "a ship brief must run the task-named browser session from the task data directory"
+  # shellcheck disable=SC2016 # Backticks are literal generated brief text.
+  assert_grep 'open it with `open --browser=chromium`' "$brief" \
+    "a ship brief must open Playwright's bundled Chromium, not the installed Chrome app"
+  # shellcheck disable=SC2016 # Backticks are literal generated brief text.
+  assert_grep 'run `playwright-cli -s=brief-browser-ship close` as soon as you finish with the browser' "$brief" \
+    "a ship brief must tell the worker to close its browser session"
+  assert_no_grep 'chrome-devtools-axi' "$brief" "a ship brief must not name the retired browser tool"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-browser-scout some-proj --scout >/dev/null 2>&1 \
+    || fail "a scout brief should scaffold"
+  brief="$home/data/brief-browser-scout/brief.md"
+  assert_grep "3. Use gh-axi for GitHub operations and playwright-cli for browser operations." "$brief" \
+    "a scout brief must name playwright-cli for browser operations"
+  # shellcheck disable=SC2016 # Backticks are literal generated brief text.
+  assert_grep 'Run playwright-cli from this worktree as `playwright-cli -s=brief-browser-scout ...`' "$brief" \
+    "a scout brief must run the task-named browser session from its scratch copy"
+  # shellcheck disable=SC2016 # Backticks are literal generated brief text.
+  assert_grep 'run `playwright-cli -s=brief-browser-scout close` as soon as you finish with the browser' "$brief" \
+    "a scout brief must tell the worker to close its browser session"
+  pass "fm-brief.sh: ship and scout briefs name, bundle, and close the task's browser session"
+}
+
 test_ship_project_memory_wording() {
   local home id brief
   home="$TMP_ROOT/project-memory-home"
@@ -1784,3 +1819,4 @@ test_branch_prefix_is_refused_where_it_does_not_apply
 test_branch_prefix_value_is_validated
 test_branch_prefix_command_is_shell_safe
 test_crewmate_scaffolds_forbid_pool_administration
+test_browser_session_is_named_bundled_and_closed
