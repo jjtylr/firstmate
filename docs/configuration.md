@@ -1139,6 +1139,15 @@ The internal [`/stow` skill](../.agents/skills/stow/SKILL.md) owns curation and 
 
 The helper's header owns exact parsing, publication, and report output mechanics.
 
+### Fork memory-write feedback
+
+In `jjtylr/firstmate` only, the Claude Stop hook checks changed writable memory through [`bin/fm-memory-write-check.sh`](../bin/fm-memory-write-check.sh), returning content findings for correction in the same session without editing memory itself.
+It uses the [typed dispatch provider and credential configuration](#typed-dispatch-resolution-env-fm_dispatch_provider-fm_dispatch_model) and never-send list, with bounded requests and the existing deterministic budget report even when Jev cannot answer.
+The script header owns scope, snapshots, batching, output and the no-repeat rule; its `--json` output includes per-call timing for empirical comparison.
+An inherited shared file is comparison context, not a secondmate's writable candidate, and charter content is checked without expanding the startup budget's three-file scope.
+Unchanged turns make no model request; model uncertainty and skipped checks are not proof that memory is clean, so this complements rather than replaces cross-home audits.
+Other primary tools retain their existing hooks and may invoke the CLI explicitly; no automatic memory hook is installed for them here.
+
 ### Daily startup growth check
 
 A home can arm a lightweight daily growth monitor with `bin/fm-startup-growth-check.sh arm`.

@@ -91,6 +91,7 @@ A Claude secondmate's busy hooks are not that file: `bin/fm-spawn.sh` passes the
 
 Primary `.claude/settings.json` registers `../../../bin/fm-turnend-guard.sh --claude` and `../../../bin/fm-claude-stop-autoarm.sh` with `asyncRewake: true` and `timeout: 28800`.
 Guard exit 2 plus stderr forces continuation.
+The fork's independent [memory-write feedback hook](../../../../../docs/configuration.md#fork-memory-write-feedback) uses that same delivery mechanism without changing supervision.
 Stop payload `stop_hook_active=true` follows any hook-driven continuation, including async reawakening, so Claude mode ignores it and uses cooperative claim and epoch plus bounded re-block; default Codex mode keeps it as a one-block loop guard.
 
 Project `.claude/settings.json` loads only when the exact project root is the session root; Claude does not search parents, so Firstmate starts at repository root.

@@ -6,6 +6,26 @@ This record contains reusable version-scoped evidence for active runtime guarant
 The backend guides own current setup, safety boundaries, and limitations.
 Exact task chronology, branch names, temporary homes, local paths, process ids, thread ids, and delivery transcripts remain in private reports or PR evidence.
 
+## Fork memory-write Stop feedback
+
+Verified 2026-11-07 on macOS arm64 with Claude Code 2.1.319 using an isolated primary home and the actual memory-check Stop registration, with only Jev stubbed.
+The credentialed regression starts a real print-mode session, receives one exit-2 memory finding, repairs its fixture memory in the same session, and reaches the next Stop without repeating the finding.
+It submits a prompt and is therefore opt-in:
+
+```sh
+FM_MEMORY_WRITE_LIVE=1 bin/fm-test-run.sh tests/fm-memory-write-check-live.test.sh
+```
+
+Observed output:
+
+```text
+ok - 2.1.319 (Claude Code): real Stop delivered one memory correction and next Stop ended without a loop
+```
+
+[`tests/fm-memory-write-check.test.sh`](../../tests/fm-memory-write-check.test.sh) covers portable CLI behavior and the foreign-host exclusion separately.
+This is a Claude hook only, independent of the session backend; no other primary tool's turn-end integration changes.
+The [configuration owner](../configuration.md#fork-memory-write-feedback) describes the fork-only feature, and the script header owns its mechanics.
+
 ## Polytoken worker lifecycle
 
 Verified on 2026-10-14 with Polytoken 0.9.0 on macOS arm64 using the tmux worker path.
