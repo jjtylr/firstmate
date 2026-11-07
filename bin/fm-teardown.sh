@@ -15,8 +15,8 @@
 # Removing state/<id>.meta and landing the backlog transition are one step, not
 # two: bin/fm-backlog-transition-lib.sh owns that invariant, and both halves run
 # under the task's own meta lock before this script reports success. Because the
-# completion links (the PR, the report path, a local-main note) live only in the
-# record being removed, the intended transition is recorded in
+# completion links (the PR, the report path, a local-main or discarded note) live
+# only in the record being removed, the intended transition is recorded in
 # state/<id>.backlog-close first, so a process killed between the halves leaves
 # the next session start enough to finish it; a landed close removes that record.
 # A close that fails is fatal and loud, preserves its pending-close record, and
@@ -43,8 +43,11 @@
 # that closes the call.
 # REFUSES if the worktree holds work that has not LANDED, because cleanup
 # hard-resets/removes the worktree and kills its processes. Work has landed when it is
-# reachable from any remote-tracking branch (a fork counts as a remote, so
-# upstream-contribution PRs pushed to a fork satisfy this in any mode), OR - for a
+# reachable from any remote-tracking branch other than the local no-mistakes
+# mirror (a fork counts as a remote, so upstream-contribution PRs pushed to a
+# fork satisfy this in any mode; the mirror is not a forge), after
+# refresh_remote_refs has updated those refs from each remote when the local ones
+# do not show the work, OR - for a
 # normal ship task whose commits are not so reachable - when its PR is merged and
 # GitHub reports a PR head that contains the current local work, or its content is
 # already present in the up-to-date default branch. This recognizes the common
@@ -77,6 +80,8 @@
 # local-only projects additionally accept work merged into the local default
 # branch (firstmate performs that merge after configured approval) as a fallback
 # for the common case where there is no remote at all.
+# Safety is proved again after task processes are reaped, before backlog-close
+# publication, branch deletion, or worktree return.
 # Scout tasks (kind=scout in meta) carve out of that check: their worktree is
 # declared scratch and the report at data/<task-id>/report.md is the work
 # product. Teardown proceeds only once the report exists and the shared
@@ -204,8 +209,9 @@
 # leased home and state in place instead of hiding a still-held lease.
 # Usage: fm-teardown.sh <task-id> [--force] [--legacy-record]
 #   --force skips ordinary-task dirty and landed-work checks, skips scout report
-#   checks, and discards secondmate child work for kind=secondmate. Only use it
-#   when the captain has explicitly said to discard the work.
+#   checks and closes the scout as discarded with no report recorded, and
+#   discards secondmate child work for kind=secondmate. Only use it when the
+#   captain has explicitly said to discard the work.
 #   --legacy-record accepts a task record that predates the spawn_gen field:
 #   teardown then proceeds only when the recorded endpoint is confirmed dead or
 #   agent-less (bin/fm-backend.sh's recovery-grade classifier), and without
@@ -263,9 +269,9 @@
 # checks before any destructive return. Teardown output notes every wait, retry, and
 # removal so the operator can see what happened.
 #
-# Pre-teardown cleanup sequence (runs once every landed/discard-work safety
-# refusal above has already passed, and BEFORE any worktree return, branch
-# delete, or backend kill below - a still-active run or a leaked process may
+# Pre-teardown cleanup sequence (starts after the initial landed/discard-work
+# safety checks pass, and BEFORE any worktree return or branch
+# deletion below - a still-active run or a leaked process may
 # own live work in that worktree):
 #   Fix 1 - conclude the task's own no-mistakes run. A ship task's worktree can
 #     be torn down while its no-mistakes pipeline run is still PARKED at a gate
@@ -1696,7 +1702,7 @@ unpushed_patches_are_in_pr_head() {
       | sort -u
   ) || return 1
   [ -n "$pr_patch_ids" ] || return 1
-  unpushed=$(git -C "$WT" log --format=%H HEAD --not --remotes -- 2>/dev/null) || return 1
+  unpushed=$(git -C "$WT" log --format=%H HEAD --not --exclude='no-mistakes/*' --remotes -- 2>/dev/null) || return 1
   [ -n "$unpushed" ] || return 1
   while IFS= read -r commit; do
     [ -n "$commit" ] || continue
@@ -1805,17 +1811,27 @@ work_is_landed() {
   content_in_default
 }
 
-# The completion links this teardown already holds locally. A scout's
-# deliverable is its report, a local-only ship lands on local main, and every
-# other ship carries the PR recorded on its own record.
+# The completion links this teardown already holds locally. A retained scout
+# keeps its report as the held deliverable, while a force-closed scout is
+# recorded as discarded with no report. A local-only ship lands on local main,
+# and every other ship carries the PR recorded on its own record.
 BACKLOG_DONE_ARGS=()
 backlog_done_args() {
   local data_relative
   BACKLOG_DONE_ARGS=()
   case "$KIND" in
     scout)
-      data_relative=$(fm_backlog_data_relative "$DATA") || return 1
-      BACKLOG_DONE_ARGS=(--report "$data_relative/$ID/report.md")
+      if [ "$BACKLOG_TRANSITION" = retain ]; then
+        if [ -f "$DATA/$ID/report.md" ]; then
+          data_relative=$(fm_backlog_data_relative "$DATA") || return 1
+          BACKLOG_DONE_ARGS=(--report "$data_relative/$ID/report.md")
+        fi
+      elif [ "$FORCE" = "--force" ]; then
+        BACKLOG_DONE_ARGS=(--note "discarded")
+      else
+        data_relative=$(fm_backlog_data_relative "$DATA") || return 1
+        BACKLOG_DONE_ARGS=(--report "$data_relative/$ID/report.md")
+      fi
       ;;
     *)
       if [ "$MODE" = local-only ]; then
@@ -2116,14 +2132,41 @@ teardown_note_dirty_return() {
   printf '%s\n' "$residue" | sed 's/^/  /' >&2
 }
 
-validate_worktree_teardown_safety() {
-  local dirty_raw dirty unpushed_raw unpushed DEFAULT unmerged_raw unmerged branch
-  [ -d "$WT" ] || return 0
-  [ "$FORCE" != "--force" ] || return 0
-  case "$KIND" in
-    secondmate|scout) return 0 ;;
-  esac
+# A worker may have pushed from another checkout, so tracking refs that do not
+# show the work prove nothing until they are refreshed. Runs at most once per
+# teardown. Each fetch is bounded to 30 seconds and non-interactive, and
+# --no-prune keeps a branch a remote has dropped visible, whatever fetch.prune
+# says. The explicit
+# refspec covers every branch even when a clone tracks only some of them. A failed
+# fetch only leaves the last-known refs in place, so the unchanged checks below
+# still refuse work those refs do not show; REMOTE_REFRESH_FAILED names it for the
+# refusal. The no-mistakes gate is skipped: it is a local validation copy, and
+# fetching it would count work as landed that no real remote holds.
+REMOTE_REFS_REFRESHED=0
+REMOTE_REFRESH_FAILED=
+refresh_remote_refs() {
+  local remote
+  [ "$REMOTE_REFS_REFRESHED" = 0 ] || return 0
+  REMOTE_REFS_REFRESHED=1
+  while IFS= read -r remote; do
+    case "$remote" in ''|no-mistakes) continue ;; esac
+    GIT_TERMINAL_PROMPT=0 fm_run_timed 30 git -C "$WT" fetch --quiet --no-prune --no-tags --no-recurse-submodules \
+      "$remote" "+refs/heads/*:refs/remotes/$remote/*" </dev/null >/dev/null 2>&1 \
+      || REMOTE_REFRESH_FAILED="$REMOTE_REFRESH_FAILED${REMOTE_REFRESH_FAILED:+, }$remote"
+  done <<EOF
+$(git -C "$WT" remote 2>/dev/null)
+EOF
+}
 
+report_remote_refresh_failure() {
+  [ -n "$REMOTE_REFRESH_FAILED" ] || return 0
+  echo "Could not refresh remote: $REMOTE_REFRESH_FAILED. This verdict used the last-known refs, so the work may be there; retry once the remote is reachable." >&2
+}
+
+# Sets the caller's $dirty from a fresh status read, or refuses when the copy
+# cannot be inspected.
+read_worktree_dirt() {
+  local dirty_raw
   if ! dirty_raw=$(git -C "$WT" status --porcelain --untracked-files=all 2>/dev/null); then
     if worktree_safety_blocked_by_lock "uncommitted changes"; then
       return "$TEARDOWN_WORKTREE_SAFETY_LOCK_BLOCKED"
@@ -2133,14 +2176,40 @@ validate_worktree_teardown_safety() {
     return 1
   fi
   dirty=$(printf '%s\n' "$dirty_raw" | grep -vE '^\?\? (\.claude/|\.fm-(grok|kimi)-turnend$)' || true)
+}
 
-  if ! unpushed_raw=$(git -C "$WT" log --oneline HEAD --not --remotes -- 2>/dev/null); then
+validate_worktree_teardown_safety() {
+  local dirty unpushed_raw unpushed DEFAULT unmerged_raw unmerged branch
+  [ -d "$WT" ] || return 0
+  [ "$FORCE" != "--force" ] || return 0
+  case "$KIND" in
+    secondmate|scout) return 0 ;;
+  esac
+
+  read_worktree_dirt || return
+
+  if ! unpushed_raw=$(git -C "$WT" log --oneline HEAD --not --exclude='no-mistakes/*' --remotes -- 2>/dev/null); then
     if worktree_safety_blocked_by_lock "commits not on a remote"; then
       return "$TEARDOWN_WORKTREE_SAFETY_LOCK_BLOCKED"
     fi
     echo "REFUSED: cannot inspect worktree $WT for commits not on a remote." >&2
     echo "Restore the git index state, or get the captain's explicit OK to discard, then --force." >&2
     return 1
+  fi
+  # Dirty work refuses either way, so only a clean copy is worth the network.
+  if [ -n "$unpushed_raw" ] && [ -z "$dirty" ] && [ "$REMOTE_REFS_REFRESHED" = 0 ]; then
+    refresh_remote_refs
+    # The task's processes are still running, so edits may have arrived during
+    # the wait; the refusals below act on this fresh read.
+    read_worktree_dirt || return
+    if ! unpushed_raw=$(git -C "$WT" log --oneline HEAD --not --exclude='no-mistakes/*' --remotes -- 2>/dev/null); then
+      if worktree_safety_blocked_by_lock "commits not on a remote"; then
+        return "$TEARDOWN_WORKTREE_SAFETY_LOCK_BLOCKED"
+      fi
+      echo "REFUSED: cannot inspect worktree $WT for commits not on a remote." >&2
+      echo "Restore the git index state, or get the captain's explicit OK to discard, then --force." >&2
+      return 1
+    fi
   fi
   unpushed=$(printf '%s\n' "$unpushed_raw" | head -5)
 
@@ -2159,6 +2228,7 @@ validate_worktree_teardown_safety() {
       echo "REFUSED: local-only worktree $WT has work not yet merged into $DEFAULT and not on any remote." >&2
       [ -n "$dirty" ] && report_worktree_dirt "$dirty"
       [ -n "$unmerged" ] && printf 'commits not yet on %s:\n%s\n' "$DEFAULT" "$unmerged" >&2
+      report_remote_refresh_failure
       echo "Merge the branch into local $DEFAULT first (bin/fm-merge-local.sh after the captain approves), or push to a fork/remote, or get the captain's explicit OK to discard, then --force." >&2
       return 1
     fi
@@ -2181,6 +2251,7 @@ validate_worktree_teardown_safety() {
         echo "REFUSED: worktree $WT has work not on any remote and not landed." >&2
       fi
       printf 'unpushed commits:\n%s\n' "$unpushed" >&2
+      report_remote_refresh_failure
       echo "Push the branch, land its PR, or get the captain's explicit OK to discard, then --force." >&2
       return 1
     fi
@@ -3601,7 +3672,7 @@ cleanup_firstmate_home_children() {
     rm -rf "$sub_state/$child_id.kiro-home"
     chmod u+w "$sub_state/$child_id.git-hooks" 2>/dev/null || true
     rm -rf "$sub_state/$child_id.git-hooks" "$sub_state/$child_id.push-guard" \
-      "$sub_state/$child_id.cortex-plugin" \
+      "$sub_state/$child_id.cortex-plugin" "$sub_state/$child_id.hermes-hooks" \
       "$sub_state/$child_id.polytoken-config" \
       "$sub_state/$child_id.polytoken-sessions" \
       "$sub_state/$child_id.polytoken-sessions-v1"
@@ -3774,77 +3845,11 @@ if [ "$TEARDOWN_BACKLOG_APPLIES" = 1 ]; then
     echo "error: the pending backlog $BACKLOG_TRANSITION for $ID is not replayable; refusing destructive teardown" >&2
     exit 1
   }
-# Roll the accepted legacy incarnation's stamp back to the record's exact
-# pre-stamp bytes. Uses perl - already in the teardown lifecycle's curated PATH
-# (truncate is not, and is absent on stock macOS) - and verifies the restored
-# size before reporting success, so a rollback that cannot be proven complete
-# is reported as not rolled back.
-teardown_legacy_stamp_rollback() {
-  [ "$TEARDOWN_LEGACY_PRESTAMP_SIZE" -gt 0 ] 2>/dev/null || return 1
-  perl -e 'truncate($ARGV[0], $ARGV[1]) or exit 1' -- \
-    "$META" "$TEARDOWN_LEGACY_PRESTAMP_SIZE" || return 1
-  [ "$(wc -c < "$META" | tr -d ' ')" = "$TEARDOWN_LEGACY_PRESTAMP_SIZE" ]
-}
-
-  # The accepted legacy incarnation is stamped under the meta lock already
-  # held, right before the close marker binds to it: every refusal above leaves
-  # the record byte-identical, and every later replay reads the same stamped
-  # token the marker carries. A failed close-marker write rolls the stamp back
-  # to the record's pre-stamp bytes, so a retried teardown re-runs the
-  # dead-or-agent-less endpoint gate instead of sailing past it on a stamp the
-  # abandoned attempt left behind.
-  if [ "$TEARDOWN_LEGACY_ACCEPTED" = 1 ] && [ -z "$TEARDOWN_LEGACY_RETAINED_STAMP" ]; then
-    TEARDOWN_LEGACY_PRESTAMP_SIZE=$(wc -c < "$META" | tr -d ' ')
-    TEARDOWN_LEGACY_STAMP_FAILED=
-    if [ -s "$META" ] && [ -n "$(tail -c 1 -- "$META" 2>/dev/null)" ]; then
-      printf '\n' >> "$META" || TEARDOWN_LEGACY_STAMP_FAILED=newline
-    fi
-    if [ -z "$TEARDOWN_LEGACY_STAMP_FAILED" ]; then
-      printf 'spawn_gen=%s\n' "$TEARDOWN_META_SPAWN_GEN" >> "$META" \
-        || TEARDOWN_LEGACY_STAMP_FAILED=append
-    fi
-    if [ -z "$TEARDOWN_LEGACY_STAMP_FAILED" ] \
-       && ! fm_backlog_meta_spawn_gen "$META" "$STATE"; then
-      TEARDOWN_LEGACY_STAMP_FAILED=validate
-    fi
-    if [ -n "$TEARDOWN_LEGACY_STAMP_FAILED" ]; then
-      teardown_legacy_stamp_rollback \
-        || echo "error: the legacy incarnation stamp on $ID's record could not be rolled back; re-run teardown with --legacy-record after reconciling its endpoint" >&2
-      if [ "$TEARDOWN_LEGACY_STAMP_FAILED" = validate ]; then
-        echo "error: the stamped legacy incarnation does not validate for $ID ($FM_BACKLOG_TRANSITION_ERROR); refusing destructive teardown" >&2
-      else
-        echo "error: could not stamp the accepted legacy incarnation into task $ID's record; refusing destructive teardown" >&2
-      fi
-      exit 1
-    fi
-  fi
-  BACKLOG_CLOSED=1
-  META_SPAWN_GEN=$TEARDOWN_META_SPAWN_GEN
-  if ! fm_backlog_close_marker_write "$STATE" "$ID" "$DATA" "$META_SPAWN_GEN" \
-      "${BACKLOG_TRANSITION_FLAGS[@]+"${BACKLOG_TRANSITION_FLAGS[@]}"}" \
-      "${BACKLOG_DONE_ARGS[@]+"${BACKLOG_DONE_ARGS[@]}"}"; then
-    if [ "$TEARDOWN_LEGACY_ACCEPTED" = 1 ] && [ -z "$TEARDOWN_LEGACY_RETAINED_STAMP" ] \
-       && teardown_legacy_stamp_rollback; then
-      echo "error: the pending backlog $BACKLOG_TRANSITION for $ID could not be recorded ($FM_BACKLOG_TRANSITION_ERROR); the accepted legacy incarnation was rolled back, retaining every durable task record" >&2
-    else
-      echo "error: the pending backlog $BACKLOG_TRANSITION for $ID could not be recorded ($FM_BACKLOG_TRANSITION_ERROR); retaining every durable task record" >&2
-      if [ "$TEARDOWN_LEGACY_ACCEPTED" = 1 ] && [ -z "$TEARDOWN_LEGACY_RETAINED_STAMP" ]; then
-        echo "error: the legacy incarnation stamp on $ID's record could not be rolled back; re-run teardown with --legacy-record after reconciling its endpoint" >&2
-      fi
-    fi
-    exit 1
-  fi
-else
-  if [ "$CLEANUP_RECOVERY" = orca ]; then
-    BACKLOG_SKIP_REASON="Orca cleanup recovery is not a launched backlog worker"
-  else
-    BACKLOG_SKIP_REASON=$TEARDOWN_BACKLOG_SKIP_REASON
-  fi
 fi
 
-# Every landed/discard-work refusal above has now passed (or --force skipped
+# The initial landed/discard-work checks above have passed (or --force skipped
 # them). Fix 1 and Fix 2 (see script header) run here, unconditionally on
-# --force, and before ANY destructive step below - a still-parked run or a
+# --force, and before branch deletion or worktree return - a still-parked run or a
 # leaked process can own live work in this exact worktree. Not for
 # kind=secondmate: a secondmate home's own runtime lifecycle is owned by the
 # dedicated process-event and firstmate-home removal machinery further below,
@@ -3954,6 +3959,83 @@ if [ "$KIND" != secondmate ] && teardown_owns_worktree; then
 elif [ "$KIND" != secondmate ]; then
   reap_task_worktree_processes tasktmp "$TASK_TMP"
 fi
+
+# A worker can write after the first proof, including while its run is concluded
+# or its processes exit. Inspect the stopped copy before dropping its branch or
+# returning it on either backend path.
+if teardown_owns_worktree && [ -d "$WT" ] && [ "$FORCE" != "--force" ]; then
+  validate_worktree_teardown_safety || exit 1
+fi
+
+if [ "$TEARDOWN_BACKLOG_APPLIES" = 1 ]; then
+# Roll the accepted legacy incarnation's stamp back to the record's exact
+# pre-stamp bytes. Uses perl - already in the teardown lifecycle's curated PATH
+# (truncate is not, and is absent on stock macOS) - and verifies the restored
+# size before reporting success, so a rollback that cannot be proven complete
+# is reported as not rolled back.
+teardown_legacy_stamp_rollback() {
+  [ "$TEARDOWN_LEGACY_PRESTAMP_SIZE" -gt 0 ] 2>/dev/null || return 1
+  perl -e 'truncate($ARGV[0], $ARGV[1]) or exit 1' -- \
+    "$META" "$TEARDOWN_LEGACY_PRESTAMP_SIZE" || return 1
+  [ "$(wc -c < "$META" | tr -d ' ')" = "$TEARDOWN_LEGACY_PRESTAMP_SIZE" ]
+}
+
+  # The accepted legacy incarnation is stamped under the meta lock already
+  # held, right before the close marker binds to it: every refusal above leaves
+  # the record byte-identical, and every later replay reads the same stamped
+  # token the marker carries. A failed close-marker write rolls the stamp back
+  # to the record's pre-stamp bytes, so a retried teardown re-runs the
+  # dead-or-agent-less endpoint gate instead of sailing past it on a stamp the
+  # abandoned attempt left behind.
+  if [ "$TEARDOWN_LEGACY_ACCEPTED" = 1 ] && [ -z "$TEARDOWN_LEGACY_RETAINED_STAMP" ]; then
+    TEARDOWN_LEGACY_PRESTAMP_SIZE=$(wc -c < "$META" | tr -d ' ')
+    TEARDOWN_LEGACY_STAMP_FAILED=
+    if [ -s "$META" ] && [ -n "$(tail -c 1 -- "$META" 2>/dev/null)" ]; then
+      printf '\n' >> "$META" || TEARDOWN_LEGACY_STAMP_FAILED=newline
+    fi
+    if [ -z "$TEARDOWN_LEGACY_STAMP_FAILED" ]; then
+      printf 'spawn_gen=%s\n' "$TEARDOWN_META_SPAWN_GEN" >> "$META" \
+        || TEARDOWN_LEGACY_STAMP_FAILED=append
+    fi
+    if [ -z "$TEARDOWN_LEGACY_STAMP_FAILED" ] \
+       && ! fm_backlog_meta_spawn_gen "$META" "$STATE"; then
+      TEARDOWN_LEGACY_STAMP_FAILED=validate
+    fi
+    if [ -n "$TEARDOWN_LEGACY_STAMP_FAILED" ]; then
+      teardown_legacy_stamp_rollback \
+        || echo "error: the legacy incarnation stamp on $ID's record could not be rolled back; re-run teardown with --legacy-record after reconciling its endpoint" >&2
+      if [ "$TEARDOWN_LEGACY_STAMP_FAILED" = validate ]; then
+        echo "error: the stamped legacy incarnation does not validate for $ID ($FM_BACKLOG_TRANSITION_ERROR); refusing destructive teardown" >&2
+      else
+        echo "error: could not stamp the accepted legacy incarnation into task $ID's record; refusing destructive teardown" >&2
+      fi
+      exit 1
+    fi
+  fi
+  BACKLOG_CLOSED=1
+  META_SPAWN_GEN=$TEARDOWN_META_SPAWN_GEN
+  if ! fm_backlog_close_marker_write "$STATE" "$ID" "$DATA" "$META_SPAWN_GEN" \
+      "${BACKLOG_TRANSITION_FLAGS[@]+"${BACKLOG_TRANSITION_FLAGS[@]}"}" \
+      "${BACKLOG_DONE_ARGS[@]+"${BACKLOG_DONE_ARGS[@]}"}"; then
+    if [ "$TEARDOWN_LEGACY_ACCEPTED" = 1 ] && [ -z "$TEARDOWN_LEGACY_RETAINED_STAMP" ] \
+       && teardown_legacy_stamp_rollback; then
+      echo "error: the pending backlog $BACKLOG_TRANSITION for $ID could not be recorded ($FM_BACKLOG_TRANSITION_ERROR); the accepted legacy incarnation was rolled back, retaining every durable task record" >&2
+    else
+      echo "error: the pending backlog $BACKLOG_TRANSITION for $ID could not be recorded ($FM_BACKLOG_TRANSITION_ERROR); retaining every durable task record" >&2
+      if [ "$TEARDOWN_LEGACY_ACCEPTED" = 1 ] && [ -z "$TEARDOWN_LEGACY_RETAINED_STAMP" ]; then
+        echo "error: the legacy incarnation stamp on $ID's record could not be rolled back; re-run teardown with --legacy-record after reconciling its endpoint" >&2
+      fi
+    fi
+    exit 1
+  fi
+else
+  if [ "$CLEANUP_RECOVERY" = orca ]; then
+    BACKLOG_SKIP_REASON="Orca cleanup recovery is not a launched backlog worker"
+  else
+    BACKLOG_SKIP_REASON=$TEARDOWN_BACKLOG_SKIP_REASON
+  fi
+fi
+
 if [ "$KIND" = ship ] && teardown_owns_worktree && [ -e "$CONFIG/pipeline-spend" ]; then
   FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" FM_CONFIG_OVERRIDE="$CONFIG" \
     "$SCRIPT_DIR/fm-pipeline-spend.sh" record "$ID" >/dev/null \
@@ -4155,7 +4237,7 @@ chmod u+w "$STATE/$ID.git-hooks" 2>/dev/null || true
 # state/<id>.cortex-plugin is the per-task Cortex Code plugin directory
 # (bin/fm-cortex-plugin.sh) carrying the busy-state hooks.
 rm -rf "$STATE/$ID.inbox" "$STATE/$ID.git-hooks" "$STATE/$ID.push-guard" \
-  "$STATE/$ID.cortex-plugin" \
+  "$STATE/$ID.cortex-plugin" "$STATE/$ID.hermes-hooks" \
   "$STATE/$ID.polytoken-config" \
   "$STATE/$ID.polytoken-sessions" "$STATE/$ID.polytoken-sessions-v1"
 # A presentation journal the close path left behind is orphaned once the
