@@ -434,10 +434,8 @@ These are this fork's standing working rules, and each stands on the reason give
 Add, change, or remove one only with evidence.
 Private details such as people, accounts, money, and project specifics stay in the gitignored `data/captain-shared.md` and `data/captain.md`.
 
-- **Rules stand on evidence:** write a standing rule as a plain rule with its reason; never quote the captain or cite something the captain said as the reason a rule exists.
+- **Rules stand on evidence, and only sign-off makes a ruling:** write a standing rule as a plain rule with its reason, never quoting the captain or citing something the captain said as the reason; call something the captain's ruling or decision only when the captain signed off with a board card answer, an explicit yes to a concrete proposal, or an explicit instruction the captain typed; questions and thinking aloud, including a question in a card's note, are context and never a decision.
   Reason: an audit across every home found quoted and retold remarks had drifted from their meaning and spread as rules nobody signed off.
-- **Only sign-off makes a ruling:** call something the captain's ruling or decision only when the captain signed off with a board card answer or an explicit yes to a concrete proposal; questions and thinking aloud are context, and a question, including one in a card's note, is never a decision.
-  Reason: the same audit.
 - **Agents make technical calls; the captain makes authority calls:** decide engineering questions such as schemas, retention, aliases, and latency targets on evidence and record them as the agents' recommendation; merges outside standing merge authority, deploys, spend, destructive actions, worker runtime and model configuration, and premium-model use need the captain's sign-off.
   Reason: technical evidence lives with the agents, while authority and cost sit with the captain.
 - **A question is not an order:** answer it, and act only when action is asked for; ask the captain only what research cannot answer and nobody has answered already, with two or three options, one firm recommendation, and the consequence in plain terms.
@@ -452,12 +450,12 @@ Private details such as people, accounts, money, and project specifics stay in t
   Reason: parallel work on the same thing collides.
 - **Fresh workers, small jobs:** give each worker one bounded job, close it when that job lands, and start a new worker for the next.
   Reason: long-running workers carry stale context and drift.
-- **Test proportionately:** test in proportion to what a mistake would cost to undo: a change gets the checks that show it does what was intended and does not break what it touches (its own test, the tests covering what it changed, lint, format and types), then it merges, deploys and is seen working; heavier checking is only for what a revert cannot undo, and then only the check for that risk, not the whole suite; any check taking more than a few minutes is offered for approval with its time and what it protects, defaulting to no; when a bigger check or review is vital because something a revert cannot fix could break or because of a risk the captain may not see, plainly recommend it with what could break and what it costs, and never drop it just because the default is no; never re-test identical code.
+- **Test proportionately:** a change gets its own test, the tests covering what it changed, lint, format and types, then it merges, deploys and is seen working; heavier checking is only for what a revert cannot undo, and then only the check for that risk; offer any check over a few minutes first, with its time and what it protects, defaulting to no, but plainly recommend one you judge vital, with what could break and what it costs; never re-test identical code.
   Reason: a revert is cheap and an agent fixes a break in minutes, yet a 3-hour cost-measurement run once started on a change a revert would undo.
-- **Worker instructions carry the request word for word:** a brief's `## Captain's intent` is the request as typed, used as the task only and never presented as a rule or ruling.
-  Reason: retellings were where meaning drifted.
 - **Quality is part of correctness:** consistency, accessibility, and workflow quality are requirements, so verify contrast, never encode meaning by colour alone, and avoid red/green opposition.
   Reason: generic or inconsistent work gets redone.
+
+The word-for-word rule for a brief's `## Captain's intent` lives in section 11.
 
 ## Maintaining this file
 
