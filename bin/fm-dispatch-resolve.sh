@@ -120,20 +120,14 @@
 #   inspectable answer plus every candidate's evidence, in code.
 set -u
 
-TYPESAFE_API_KEY_PRIVATE=${TYPESAFE_API_KEY:-}
-export -n TYPESAFE_API_KEY_PRIVATE 2>/dev/null || true
-unset TYPESAFE_API_KEY
-OPENROUTER_API_KEY_PRIVATE=${OPENROUTER_API_KEY:-}
-export -n OPENROUTER_API_KEY_PRIVATE 2>/dev/null || true
-unset OPENROUTER_API_KEY
-OPENAI_API_KEY_PRIVATE=${OPENAI_API_KEY:-}
-export -n OPENAI_API_KEY_PRIVATE 2>/dev/null || true
-unset OPENAI_API_KEY
-DISPATCH_API_KEY_PRIVATE=${FM_DISPATCH_API_KEY:-}
-export -n DISPATCH_API_KEY_PRIVATE 2>/dev/null || true
-unset FM_DISPATCH_API_KEY
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resolve without children so keys are unexported before any helper executes.
+case ${BASH_SOURCE[0]} in
+  */*) SCRIPT_DIR=${BASH_SOURCE[0]%/*} ;;
+  *) SCRIPT_DIR=. ;;
+esac
+# shellcheck source=bin/fm-jev-client-lib.sh
+. "$SCRIPT_DIR/fm-jev-client-lib.sh"
+SCRIPT_DIR="$(cd "$SCRIPT_DIR" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-$FM_ROOT}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
@@ -152,14 +146,6 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 . "$SCRIPT_DIR/fm-credential-source-lib.sh"
 
 CONFIDENCE_FLOOR=0.6
-TS_MODEL=jev-latest
-TS_BASE=https://api.typesafe.ai
-TS_TIMEOUT=5
-OR_BASE=https://openrouter.ai/api
-OR_TIMEOUT=10
-SO_TIMEOUT=10
-OA_BASE=https://api.openai.com
-OA_TIMEOUT=10
 DEFAULT_WHEN="No listed rule applies to this task."
 
 die() { printf 'error: %s\n' "$1" >&2; exit 2; }
@@ -197,96 +183,9 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# ---- opt-in gate ---------------------------------------------------------------
-# declared_key <provider> <private variable>: set the variable from the source
-# $CRED_PATH declares for <provider>. Returns 1 when none is declared, which
-# leaves the off gate in charge. Past that point nothing is mistaken for an
-# unconfigured resolver: an unreadable or invalid declaration is a
-# configuration error, and a declared source this host cannot run or that
-# yields no key is an error outcome. Nothing is sent in either case.
-declared_key() {
-  local provider=$1 src problem value rc
-  [ -e "$CRED_PATH" ] || [ -L "$CRED_PATH" ] || return 1
-  [ -r "$CRED_PATH" ] || die "credential source declaration not readable: $CRED_PATH"
-  command -v jq >/dev/null 2>&1 || die "jq required"
-  problem=$(fm_credsrc_check "$CRED_PATH" typesafe openrouter) \
-    || die "malformed credential source declaration: $CRED_PATH - $problem"
-  fm_credsrc_declares "$CRED_PATH" "$provider" || return 1
-  src=$(fm_credsrc_field "$CRED_PATH" "$provider" source)
-  fm_credsrc_supported "$src" \
-    || emit_error "credential source $src declared for $provider is not supported on this host; nothing sent"
-  value=$(fm_credsrc_read "$CRED_PATH" "$provider"); rc=$?
-  if [ "$rc" -ne 0 ] || [ -z "$value" ]; then
-    if fm_timed_out "$rc"; then
-      emit_error "credential source $src declared for $provider did not answer in time; nothing sent"
-    fi
-    emit_error "credential source $src declared for $provider is unavailable; nothing sent"
-  fi
-  printf -v "$2" '%s' "$value"
-}
-
-# select_key <provider> <KEY_NAME> <private variable>: the selected provider's
-# key is the environment copy already in the variable, else KEY_NAME in
-# $FM_HOME/.env, else the source declared for the provider. With none of them
-# the tool is off, exactly as it was before declarations existed.
-select_key() {
-  local provider=$1 name=$2 var=$3
-  [ -n "${!var}" ] || printf -v "$var" '%s' "$(fmx_env_get "$name" "$FM_HOME/.env")"
-  [ -n "${!var}" ] || declared_key "$provider" "$var"
-  if [ -z "${!var}" ]; then
-    echo "dispatch-resolve: off ($name absent from the environment and $FM_HOME/.env)" >&2
-    exit 0
-  fi
-}
-
-DISPATCH_PROVIDER=${FM_DISPATCH_PROVIDER:-}
-[ -n "$DISPATCH_PROVIDER" ] || DISPATCH_PROVIDER=$(fmx_env_get FM_DISPATCH_PROVIDER "$FM_HOME/.env")
-DISPATCH_MODEL=${FM_DISPATCH_MODEL:-}
-[ -n "$DISPATCH_MODEL" ] || DISPATCH_MODEL=$(fmx_env_get FM_DISPATCH_MODEL "$FM_HOME/.env")
-case "$DISPATCH_PROVIDER" in
-  '')
-    DISPATCH_PROVIDER=typesafe
-    DISPATCH_MODEL=$TS_MODEL
-    select_key typesafe TYPESAFE_API_KEY TYPESAFE_API_KEY_PRIVATE
-    ;;
-  typesafe)
-    [ -n "$DISPATCH_MODEL" ] || DISPATCH_MODEL=$TS_MODEL
-    select_key typesafe TYPESAFE_API_KEY TYPESAFE_API_KEY_PRIVATE
-    ;;
-  openrouter)
-    [ -n "$DISPATCH_MODEL" ] || die "FM_DISPATCH_MODEL required when FM_DISPATCH_PROVIDER=openrouter"
-    select_key openrouter OPENROUTER_API_KEY OPENROUTER_API_KEY_PRIVATE
-    ;;
-  systemone)
-    [ -n "$DISPATCH_MODEL" ] || die "FM_DISPATCH_MODEL required when FM_DISPATCH_PROVIDER=systemone"
-    DISPATCH_BASE_URL=${FM_DISPATCH_BASE_URL:-}
-    [ -n "$DISPATCH_BASE_URL" ] || DISPATCH_BASE_URL=$(fmx_env_get FM_DISPATCH_BASE_URL "$FM_HOME/.env")
-    [ -n "$DISPATCH_BASE_URL" ] || die "FM_DISPATCH_BASE_URL required when FM_DISPATCH_PROVIDER=systemone"
-    case "$DISPATCH_BASE_URL" in
-      http://?*|https://?*) ;;
-      *) die "FM_DISPATCH_BASE_URL must start with http:// or https://" ;;
-    esac
-    DISPATCH_BASE_URL=${DISPATCH_BASE_URL%/}
-    # The key is optional: a local host may need none.
-    [ -n "$DISPATCH_API_KEY_PRIVATE" ] || DISPATCH_API_KEY_PRIVATE=$(fmx_env_get FM_DISPATCH_API_KEY "$FM_HOME/.env")
-    ;;
-  openai)
-    [ -n "$DISPATCH_MODEL" ] || die "FM_DISPATCH_MODEL required when FM_DISPATCH_PROVIDER=openai"
-    [ -n "$OPENAI_API_KEY_PRIVATE" ] || OPENAI_API_KEY_PRIVATE=$(fmx_env_get OPENAI_API_KEY "$FM_HOME/.env")
-    if [ -z "$OPENAI_API_KEY_PRIVATE" ]; then
-      echo "dispatch-resolve: off (OPENAI_API_KEY absent from the environment and $FM_HOME/.env)" >&2
-      exit 0
-    fi
-    ;;
-  *) die "unknown FM_DISPATCH_PROVIDER: $DISPATCH_PROVIDER (expected typesafe, openrouter, systemone, or openai)" ;;
-esac
-case "$DISPATCH_PROVIDER" in
-  typesafe) ENDPOINT=$TS_BASE/v1/systemone TIMEOUT=$TS_TIMEOUT KEY_PRIVATE=$TYPESAFE_API_KEY_PRIVATE ;;
-  openrouter) ENDPOINT=$OR_BASE/alpha/decisions TIMEOUT=$OR_TIMEOUT KEY_PRIVATE=$OPENROUTER_API_KEY_PRIVATE ;;
-  systemone) ENDPOINT=$DISPATCH_BASE_URL/v1/systemone TIMEOUT=$SO_TIMEOUT KEY_PRIVATE=$DISPATCH_API_KEY_PRIVATE ;;
-  openai) ENDPOINT=$OA_BASE/v1/decisions TIMEOUT=$OA_TIMEOUT KEY_PRIVATE=$OPENAI_API_KEY_PRIVATE ;;
-esac
-export -n KEY_PRIVATE 2>/dev/null || true
+# Shared provider/key gate, also used by the memory-write check.
+jev_off() { echo "dispatch-resolve: off ($1)" >&2; exit 0; }
+fm_jev_configure
 
 # ---- inputs --------------------------------------------------------------------
 [ -n "$BRIEF" ] || die "brief file required (see --help)"
@@ -408,39 +307,6 @@ never_send_off() {
   exit 0
 }
 
-# Checks the endpoint and every string the final request body carries,
-# including strings inside JSON text such as OpenAI's serialized input, so no
-# text reaches the network unchecked. grep's own stderr is discarded because
-# it can echo the pattern.
-never_send_check() {
-  local list value n=0 rc
-  [ -e "$NEVER_SEND_PATH" ] || [ -L "$NEVER_SEND_PATH" ] || return 0
-  { [ -f "$NEVER_SEND_PATH" ] && [ -r "$NEVER_SEND_PATH" ]; } \
-    || never_send_off "$NEVER_SEND_PATH is not a readable regular file"
-  # Collapse whitespace runs on both sides so a value the brief wraps across
-  # lines or spaces differently still matches
-  jq -r --arg endpoint "$ENDPOINT" '
-    $endpoint, (.. | strings | ., (try (fromjson | .. | strings) catch empty))
-    | gsub("\\s+"; " ")' <<<"$BODY" > "$SEND_TEXT" 2>/dev/null \
-    || never_send_off "could not extract the request text to check"
-  list=$(jq -Rr 'gsub("\\s+"; " ")' "$NEVER_SEND_PATH" 2>/dev/null) \
-    || never_send_off "could not read $NEVER_SEND_PATH"
-  while IFS= read -r value; do
-    n=$((n + 1))
-    value=${value# }
-    value=${value% }
-    case "$value" in
-      ''|'#'*) continue ;;
-    esac
-    grep -qiF -e "$value" "$SEND_TEXT" 2>/dev/null; rc=$?
-    case "$rc" in
-      0) never_send_off "brief text matches $NEVER_SEND_PATH line $n" ;;
-      1) ;;
-      *) never_send_off "could not check the request text against $NEVER_SEND_PATH line $n" ;;
-    esac
-  done <<<"$list"
-}
-
 # Send Jev only the task-specific sections bin/fm-brief.sh scaffolds, plus a
 # scout tag from the scout contract line; the rest of a scaffolded brief is
 # standard boilerplate whose safety language reads as high stakes on every task.
@@ -496,19 +362,7 @@ command -v curl >/dev/null 2>&1 || emit_error "curl not installed"
     BODY=$REQUEST
   fi
   never_send_check
-  T0=$(fm_timing_now_ms)
-  if [ -n "$KEY_PRIVATE" ]; then
-    HTTP=$(printf '%s' "$BODY" | curl -sS --max-time "$TIMEOUT" -o "$RESP_FILE" -w '%{http_code}' \
-      -X POST "$ENDPOINT" -H 'Content-Type: application/json' \
-      -H @/dev/fd/3 3< <(printf 'Authorization: Bearer %s\n' "$KEY_PRIVATE") \
-      --data-binary @- 2>/dev/null) || HTTP=000
-  else
-    HTTP=$(printf '%s' "$BODY" | curl -sS --max-time "$TIMEOUT" -o "$RESP_FILE" -w '%{http_code}' \
-      -X POST "$ENDPOINT" -H 'Content-Type: application/json' \
-      --data-binary @- 2>/dev/null) || HTTP=000
-  fi
-  T1=$(fm_timing_now_ms)
-  LAT_MS=$(( T1 - T0 ))
+  fm_jev_post
   if [ "$DISPATCH_PROVIDER" = typesafe ]; then
     [ "$HTTP" = 200 ] || emit_error "http $HTTP after ${LAT_MS} ms: $(head -c 200 "$RESP_FILE" 2>/dev/null | tr '\n' ' ')"
   else

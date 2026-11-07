@@ -358,7 +358,7 @@ family_for_basename() {
       ;;
     fm-afk-pi-herdr-return-e2e.test.sh|\
     fm-bearings-board-lavish-live-e2e.test.sh|\
-    fm-claude-stop-autoarm-live-e2e.test.sh|\
+    fm-claude-stop-autoarm-live-e2e.test.sh|fm-memory-write-check-live.test.sh|\
     fm-cmux-claude-composer-live-e2e.test.sh|\
     fm-composer-matrix-live-e2e.test.sh|\
     fm-composer-codex-idle-live-e2e.test.sh|\
@@ -1637,8 +1637,13 @@ families_for_changed_path() {
     bin/fm-quota-choose.sh)
       printf '%s\n' "__script__:fm-quota-choose.test.sh"
       ;;
-    bin/fm-dispatch-resolve.sh)
+    bin/fm-dispatch-resolve.sh|bin/fm-jev-client-lib.sh)
       printf '%s\n' "__script__:fm-dispatch-resolve.test.sh"
+      printf '%s\n' "__script__:fm-memory-write-check.test.sh"
+      ;;
+    bin/fm-memory-write-check.sh|bin/fm-memory-write-check.py|bin/fm-jev-query.sh)
+      printf '%s\n' "__script__:fm-memory-write-check.test.sh"
+      printf '%s\n' "__script__:fm-memory-write-check-live.test.sh"
       ;;
     bin/fm-capacity.sh)
       printf '%s\n' "__script__:fm-capacity.test.sh"

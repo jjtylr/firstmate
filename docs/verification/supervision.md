@@ -317,6 +317,8 @@ tests/fm-inactive-reconcile.test.sh
 
 ## Turn-end guard
 
+The independent fork-only [memory-write Stop feedback proof](runtime-backends.md#fork-memory-write-stop-feedback) does not change the supervision hooks below.
+
 The blocking and bounded-follow-up mechanisms were validated across seven harnesses on 2026-07-08 through 2026-09-21, with Claude's replacement Stop-owned path revalidated on 2026-09-21, Cursor's stop-hook park validated on 2026-08-13, and omp's blocking `session_stop` hook validated on 2026-09-05.
 
 | Harness | Version verified | Mechanism | Observed result |
