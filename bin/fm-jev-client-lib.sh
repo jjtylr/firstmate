@@ -43,7 +43,41 @@ fm_jev_select_key() {
   [ -n "${!var}" ] || jev_off "$name absent from the environment and $FM_HOME/.env"
 }
 
+# Select and validate the same optional base for implicit and explicit TypeSafe.
+# Never echo a rejected value: a misconfigured URL may contain credentials.
+fm_jev_select_typesafe_base() {
+  local base=${TYPESAFE_BASE:-}
+  [ -n "$base" ] || base=$(fmx_env_get TYPESAFE_BASE "$FM_HOME/.env")
+  [ -n "$base" ] || return 0
+  command -v jq >/dev/null 2>&1 || die "jq required"
+  jq -en --arg base "$base" '
+    def ipv4:
+      split(".") | length == 4 and all(.[];
+        test("\\A(0|[1-9][0-9]{0,2})\\z") and (tonumber <= 255));
+    def ipv6:
+      # An IPv4 tail occupies two of the eight IPv6 groups.
+      (if contains(".") then
+        split(":") | if (.[-1] | ipv4) then .[-1] = "0:0" | join(":") else "!" end
+       else . end) |
+      split("::") as $sides |
+      if ($sides | length) == 1 then
+        test("\\A[0-9A-Fa-f]{1,4}(:[0-9A-Fa-f]{1,4}){7}\\z")
+      elif ($sides | length) == 2 then
+        all($sides[]; test("\\A([0-9A-Fa-f]{1,4}(:[0-9A-Fa-f]{1,4})*)?\\z")) and
+        (split(":") | map(select(length > 0)) | length < 8)
+      else false end;
+    $base | capture("\\Ahttps?://(?<host>\\[[0-9A-Fa-f:.]+\\]|[A-Za-z0-9._-]+)(:(?<port>[0-9]+))?(?<path>/[^?#[:space:]\\\\]*)?\\z"; "i") |
+    ((.path // "") | (contains("[") or contains("]")) | not) and
+    (if .host | startswith("[") then .host[1:-1] | ipv6
+     else true end) and
+    (.port == null or (.port | tonumber | . >= 1 and . <= 65535))
+  ' >/dev/null 2>&1 || die "TYPESAFE_BASE must be an http(s) URL with a host and no userinfo, query, fragment, whitespace, or brackets in its path"
+  while [ "${base%/}" != "$base" ]; do base=${base%/}; done
+  TS_BASE=$base
+}
+
 fm_jev_configure() {
+  TS_BASE=https://api.typesafe.ai
   CRED_PATH="$CONFIG/dispatch-credential-sources.json"
   DISPATCH_PROVIDER=${FM_DISPATCH_PROVIDER:-}
   [ -n "$DISPATCH_PROVIDER" ] || DISPATCH_PROVIDER=$(fmx_env_get FM_DISPATCH_PROVIDER "$FM_HOME/.env")
@@ -52,9 +86,11 @@ fm_jev_configure() {
   case "$DISPATCH_PROVIDER" in
     '')
       DISPATCH_PROVIDER=typesafe DISPATCH_MODEL=jev-latest
+      fm_jev_select_typesafe_base
       fm_jev_select_key typesafe TYPESAFE_API_KEY TYPESAFE_API_KEY_PRIVATE ;;
     typesafe)
       [ -n "$DISPATCH_MODEL" ] || DISPATCH_MODEL=jev-latest
+      fm_jev_select_typesafe_base
       fm_jev_select_key typesafe TYPESAFE_API_KEY TYPESAFE_API_KEY_PRIVATE ;;
     openrouter)
       [ -n "$DISPATCH_MODEL" ] || die "FM_DISPATCH_MODEL required when FM_DISPATCH_PROVIDER=openrouter"
@@ -77,7 +113,7 @@ fm_jev_configure() {
     *) die "unknown FM_DISPATCH_PROVIDER: $DISPATCH_PROVIDER (expected typesafe, openrouter, systemone, or openai)" ;;
   esac
   case "$DISPATCH_PROVIDER" in
-    typesafe) ENDPOINT=https://api.typesafe.ai/v1/systemone TIMEOUT=5 KEY_PRIVATE=$TYPESAFE_API_KEY_PRIVATE ;;
+    typesafe) ENDPOINT=$TS_BASE/v1/systemone TIMEOUT=5 KEY_PRIVATE=$TYPESAFE_API_KEY_PRIVATE ;;
     openrouter) ENDPOINT=https://openrouter.ai/api/alpha/decisions TIMEOUT=10 KEY_PRIVATE=$OPENROUTER_API_KEY_PRIVATE ;;
     systemone) ENDPOINT=$DISPATCH_BASE_URL/v1/systemone TIMEOUT=10 KEY_PRIVATE=$DISPATCH_API_KEY_PRIVATE ;;
     openai) ENDPOINT=https://api.openai.com/v1/decisions TIMEOUT=10 KEY_PRIVATE=$OPENAI_API_KEY_PRIVATE ;;
@@ -112,16 +148,17 @@ never_send_check() {
   done <<<"$list"
 }
 
+# shellcheck disable=SC2034 # HTTP and LAT_MS are public results read by callers.
 fm_jev_post() {
   local t0 t1
   t0=$(fm_timing_now_ms)
   if [ -n "$KEY_PRIVATE" ]; then
-    HTTP=$(printf '%s' "$BODY" | curl -sS --max-time "$TIMEOUT" -o "$RESP_FILE" -w '%{http_code}' \
+    HTTP=$(printf '%s' "$BODY" | curl --globoff -sS --max-time "$TIMEOUT" -o "$RESP_FILE" -w '%{http_code}' \
       -X POST "$ENDPOINT" -H 'Content-Type: application/json' \
       -H @/dev/fd/3 3< <(printf 'Authorization: Bearer %s\n' "$KEY_PRIVATE") \
       --data-binary @- 2>/dev/null) || HTTP=000
   else
-    HTTP=$(printf '%s' "$BODY" | curl -sS --max-time "$TIMEOUT" -o "$RESP_FILE" -w '%{http_code}' \
+    HTTP=$(printf '%s' "$BODY" | curl --globoff -sS --max-time "$TIMEOUT" -o "$RESP_FILE" -w '%{http_code}' \
       -X POST "$ENDPOINT" -H 'Content-Type: application/json' \
       --data-binary @- 2>/dev/null) || HTTP=000
   fi
