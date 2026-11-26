@@ -462,7 +462,7 @@ family_for_basename() {
     fm-classify-corr-token.test.sh|\
     fm-claude-account-quota.test.sh|\
     fm-claude-stop-autoarm.test.sh|fm-cursor-harness.test.sh|\
-    fm-dispatch-resolve.test.sh|\
+    fm-dispatch-record.test.sh|fm-dispatch-resolve.test.sh|\
     fm-extension-binding.test.sh|fm-gitignore-config.test.sh|\
     fm-no-mistakes-required.test.sh|fm-peek-remote.test.sh|\
     fm-pending-reply.test.sh|fm-pi-branch-extension.test.sh|\
@@ -1423,6 +1423,10 @@ families_for_changed_path() {
     bin/fm-dispatch-resolve.sh|bin/fm-jev-client-lib.sh)
       printf '%s\n' "__script__:fm-dispatch-resolve.test.sh"
       printf '%s\n' "__script__:fm-memory-write-check.test.sh"
+      ;;
+    bin/fm-dispatch-record.sh|bin/fm-dispatch-record-lib.sh)
+      printf '%s\n' "__script__:fm-dispatch-record.test.sh"
+      printf '%s\n' "__script__:fm-dispatch-resolve.test.sh"
       ;;
     bin/fm-memory-write-check.sh|bin/fm-memory-write-check.py|bin/fm-jev-query.sh)
       printf '%s\n' "__script__:fm-memory-write-check.test.sh"

@@ -1846,9 +1846,13 @@ content_in_default() {
 # current local work is contained in the PR head, OR the content is already in the
 # default branch (fallback, which also covers the no-PR and gh-error paths). False
 # when neither proof establishes that the work landed.
+TEARDOWN_PR_MERGED=0
 work_is_landed() {
   local branch=$1
-  pr_is_merged "$branch" && return 0
+  if pr_is_merged "$branch"; then
+    TEARDOWN_PR_MERGED=1
+    return 0
+  fi
   content_in_default
 }
 
@@ -4251,6 +4255,26 @@ LAUNCH_HOME_TOKEN=$(teardown_launch_home_token "$FM_HOME") || LAUNCH_HOME_TOKEN=
 if [ -n "$LAUNCH_HOME_TOKEN" ]; then
   rm -rf "/tmp/fm-$ID+$LAUNCH_HOME_TOKEN"
 fi
+# Per-dispatch record outcome (docs/configuration.md "Dispatch record"), read
+# before the PR-poll artifacts go, because the merge-outcome marker among them
+# is the recorded proof that this task's PR merged. A failure changes nothing.
+case "$KIND" in
+  ship|scout)
+    DISPATCH_OUTCOME=not_landed
+    if [ "$KIND" = scout ]; then
+      [ "$FORCE" = --force ] || [ ! -f "$DATA/$ID/report.md" ] || DISPATCH_OUTCOME=report_done
+    elif [ -e "$STATE/$ID.pr-poll-merge-notified" ] || [ "$TEARDOWN_PR_MERGED" = 1 ]; then
+      DISPATCH_OUTCOME=merged
+    elif [ "$MODE" = local-only ] && [ "$FORCE" != --force ]; then
+      DISPATCH_OUTCOME=landed_local
+    fi
+    dispatch_outcome_args=("$ID" "$DISPATCH_OUTCOME")
+    [ "$FORCE" != --force ] || dispatch_outcome_args+=(--forced)
+    [ -z "$PR_URL" ] || dispatch_outcome_args+=(--pr "$PR_URL")
+    FM_HOME=$FM_HOME FM_DATA_OVERRIDE=$DATA "$SCRIPT_DIR/fm-dispatch-record.sh" outcome \
+      "${dispatch_outcome_args[@]}" >/dev/null 2>&1 || true
+    ;;
+esac
 remove_pr_poll_artifacts "$STATE" "$ID" || exit 1
 retire_busy_state "$STATE" "$ID" "$BUSY_GEN" || exit 1
 # Opt-in fleet activity ledger (docs/fleet-ledger.md), before the status log is

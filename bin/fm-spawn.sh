@@ -8336,6 +8336,21 @@ SPAWN_ACCOUNT=
 [ -z "$OMP_PROFILE_PIN" ] || SPAWN_ACCOUNT="$SPAWN_ACCOUNT omp_profile=$OMP_PROFILE_PIN"
 # Opt-in fleet activity ledger (docs/fleet-ledger.md); off costs one file test.
 [ ! -e "$CONFIG/fleet-ledger" ] || [ "$RELAUNCH" -eq 1 ] || FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG "$SCRIPT_DIR/fm-fleet-ledger.sh" dispatched "$ID" "$KIND" "${PROJ_ABS##*/}" "$HARNESS" "$MODEL" || true
+# Per-dispatch record (docs/configuration.md "Dispatch record"): every ship or
+# scout launch and relaunch, whatever the override. A failure changes nothing.
+if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
+  if [ "$RELAUNCH" -eq 1 ]; then
+    dispatch_record_via=spawn
+    [ -z "${FM_CONTROL_RELAUNCH_TX:-}" ] || dispatch_record_via=control
+    FM_HOME=$FM_HOME FM_DATA_OVERRIDE=$DATA "$SCRIPT_DIR/fm-dispatch-record.sh" relaunched "$ID" \
+      --harness "$HARNESS" --model "${MODEL:-}" --effort "${EFFORT:-}" --via "$dispatch_record_via" >/dev/null 2>&1 || true
+  else
+    dispatch_record_args=("$ID" --kind "$KIND" --project "${PROJ_ABS##*/}" --harness "$HARNESS" --model "${MODEL:-}" --effort "${EFFORT:-}")
+    [ -z "$DISPATCH_OVERRIDE" ] || dispatch_record_args+=(--override "$DISPATCH_OVERRIDE")
+    FM_HOME=$FM_HOME FM_DATA_OVERRIDE=$DATA "$SCRIPT_DIR/fm-dispatch-record.sh" spawned \
+      "${dispatch_record_args[@]}" >/dev/null 2>&1 || true
+  fi
+fi
 # Opt-in Herdr project groups (docs/herdr-backend.md "Project groups") tag the
 # new endpoint now rather than at the next watcher poll; off costs one file test.
 [ ! -e "$CONFIG/herdr-project-groups" ] || [ "$BACKEND" != herdr ] || FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG "$SCRIPT_DIR/fm-herdr-groups.sh" sync "$ID" || true

@@ -678,6 +678,17 @@ run_teardown() {
     "$TEARDOWN" task-x1 "$@"
 }
 
+# Record task-x1's spawn in the per-dispatch record through its public writer,
+# so teardown has a dispatch record to append the task's outcome to.
+seed_dispatch_spawned() {  # <case-dir> <kind>
+  FM_DATA_OVERRIDE="$1/data" "$ROOT/bin/fm-dispatch-record.sh" spawned task-x1 \
+    --kind "$2" --project project --harness claude --model sonnet --effort high \
+    || fail "could not seed the dispatch record"
+}
+dispatch_outcome() {  # <case-dir>
+  jq -r 'select(.event == "dispatch.outcome") | "\(.outcome) forced=\(.forced) pr=\(.pr)"' "$1/data/dispatch-record.jsonl"
+}
+
 # Seed a real backlog carrying task-x1 as In flight, so a teardown in this case
 # has a row to close. Uses the real tasks-axi (the fixture's default fakebin has
 # no tasks-axi stub, so PATH resolves the installed one).
@@ -726,6 +737,7 @@ test_local_only_fork_remote_allows() {
   set -e
 
   expect_code 0 "$rc" "fork-allow: teardown should succeed when HEAD is on a fork remote"
+  assert_absent "$case_dir/data/dispatch-record.jsonl" "fork-allow: a task the dispatch record never named gains no outcome"
   ! grep -q REFUSED "$case_dir/stderr" || fail "fork-allow: teardown printed a REFUSED line"
   [ ! -e "$case_dir/state/.task-x1.branch-outcome-index" ] \
     || fail "fork-allow: teardown left the task's branch outcome index behind"
@@ -912,6 +924,7 @@ test_local_only_merged_to_local_main_allows() {
   local wt_head
   wt_head=$(git -C "$case_dir/wt" rev-parse HEAD)
   git -C "$case_dir/project" update-ref refs/heads/main "$wt_head"
+  seed_dispatch_spawned "$case_dir" ship
 
   set +e
   run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
@@ -920,6 +933,7 @@ test_local_only_merged_to_local_main_allows() {
 
   expect_code 0 "$rc" "merged-main: teardown should succeed when work is merged into local main"
   ! grep -q REFUSED "$case_dir/stderr" || fail "merged-main: teardown printed a REFUSED line"
+  assert_equals 'landed_local forced=false pr=null' "$(dispatch_outcome "$case_dir")" "merged-main: the dispatch record gains the local landing"
   pass "local-only worktree with work merged into local main is torn down (no regression)"
 }
 
@@ -1196,6 +1210,7 @@ test_no_mistakes_origin_remote_allows() {
   # Push the task branch to origin and fetch so the worktree sees it.
   git -C "$case_dir/wt" push -q origin fm/task-x1
   git -C "$case_dir/project" fetch -q origin
+  seed_dispatch_spawned "$case_dir" ship
 
   set +e
   run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
@@ -1203,10 +1218,38 @@ test_no_mistakes_origin_remote_allows() {
   set -e
 
   expect_code 0 "$rc" "nm-origin: teardown should succeed when HEAD is on origin"
+  assert_equals 'not_landed forced=false pr=null' "$(dispatch_outcome "$case_dir")" "nm-origin: pushed work with no recorded merge is not landed"
   ! grep -q REFUSED "$case_dir/stderr" || fail "nm-origin: teardown printed a REFUSED line"
   grep -F 'blockers are gone and date is due' "$case_dir/stdout" >/dev/null \
     || fail "nm-origin: teardown manual prompt did not preserve date-gate check"
   pass "no-mistakes worktree with HEAD on origin is torn down (no regression)"
+}
+
+# The merge-outcome marker that firstmate's merge path and merge poll publish is
+# the recorded proof of a merge, even when teardown itself never asks the forge.
+test_dispatch_record_outcome_reads_the_merge_marker() {
+  local case_dir rc marker
+  case_dir=$(make_case nm-origin-merged)
+  write_meta "$case_dir" no-mistakes ship
+  append_pr_meta_url "$case_dir"
+  wt_commit "$case_dir" "shippable work"
+  git -C "$case_dir/wt" push -q origin fm/task-x1
+  git -C "$case_dir/project" fetch -q origin
+  seed_dispatch_spawned "$case_dir" ship
+  marker="$case_dir/state/task-x1.pr-poll-merge-notified"
+  printf '%s\n' fm-pr-poll-merge-notified-v1 github github.com example/repo 7 > "$marker"
+  chmod 600 "$marker"
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "nm-origin-merged: teardown should succeed"
+  assert_equals 'merged forced=false pr=https://github.com/example/repo/pull/7' "$(dispatch_outcome "$case_dir")" \
+    "nm-origin-merged: a recorded merge marks the outcome merged"
+  assert_absent "$marker" "nm-origin-merged: the marker is still retired with the PR-poll artifacts"
+  pass "teardown records a merged outcome from the recorded merge marker"
 }
 
 # A worker's browser must not outlive its job: teardown closes the task-named
@@ -1295,6 +1338,7 @@ test_squash_merged_branch_deleted_allows() {
   append_pr_meta_for_current_head "$case_dir"
   pr_head=$(git -C "$case_dir/wt" rev-parse HEAD)
   add_gh_pr_merged_for_head "$case_dir" "$pr_head"
+  seed_dispatch_spawned "$case_dir" ship
 
   set +e
   run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
@@ -1303,6 +1347,7 @@ test_squash_merged_branch_deleted_allows() {
 
   expect_code 0 "$rc" "squash-merged: teardown should succeed when the PR is merged"
   ! grep -q REFUSED "$case_dir/stderr" || fail "squash-merged: teardown printed a REFUSED line"
+  assert_contains "$(dispatch_outcome "$case_dir")" 'merged forced=false pr=https://' "squash-merged: teardown's own merged-PR proof records the outcome as merged with its PR"
   pass "squash-merged + deleted-branch worktree (PR merged) is torn down (the fix)"
 }
 
@@ -2399,6 +2444,7 @@ test_scout_ignored_files_survive_scratch_clean() {
   wt="$case_dir/wt"
   write_meta "$case_dir" no-mistakes scout
   prepare_scout_teardown "$case_dir"
+  seed_dispatch_spawned "$case_dir" scout
   printf '%s\n' 'ignored-cache/' > "$wt/.gitignore"
   git -C "$wt" add .gitignore
   git -C "$wt" -c user.email=t@t -c user.name=t commit -q -m "ignore cache"
@@ -2413,6 +2459,7 @@ test_scout_ignored_files_survive_scratch_clean() {
   set -e
 
   expect_code 0 "$rc" "scout-ignored: teardown should succeed"
+  assert_equals 'report_done forced=false pr=null' "$(dispatch_outcome "$case_dir")" "scout-ignored: a scout cleaned up with its report records report_done"
   [ "$(cat "$wt/ignored-cache/blob")" = "keep-me" ] \
     || fail "scout-ignored: ignored file was removed or changed"
   assert_absent "$wt/scratch.txt" "scout-ignored: scratch file survived"
@@ -6687,6 +6734,7 @@ test_reachable_work_needs_no_fetch
 test_hung_fetch_is_bounded_and_refuses
 test_gate_remote_is_not_refreshed_into_landed
 test_no_mistakes_origin_remote_allows
+test_dispatch_record_outcome_reads_the_merge_marker
 test_teardown_closes_the_task_browser_session
 test_no_mistakes_truly_unpushed_refuses
 test_no_mistakes_mirror_only_branch_refuses
