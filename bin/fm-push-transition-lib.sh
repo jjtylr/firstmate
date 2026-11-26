@@ -88,7 +88,21 @@ triage_log() {
   fi
 }
 
-# Exit after reporting one actionable wake. Tests override this callback.
+# Print each captain inbox note still queued (bin/fm-inbox.sh note) as its own
+# row's payload, at most WAKE_INBOX_NOTE_MAX, skipping the close's own reason.
+# A note that coalesces with an unrelated wake is otherwise named only in the
+# drain body, so the close names it too; the drain still owns presentation and
+# acknowledgement. Read-only and lock-free: wake() may run under the queue lock.
+WAKE_INBOX_NOTE_MAX=5
+wake_queued_inbox_notes() {  # <close-reason>
+  awk -F '\t' -v skip="$1" -v max="$WAKE_INBOX_NOTE_MAX" '
+    NF >= 5 && $3 == "check" && index($4, "inbox:") == 1 && $5 != skip \
+      && !seen[$4]++ && shown++ < max { print $5 }
+  ' "$FM_WAKE_QUEUE" 2>/dev/null || true
+}
+
+# Exit after reporting one actionable wake, followed by any queued captain
+# inbox notes (wake_queued_inbox_notes). Tests override this callback.
 # An optional cadence kind lets actionable work retain heartbeat delivery while
 # resetting idle backoff; omitted kinds keep the wake reason's existing accounting.
 wake() {
@@ -104,6 +118,7 @@ wake() {
     watch_delivery_publish "$1" || true
     # shellcheck disable=SC2034 # Read by bin/fm-watch.sh's EXIT cleanup.
     FM_WATCH_DELIVERED_REASON=$1
+    wake_queued_inbox_notes "$1"
   else
     output_status=1
   fi

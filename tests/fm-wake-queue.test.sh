@@ -178,6 +178,34 @@ test_signal_catchup_without_running_watcher() {
   pass "signal written while no watcher runs is caught on next run"
 }
 
+test_close_names_queued_captain_inbox_notes() {
+  local dir state fakebin out status_file watcher note_line first count
+  dir=$(make_case inbox-note-close)
+  state="$dir/state"
+  fakebin="$dir/fakebin"
+  out="$dir/watch.out"
+  status_file="$state/task.status"
+  # A board answer lands as an inbox note just before an unrelated worker
+  # status: the close reports one wake, and must still name the note.
+  FM_HOME="$dir" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$dir/data" \
+    bash "$ROOT/bin/fm-inbox.sh" note --request-id bridge-1924 -- 'board answer A for card merge-x' \
+    >/dev/null || fail "inbox note could not be queued"
+  note_line=$(awk -F '\t' '$3 == "check" && index($4, "inbox:") == 1 { print $5 }' "$state/.wake-queue")
+  [ -n "$note_line" ] || fail "inbox note queued no check row"
+  printf 'blocked: unrelated worker wait\n' > "$status_file"
+  PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  watcher=$!
+  wait_for_watcher_lock "$watcher" "$state" || fail "watcher never started"
+  wait_for_exit "$watcher" 150 || fail "watcher did not exit"
+  first=$(grep -E '^(signal:|stale:|check:|heartbeat($|:))' "$out" | head -n 1)
+  [ -n "$first" ] || fail "watcher printed no wake reason"
+  count=$(grep -cxF "$note_line" "$out")
+  [ "$count" -eq 1 ] || fail "close named the queued inbox note $count times, want once: $(cat "$out")"
+  [ "$(tail -n 1 "$out")" = "$note_line" ] || [ "$first" = "$note_line" ] \
+    || fail "inbox note line did not follow the close reason: $(cat "$out")"
+  pass "watcher close names a queued captain inbox note beside its own reason"
+}
+
 test_stale_enqueue_before_suppressor() {
   local dir state fakebin out drain_out capture_file window key pane_hash
   dir=$(make_case stale)
@@ -3845,6 +3873,7 @@ test_owned_growth_still_annotates_turn_ended
 test_historical_annotation_skips_announced_status
 test_concurrent_append_and_drain
 test_signal_catchup_without_running_watcher
+test_close_names_queued_captain_inbox_notes
 test_stale_enqueue_before_suppressor
 test_not_working_stale_enqueue_before_suppressor
 test_check_output_is_queued
