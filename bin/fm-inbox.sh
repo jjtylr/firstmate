@@ -9,6 +9,9 @@
 #           note survives a crash and is presented at firstmate's next drain.
 #           `announce` may append that same wake for an already-saved note.
 #           These two are the only subcommands that touch firstmate's wake queue.
+#           While that row stays queued, every watcher close names it after its
+#           own reason (wake() in bin/fm-push-transition-lib.sh), so a note that
+#           coalesces with another wake still appears in the wake message.
 #   say     Same as `note`, but the body comes from spoken audio on stdin.
 #           Speech is an INPUT METHOD here, not an architecture: it transcribes
 #           and then takes exactly the `note` path.
