@@ -4,6 +4,7 @@
 #
 # Usage:
 #   fm-dispatch-resolve.sh <brief-file> [--project <name>]
+#   fm-dispatch-resolve.sh --tier <light|standard|strong|top>
 #   fm-dispatch-resolve.sh --supports-credential-source <source>
 #
 # Opt-in gate: FM_DISPATCH_PROVIDER and FM_DISPATCH_MODEL select the provider
@@ -70,7 +71,21 @@
 #   first; the tier question is added only when its fixed text passes too. A
 #   provider answering 400 or 422 to the two-question request gets the
 #   rule-only request once. An absent or malformed tier answer is recorded as
-#   such and changes nothing.
+#   such.
+#   Tier table: when the rules file declares `tiers`, a job that resolves to
+#   `default` (no rule matched, or a rule floor fell through) takes the
+#   profiles of the tier picked from that answer instead of `default`: light
+#   only when light's probability is 0.8 or more AND the brief names a
+#   checkable failure, strong when Jev picks it at the confidence floor or
+#   above, otherwise standard, including an absent or malformed answer. Jev
+#   never picks top. The family within the tier is chosen exactly as for any
+#   profile array below. docs/configuration.md "Worker tiers" owns the table,
+#   the checkable-failure line, and the step up.
+#
+# Tier mode: --tier <name> resolves that tier's profiles through the same
+#   quota-aware choice, with no brief and no model request, for a step up
+#   (bin/fm-tier.sh). It writes no task record and no dispatch record. top
+#   always escalates, because the captain approves each top job.
 #
 # Shared-quota opt-out: an optional top-level "shared_quota": true in the
 #   rules file declares this home draws every provider's usage from one single
@@ -101,6 +116,7 @@
 #     status: clear | ambiguous | escalate | error
 #     model/latency_ms/tokens, rule (when excerpt) and confidence, probabilities
 #     fallback: <runner-up rule taken when the picked rule missed its own floor>
+#     tier: <tier> (<why>)   (a job resolved through the tier table)
 #     reason: <why the status is not clear>
 #     preferred_provider: <family and preference or fallback decision, when applied>
 #     candidate: <harness>:<model> provider=.. scope=.. remaining=..% spendPriority=.. runway=.. -> eligible | eligible, unranked: <reason> | not eligible: <reason>
@@ -109,9 +125,10 @@
 #   Task record: for <data>/<id>/brief.md, where <data> is FM_DATA_OVERRIDE,
 #   else $FM_HOME/data, every run first removes
 #   <data>/<id>/dispatch-resolution.json, then every outcome except exit 2 writes
-#   {"task", "status" (clear, ambiguous, escalate, error, or off), "profile"}
-#   there; profile holds harness, model, and effort on clear and is null
-#   otherwise. fm-spawn.sh reads it as the task's dispatch decision.
+#   {"task", "status" (clear, ambiguous, escalate, error, or off), "profile",
+#   "tier"} there; profile holds harness, model, and effort on clear and is null
+#   otherwise, and tier names the tier the job resolved through, or null.
+#   fm-spawn.sh reads it as the task's dispatch decision.
 #   Dispatch record: for the same task briefs, every outcome except exit 2 also
 #   appends one dispatch.resolved line to <data>/dispatch-record.jsonl
 #   (bin/fm-dispatch-record-lib.sh; fields in docs/configuration.md "Dispatch
@@ -166,6 +183,8 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 . "$SCRIPT_DIR/fm-credential-source-lib.sh"
 # shellcheck source=bin/fm-dispatch-record-lib.sh
 . "$SCRIPT_DIR/fm-dispatch-record-lib.sh"
+# shellcheck source=bin/fm-tier-lib.sh
+. "$SCRIPT_DIR/fm-tier-lib.sh"
 
 CONFIDENCE_FLOOR=0.6
 DEFAULT_WHEN="No listed rule applies to this task."
@@ -180,8 +199,8 @@ TIER_STRONG="Spec builds where a mistake can corrupt data, hard diagnosis, and h
 die() { printf 'error: %s\n' "$1" >&2; exit 2; }
 record_task() {
   [ -n "$TASK_RECORD" ] || return 0
-  if ! { jq -cn --arg task "$TASK_ID" --arg status "$1" --argjson profile "${2:-null}" \
-      '{task: $task, status: $status, profile: $profile}' > "$TASK_RECORD.tmp.$$" \
+  if ! { jq -cn --arg task "$TASK_ID" --arg status "$1" --argjson profile "${2:-null}" --argjson tier "${3:-null}" \
+      '{task: $task, status: $status, profile: $profile, tier: $tier}' > "$TASK_RECORD.tmp.$$" \
       && mv -f -- "$TASK_RECORD.tmp.$$" "$TASK_RECORD"; } 2>/dev/null; then
     rm -f -- "$TASK_RECORD.tmp.$$"
     echo "dispatch-resolve: could not write $TASK_RECORD" >&2
@@ -192,7 +211,7 @@ record_task() {
 # once, for a task brief only. It holds what was sent or decided, never the
 # brief text, a key, or a provider error body; the project name is kept only
 # once the request passed the never-send check. A failed append changes nothing.
-RESP_OK=0 RESULT='' PROJECT_SENT=0 TIER_NOTE='not asked' TIER_ANSWER=null DISPATCH_LOGGED=0
+RESP_OK=0 RESULT='' PROJECT_SENT=0 TIER_NOTE='not asked' TIER_ANSWER=null DISPATCH_LOGGED=0 CHECKABLE=''
 dispatch_log() {  # <status> [<reason>]
   local status=$1 reason=${2-} kind=ship resp=null result=null rules=null record
   [ -n "$TASK_ID" ] && [ -n "$data_dir" ] && [ "$DISPATCH_LOGGED" = 0 ] || return 0
@@ -212,7 +231,7 @@ dispatch_log() {  # <status> [<reason>]
     --arg project "$PROJECT" --argjson sent "$PROJECT_SENT" \
     --arg provider "${DISPATCH_PROVIDER:-}" --arg model "${DISPATCH_MODEL:-}" \
     --argjson resp "${resp:-null}" --argjson result "$result" --argjson whens "${rules:-null}" \
-    --argjson tier "$TIER_ANSWER" --arg tier_note "$TIER_NOTE" '
+    --argjson tier "$TIER_ANSWER" --arg tier_note "$TIER_NOTE" --arg checkable "$CHECKABLE" '
     def opt($v): if $v == "" then null else $v end;
     ($result.chosen_rule // $resp.rule.choice // null) as $rule |
     {event: "dispatch.resolved", task: $task, kind: $kind,
@@ -232,7 +251,9 @@ dispatch_log() {  # <status> [<reason>]
      probabilities: ($resp.rule.probabilities // null),
      profile: (if $result.chosen then $result.chosen.profile | {harness, model: (.model // null), effort: (.effort // null)} else null end),
      shadow_tier: $tier,
-     shadow_tier_note: opt($tier_note)}') || return 0
+     shadow_tier_note: opt($tier_note),
+     tier: ($result.tier // null), tier_reason: ($result.tier_why // null),
+     checkable_failure: opt($checkable)}') || return 0
   fm_dispatch_record_append "$data_dir" "$record" \
     || echo "dispatch-resolve: could not append to $(fm_dispatch_record_path "$data_dir")" >&2
   return 0
@@ -266,12 +287,13 @@ usage() {
   ' "$0"
 }
 
-BRIEF='' PROJECT='' RULES_PATH="$CONFIG/crew-dispatch.json" RULES=''
+BRIEF='' PROJECT='' RULES_PATH="$CONFIG/crew-dispatch.json" RULES='' TIER_MODE=''
 NEVER_SEND_PATH="$CONFIG/dispatch-never-send"
 CRED_PATH="$CONFIG/dispatch-credential-sources.json"
 while [ $# -gt 0 ]; do
   case "$1" in
     --project) [ $# -ge 2 ] || die "--project needs a value"; PROJECT=$2; shift 2 ;;
+    --tier) [ $# -ge 2 ] || die "--tier needs a value"; TIER_MODE=$2; shift 2 ;;
     --supports-credential-source)
       [ $# -ge 2 ] || die "--supports-credential-source needs a value"
       if fm_credsrc_supported "$2"; then echo supported; exit 0; fi
@@ -295,14 +317,23 @@ if [ "$(basename -- "$BRIEF")" = brief.md ] && [ -n "$task_dir" ] && [ -n "$data
   fi
 fi
 
-# Shared provider/key gate, also used by the memory-write check.
+# Shared provider/key gate, also used by the memory-write check. Tier mode
+# sends no model request, so it needs no provider or key.
 jev_off() { resolver_off "$1"; }
-fm_jev_configure
+if [ -n "$TIER_MODE" ]; then
+  [ -z "$BRIEF" ] && [ -z "$PROJECT" ] || die "--tier takes no brief file or --project"
+  case "$TIER_MODE" in light|standard|strong|top) ;; *) die "unknown tier: $TIER_MODE (light, standard, strong, or top)" ;; esac
+  [ -e "$RULES_PATH" ] || [ -L "$RULES_PATH" ] || die "no rules file, so no tier table: $RULES_PATH"
+else
+  fm_jev_configure
+fi
 
 # ---- inputs --------------------------------------------------------------------
-[ -n "$BRIEF" ] || die "brief file required (see --help)"
-[ -r "$BRIEF" ] || die "brief file not readable: $BRIEF"
-[ -e "$RULES_PATH" ] || [ -L "$RULES_PATH" ] || no_rules
+if [ -z "$TIER_MODE" ]; then
+  [ -n "$BRIEF" ] || die "brief file required (see --help)"
+  [ -r "$BRIEF" ] || die "brief file not readable: $BRIEF"
+  [ -e "$RULES_PATH" ] || [ -L "$RULES_PATH" ] || no_rules
+fi
 [ -r "$RULES_PATH" ] || die "rules file not readable: $RULES_PATH"
 command -v jq >/dev/null 2>&1 || die "jq required"
 RULES=$(mktemp) || die "mktemp failed"
@@ -313,7 +344,7 @@ VERIFIED_HARNESSES=$(fm_control_harnesses | jq -Rsc 'split("\n") | map(select(le
 
 # The fields this tool consumes must be well formed; bootstrap owns the wider
 # schema diagnostic, but an intake never selects around a malformed file.
-rules_err=$(jq -r --argjson verified_harnesses "$VERIFIED_HARNESSES" --arg provider_re "$FM_QUOTA_PROVIDER_ID_RE" '
+rules_err=$(jq -r --argjson verified_harnesses "$VERIFIED_HARNESSES" --arg provider_re "$FM_QUOTA_PROVIDER_ID_RE" "$FM_TIER_JQ"'
   def verified($h): $verified_harnesses | index($h);
   def provider_id($p): ($p | type) == "string" and ($p | test($provider_re));
   def effort_ok($h; $m; $e):
@@ -370,6 +401,10 @@ rules_err=$(jq -r --argjson verified_harnesses "$VERIFIED_HARNESSES" --arg provi
   elif has("default") and duplicate_profiles(profiles(.default)) then "default must not contain duplicate harness, model, and effort profiles"
   elif has("default") and any(profiles(.default)[]; (verified(.harness) | not)) then "each default profile must name a verified harness"
   elif has("default") and any(profiles(.default)[]; (effort_ok(.harness; .model; .effort) | not)) then "each default profile effort must be supported by its harness and model"
+  elif (fm_tier_err // "") != "" then fm_tier_err
+  elif any(fm_tier_profiles[]; profile_bad(.)) then "each tier profile needs harness, model, and effort; floor must be well formed, and provider must match ^[a-z0-9]+(-[a-z0-9]+)*\\z when present"
+  elif any(fm_tier_profiles[]; (verified(.harness) | not)) then "each tier profile must name a verified harness"
+  elif any(fm_tier_profiles[]; (effort_ok(.harness; .model; .effort) | not)) then "each tier profile effort must be supported by its harness and model"
   else empty end
 ' "$RULES" 2>/dev/null) || die "malformed rules file: $RULES_PATH (not JSON)"
 [ -z "$rules_err" ] || die "malformed rules file: $RULES_PATH - $rules_err"
@@ -377,7 +412,8 @@ rules_err=$(jq -r --argjson verified_harnesses "$VERIFIED_HARNESSES" --arg provi
 missing_provider=$(jq -r '
   def profiles($v): if ($v | type) == "array" then $v elif ($v | type) == "object" then [$v] else [] end;
   ((.rules // [])[] | profiles(.use)[] | select(has("provider") | not) | "use\t\(.harness)"),
-  (profiles(.default // null)[] | select(has("provider") | not) | "default\t\(.harness)")
+  (profiles(.default // null)[] | select(has("provider") | not) | "default\t\(.harness)"),
+  ((.tiers // {})[] | profiles(.use)[] | select(has("provider") | not) | "tier\t\(.harness)")
 ' "$RULES" | while IFS=$'\t' read -r location harness; do
   if ! fm_quota_single_provider_for_harness "$harness" >/dev/null; then
     printf '%s\t%s\n' "$location" "$harness"
@@ -399,8 +435,181 @@ while IFS= read -r h; do
   PMAP=$(jq -c --arg h "$h" --arg p "$p" '. + {($h): (if $p == "" then null else $p end)}' <<<"$PMAP")
 done < <(jq -r '
   def profiles($v): if ($v | type) == "array" then $v elif ($v | type) == "object" then [$v] else [] end;
-  ([((.rules // [])[]) | profiles(.use)[]] + profiles(.default // null))
+  ([((.rules // [])[]) | profiles(.use)[]] + profiles(.default // null) + [(.tiers // {})[] | profiles(.use)[]])
   | map(.harness) | unique | .[]' "$RULES")
+
+# ---- quota evidence: one quota-axi --json snapshot, skipped entirely under the
+# ---- shared-quota opt-out (a stub keeps the slurpfile contract intact) ---------
+take_quota_snapshot() {
+  SQ=false
+  SHARED_QUOTA=$(jq -r '.shared_quota // false' "$RULES" 2>/dev/null) || SHARED_QUOTA=false
+  if [ "$SHARED_QUOTA" = true ]; then
+    printf '{"providers":[]}\n' > "$QUOTA"
+    SQ=true
+  else
+    command -v quota-axi >/dev/null 2>&1 || emit_error "quota-axi not installed"
+    quota-axi --json > "$QUOTA" 2>/dev/null || emit_error "quota-axi --json failed"
+    fm_quota_json_valid < "$QUOTA" || emit_error "quota-axi --json returned an invalid snapshot"
+  fi
+}
+
+# The candidate evaluation and the quota-aware choice among a profile array,
+# shared by the rule resolution and tier mode so there is one chooser.
+# shellcheck disable=SC2016  # jq program text, not shell expansion
+RESOLVE_DEFS_JQ='
+  ($rules[0]) as $cfg | ($quota[0]) as $q |
+  def profiles($v): if ($v | type) == "array" then $v elif ($v | type) == "object" then [$v] else [] end;
+  def prov($p; $lane): quota_row($q; $p; $lane);
+  def rows($p; $lane): (prov($p; $lane) | .quotaSemantics.effectiveAvailability // []);
+  def bare($m): ($m | split("/") | last);
+  def provider_of($c): ($c.provider // $pmap[$c.harness] // null);
+  def lane_of($c): quota_lane($c.harness; $c.model);
+  def measured($p; $lane):
+    (prov($p; $lane) != null and (["known", "partial"] | index(prov($p; $lane).quotaSemantics.status)) != null);
+  def applicable($p; $lane; $m; $qs):
+    (bare($m)) as $bare |
+    [rows($p; $lane)[] | select(
+      .scope == "all_models" or .scope == "all_products" or
+      ($m != "" and (.scope == ("model:" + $bare) or .scope == ("product:" + $bare))) or
+      ($qs != null and .scope == $qs)
+    )];
+  def floor_state($f; $p; $lane):
+    if $f == null then "none"
+    elif prov($p; $lane) == null or (measured($p; $lane) | not) then "unknown"
+    else [rows($p; $lane)[] | select(.scope == $f.scope)] as $matches
+      | if ($matches | length) == 0 or any($matches[]; .status != "known") then "unknown"
+        elif any($matches[]; .effectivePercentRemaining < $f.min_percent) then "below"
+        else "ok"
+        end
+    end;
+  def evidence($rows):
+    $rows | map({scope, status, pct: (.effectivePercentRemaining // null), runway: (.runway.status // null), spendPriority: (.selection.spendPriority // null)});
+  def evaluate($c):
+    (provider_of($c)) as $p | (lane_of($c)) as $lane |
+    if $sq then
+      {profile: $c, provider: $p, eligible: true, sq: true, reason: "ok"}
+    elif $p == null then {profile: $c, eligible: false, reason: "no provider family for harness \($c.harness); declare provider on the profile"}
+    elif prov($p; $lane) == null then
+      {profile: $c, provider: $p, eligible: true, unranked: true,
+       reason: (if any($q.providers[]; .provider == $p)
+                then "provider \($p) has no quota row for account \(if $lane == "" then "default" else $lane end)"
+                else "provider \($p) not in the quota snapshot" end)}
+    else
+      (applicable($p; $lane; ($c.model // ""); ($c.quota_scope // null))) as $rows |
+      (evidence($rows)) as $bounds |
+      (floor_state($c.floor; $p; $lane)) as $profile_floor_state |
+      if any($rows[]; (.runway.status // "") == "exhausted_now") then
+        ($rows | map(select((.runway.status // "") == "exhausted_now")) | first) as $bad |
+        {profile: $c, provider: $p, bounds: $bounds, scope: $bad.scope, pct: ($bad.effectivePercentRemaining // null), runway: $bad.runway.status, eligible: false, reason: "runway exhausted_now at \($bad.scope)"}
+      elif any($rows[]; .status == "known" and (.effectivePercentRemaining | type) == "number" and .effectivePercentRemaining <= 0) then
+        ($rows | map(select(.status == "known" and (.effectivePercentRemaining | type) == "number" and .effectivePercentRemaining <= 0)) | first) as $bad |
+        {profile: $c, provider: $p, bounds: $bounds, scope: $bad.scope, pct: $bad.effectivePercentRemaining, runway: $bad.runway.status, eligible: false, reason: "0% remaining at \($bad.scope)"}
+      elif $profile_floor_state == "below" then
+        ([rows($p; $lane)[] | select(
+          .scope == $c.floor.scope and
+          .effectivePercentRemaining < $c.floor.min_percent
+        )] | first) as $floor_row |
+        {profile: $c, provider: $p, bounds: $bounds, scope: ($floor_row.scope // $c.floor.scope), pct: ($floor_row.effectivePercentRemaining // null), runway: ($floor_row.runway.status // null), eligible: false, reason: "profile floor \($c.floor.scope) below \($c.floor.min_percent)%"}
+      elif (measured($p; $lane) | not) then
+        ($rows | first) as $row |
+        {profile: $c, provider: $p, bounds: $bounds, scope: ($row.scope // null), pct: ($row.effectivePercentRemaining // null), runway: ($row.runway.status // null), eligible: true, unranked: true, unknown: true, reason: "provider \($p) unmeasured (\(prov($p; $lane).quotaSemantics.status))"}
+      elif ($c.quota_scope != null and (any($rows[]; .scope == $c.quota_scope) | not)) then
+        {profile: $c, provider: $p, bounds: $bounds, scope: $c.quota_scope, eligible: true, unranked: true, unknown: true, reason: "declared quota_scope \($c.quota_scope) has no quota row for provider \($p): not rankable"}
+      elif ($rows | length) == 0 then
+        {profile: $c, provider: $p, bounds: $bounds, eligible: true, unranked: true, unknown: true, reason: "no applicable quota row for provider \($p)"}
+      elif $profile_floor_state == "unknown" then
+        ([rows($p; $lane)[] | select(.scope == $c.floor.scope)] | first) as $floor_row |
+        {profile: $c, provider: $p, bounds: $bounds, scope: $c.floor.scope, pct: ($floor_row.effectivePercentRemaining // null), runway: ($floor_row.runway.status // null), eligible: true, unranked: true, unknown: true, reason: "profile floor \($c.floor.scope) is unverifiable: not rankable"}
+      elif any($rows[]; .status != "known") then
+        ($rows | map(select(.status != "known")) | first) as $bad |
+        {profile: $c, provider: $p, bounds: $bounds, scope: $bad.scope, eligible: true, unranked: true, unknown: true, reason: "quota row \($bad.scope) unknown: not rankable"}
+      elif any($rows[]; (.selection.spendPriority | type) != "number") then
+        ($rows | map(select((.selection.spendPriority | type) != "number")) | first) as $bad |
+        {profile: $c, provider: $p, bounds: $bounds, scope: $bad.scope, pct: $bad.effectivePercentRemaining, runway: $bad.runway.status, eligible: true, unranked: true, reason: "spendPriority missing or non-numeric at \($bad.scope): not rankable"}
+      else
+        ($rows | min_by(.selection.spendPriority)) as $limiting |
+        {profile: $c, provider: $p, bounds: $bounds, scope: $limiting.scope, pct: $limiting.effectivePercentRemaining,
+         spendPriority: $limiting.selection.spendPriority, runway: $limiting.runway.status, eligible: true, reason: "ok"}
+      end
+    end;
+  def pick($use; $note):
+    ({}) as $ev | ($use | map(evaluate(.))) as $cands |
+    ([$cands[] | select(.provider == $cfg.preferred_provider)]) as $family |
+    ([$family[] | select(.eligible)]) as $preferred |
+    (if ($preferred | length) > 0 then $preferred else $cands end) as $pool |
+    ($ev + (if $cfg.preferred_provider == null then {}
+      else {preferred_provider: ($cfg.preferred_provider + ": " +
+        (if ($family | length) == 0 then "not in matched profiles; preserve the selected rule"
+         elif ($preferred | length) > 0 then "prefer eligible family candidates"
+         else "fall back; every matched family candidate is ineligible" end))} end)) as $ev |
+    ([$pool[] | select(.eligible and ((.unranked // false) | not))]) as $elig |
+    ([$cands[] | select(.unranked)]) as $unranked |
+    if ($elig | length) == 0 then $ev + {status: "escalate",
+      reason: ("no rankable eligible candidate" +
+        (if ($preferred | length) > 0 then " in preferred provider \($cfg.preferred_provider); uncertainty does not authorize fallback" else "" end)),
+      note: $note, candidates: $cands}
+    else
+      (if $sq then ($elig | first) else ($elig | max_by(.spendPriority)) end) as $best |
+      (if $sq then 1 else ([$elig[] | select(.spendPriority == $best.spendPriority)] | length) end) as $ties |
+      if $ties > 1 then $ev + {status: "escalate", reason: "genuine spendPriority tie", note: $note, candidates: $cands}
+      else $ev + {status: "clear", note: $note, candidates: $cands, chosen: $best}
+        + (if ($unranked | length) > 0 then
+             {unranked_note: "\($unranked | length) eligible candidate(s) unranked (\([$unranked[].provider] | unique | join(", ")))"}
+           else {} end)
+      end
+    end;
+'
+
+render_text() {
+  TEXT=$(jq -r '
+  def flat: tostring | gsub("[\t\r\n]"; " ");
+  def show($value): ($value // "-") | flat;
+  def shell_arg: flat | @sh;
+  "dispatch-resolve:",
+  "  status: \(.status | flat)",
+  (if has("rule") then
+    "  model: \(show(.model))   latency_ms: \(show(.latency_ms))   tokens: \(show(.tokens.input_tokens))/\(show(.tokens.output_tokens))",
+    "  rule: \(.rule | flat) (\(.rule_when | flat))   confidence: \(.confidence | flat)",
+    "  probabilities: \([.probabilities | to_entries[] | "\(.key | flat)=\(.value | flat)"] | join(" "))"
+   else empty end),
+  (if .fallback then "  fallback: \(.fallback | flat)" else empty end),
+  (if .tier then "  tier: \(.tier | flat) (\(.tier_why | flat))" else empty end),
+  (if .reason then "  reason: \(.reason | flat)" else empty end),
+  (if .note then "  note: \(.note | flat)" else empty end),
+  (if .preferred_provider then "  preferred_provider: \(.preferred_provider | flat)" else empty end),
+  (if .unranked_note then "  note: \(.unranked_note | flat)" else empty end),
+  (.candidates[]? | "  candidate: \(.profile.harness | flat):\(show(.profile.model))"
+      + (if .provider then "  provider=\(.provider | flat)" else "" end)
+      + (if .scope then "  scope=\(.scope | flat)  remaining=\(show(.pct))%  spendPriority=\(show(.spendPriority))  runway=\(show(.runway))" else "" end)
+      + (if (.bounds // [] | length) > 1 then "  bounds=" + ([.bounds[] | "\(.scope | flat):\(show(.pct))%/\((.runway // .status) | flat)"] | join(",")) else "" end)
+      + "  -> " + (if .unranked then "eligible, unranked: \(.reason | flat): disclosed uncertainty" elif .sq then "eligible (quota ranking off: home declares a single shared quota)" elif .eligible then "eligible" else "not eligible: \(.reason | flat)" end)),
+  (if .chosen then "  profile: --harness \(.chosen.profile.harness | shell_arg)"
+      + (if .chosen.profile.model then " --model \(.chosen.profile.model | shell_arg)" else "" end)
+      + (if .chosen.profile.effort then " --effort \(.chosen.profile.effort | shell_arg)" else "" end) else empty end)' <<<"$RESULT") || emit_error "output rendering failed"
+}
+
+RESP_FILE=$(mktemp) || die "mktemp failed"
+QUOTA=$(mktemp) || { rm -f "$RESP_FILE"; die "mktemp failed"; }
+TASK_TEXT=$(mktemp) || { rm -f "$RESP_FILE" "$QUOTA"; die "mktemp failed"; }
+SEND_TEXT=$(mktemp) || { rm -f "$RESP_FILE" "$QUOTA" "$TASK_TEXT"; die "mktemp failed"; }
+trap 'rm -f "$RULES" "$RESP_FILE" "$QUOTA" "$TASK_TEXT" "$SEND_TEXT"' EXIT
+
+# ---- tier mode: one named tier's profiles through the same chooser -------------
+if [ -n "$TIER_MODE" ]; then
+  jq -e --arg tier "$TIER_MODE" '(.tiers | type) == "object" and (.tiers | has($tier))' "$RULES" >/dev/null 2>&1 \
+    || die "no $TIER_MODE tier in the tier table: $RULES_PATH"
+  take_quota_snapshot
+  RESULT=$(jq -n --argjson pmap "$PMAP" --argjson sq "$SQ" --arg tier "$TIER_MODE" \
+    --slurpfile rules "$RULES" --slurpfile quota "$QUOTA" "$FM_QUOTA_ROW_JQ$RESOLVE_DEFS_JQ"'
+    (profiles($cfg.tiers[$tier].use)) as $use |
+    {tier: $tier, tier_why: "tier mode"}
+    + (if $tier == "top"
+       then {status: "escalate", reason: "the top tier needs the captain'"'"'s approval for each job", candidates: ($use | map(evaluate(.)))}
+       else pick($use; null) end)') || emit_error "resolution failed"
+  render_text
+  printf '%s\n' "$TEXT"
+  exit 0
+fi
 
 RULE_COUNT=$(jq -r '(.rules // []) | length' "$RULES")
 
@@ -408,11 +617,6 @@ if [ "$RULE_COUNT" -eq 0 ]; then
   no_rules
 fi
 
-RESP_FILE=$(mktemp) || die "mktemp failed"
-QUOTA=$(mktemp) || { rm -f "$RESP_FILE"; die "mktemp failed"; }
-TASK_TEXT=$(mktemp) || { rm -f "$RESP_FILE" "$QUOTA"; die "mktemp failed"; }
-SEND_TEXT=$(mktemp) || { rm -f "$RESP_FILE" "$QUOTA" "$TASK_TEXT"; die "mktemp failed"; }
-trap 'rm -f "$RULES" "$RESP_FILE" "$QUOTA" "$TASK_TEXT" "$SEND_TEXT"' EXIT
 
 NEVER_SEND_SOFT=0 NEVER_SEND_HIT=0
 never_send_off() {
@@ -573,9 +777,10 @@ jq -e --slurpfile rules "$RULES" '
   "$RESP_FILE" >/dev/null 2>&1 || emit_error "response is not a rule Choice answer"
 RESP_OK=1
 
-# ---- shadow tier answer: recorded only; nothing below reads it -----------------
+# ---- tier answer: recorded, and read only for a job that resolves to default
+# ---- when the file declares tiers (tier_pick below) ----------------------------
 # The same shape checks as the rule answer. Absent or malformed leaves the
-# record's shadow_tier null with a note, and changes nothing else.
+# record's shadow_tier null with a note; tier_pick then takes standard.
 if [ "$TIER_NOTE" = asked ]; then
   tier_state=$(jq -c '
     (.answers.tier) as $t |
@@ -594,97 +799,42 @@ if [ "$TIER_NOTE" = asked ]; then
   TIER_NOTE=$(jq -r '.note // ""' <<<"$tier_state" 2>/dev/null) || TIER_NOTE=malformed
 fi
 
-# ---- quota evidence: one quota-axi --json snapshot, skipped entirely under the
-# ---- shared-quota opt-out (a stub keeps the slurpfile contract intact) ---------
-SQ=false
-SHARED_QUOTA=$(jq -r '.shared_quota // false' "$RULES" 2>/dev/null) || SHARED_QUOTA=false
-if [ "$SHARED_QUOTA" = true ]; then
-  printf '{"providers":[]}\n' > "$QUOTA"
-  SQ=true
-else
-  command -v quota-axi >/dev/null 2>&1 || emit_error "quota-axi not installed"
-  quota-axi --json > "$QUOTA" 2>/dev/null || emit_error "quota-axi --json failed"
-  fm_quota_json_valid < "$QUOTA" || emit_error "quota-axi --json returned an invalid snapshot"
-fi
+# ---- checkable failure: the brief's own statement of what shows failure -----
+# Read only from the task-specific text sent to the model (the Firstmate spec,
+# or the whole brief when it has neither section); only its kind is recorded.
+CHECKABLE=$(fm_tier_checkable_failure < "$TASK_TEXT") || CHECKABLE=''
+
+take_quota_snapshot
 
 # ---- resolution: declared gates + quota evidence + argmax, all in jq ------------
 RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg none_criterion "$DEFAULT_WHEN" --argjson pmap "$PMAP" --argjson sq "$SQ" \
-  --slurpfile resp "$RESP_FILE" --slurpfile rules "$RULES" --slurpfile quota "$QUOTA" "$FM_QUOTA_ROW_JQ"'
-  ($resp[0]) as $r | ($rules[0]) as $cfg | ($quota[0]) as $q | ($r.answers.rule) as $a |
-  def profiles($v): if ($v | type) == "array" then $v elif ($v | type) == "object" then [$v] else [] end;
-  def prov($p; $lane): quota_row($q; $p; $lane);
-  def rows($p; $lane): (prov($p; $lane) | .quotaSemantics.effectiveAvailability // []);
-  def bare($m): ($m | split("/") | last);
-  def provider_of($c): ($c.provider // $pmap[$c.harness] // null);
-  def lane_of($c): quota_lane($c.harness; $c.model);
-  def measured($p; $lane):
-    (prov($p; $lane) != null and (["known", "partial"] | index(prov($p; $lane).quotaSemantics.status)) != null);
-  def applicable($p; $lane; $m; $qs):
-    (bare($m)) as $bare |
-    [rows($p; $lane)[] | select(
-      .scope == "all_models" or .scope == "all_products" or
-      ($m != "" and (.scope == ("model:" + $bare) or .scope == ("product:" + $bare))) or
-      ($qs != null and .scope == $qs)
-    )];
-  def floor_state($f; $p; $lane):
-    if $f == null then "none"
-    elif prov($p; $lane) == null or (measured($p; $lane) | not) then "unknown"
-    else [rows($p; $lane)[] | select(.scope == $f.scope)] as $matches
-      | if ($matches | length) == 0 or any($matches[]; .status != "known") then "unknown"
-        elif any($matches[]; .effectivePercentRemaining < $f.min_percent) then "below"
-        else "ok"
-        end
-    end;
-  def evidence($rows):
-    $rows | map({scope, status, pct: (.effectivePercentRemaining // null), runway: (.runway.status // null), spendPriority: (.selection.spendPriority // null)});
-  def evaluate($c):
-    (provider_of($c)) as $p | (lane_of($c)) as $lane |
-    if $sq then
-      {profile: $c, provider: $p, eligible: true, sq: true, reason: "ok"}
-    elif $p == null then {profile: $c, eligible: false, reason: "no provider family for harness \($c.harness); declare provider on the profile"}
-    elif prov($p; $lane) == null then
-      {profile: $c, provider: $p, eligible: true, unranked: true,
-       reason: (if any($q.providers[]; .provider == $p)
-                then "provider \($p) has no quota row for account \(if $lane == "" then "default" else $lane end)"
-                else "provider \($p) not in the quota snapshot" end)}
+  --argjson tier_answer "$TIER_ANSWER" --arg tier_note "$TIER_NOTE" --arg checkable "$CHECKABLE" \
+  --slurpfile resp "$RESP_FILE" --slurpfile rules "$RULES" --slurpfile quota "$QUOTA" "$FM_QUOTA_ROW_JQ$RESOLVE_DEFS_JQ"'
+  ($resp[0]) as $r | ($r.answers.rule) as $a |
+  # The tier for a job that resolves to default, when the file declares tiers
+  # (docs/configuration.md "Worker tiers"): light needs both the 0.8 light
+  # probability and a checkable failure, strong needs Jev'"'"'s pick at the
+  # confidence floor, and everything else, including no usable answer, is
+  # standard. top is never offered and never taken here.
+  def tier_pick:
+    if ($cfg.tiers | type) != "object" then null
     else
-      (applicable($p; $lane; ($c.model // ""); ($c.quota_scope // null))) as $rows |
-      (evidence($rows)) as $bounds |
-      (floor_state($c.floor; $p; $lane)) as $profile_floor_state |
-      if any($rows[]; (.runway.status // "") == "exhausted_now") then
-        ($rows | map(select((.runway.status // "") == "exhausted_now")) | first) as $bad |
-        {profile: $c, provider: $p, bounds: $bounds, scope: $bad.scope, pct: ($bad.effectivePercentRemaining // null), runway: $bad.runway.status, eligible: false, reason: "runway exhausted_now at \($bad.scope)"}
-      elif any($rows[]; .status == "known" and (.effectivePercentRemaining | type) == "number" and .effectivePercentRemaining <= 0) then
-        ($rows | map(select(.status == "known" and (.effectivePercentRemaining | type) == "number" and .effectivePercentRemaining <= 0)) | first) as $bad |
-        {profile: $c, provider: $p, bounds: $bounds, scope: $bad.scope, pct: $bad.effectivePercentRemaining, runway: $bad.runway.status, eligible: false, reason: "0% remaining at \($bad.scope)"}
-      elif $profile_floor_state == "below" then
-        ([rows($p; $lane)[] | select(
-          .scope == $c.floor.scope and
-          .effectivePercentRemaining < $c.floor.min_percent
-        )] | first) as $floor_row |
-        {profile: $c, provider: $p, bounds: $bounds, scope: ($floor_row.scope // $c.floor.scope), pct: ($floor_row.effectivePercentRemaining // null), runway: ($floor_row.runway.status // null), eligible: false, reason: "profile floor \($c.floor.scope) below \($c.floor.min_percent)%"}
-      elif (measured($p; $lane) | not) then
-        ($rows | first) as $row |
-        {profile: $c, provider: $p, bounds: $bounds, scope: ($row.scope // null), pct: ($row.effectivePercentRemaining // null), runway: ($row.runway.status // null), eligible: true, unranked: true, unknown: true, reason: "provider \($p) unmeasured (\(prov($p; $lane).quotaSemantics.status))"}
-      elif ($c.quota_scope != null and (any($rows[]; .scope == $c.quota_scope) | not)) then
-        {profile: $c, provider: $p, bounds: $bounds, scope: $c.quota_scope, eligible: true, unranked: true, unknown: true, reason: "declared quota_scope \($c.quota_scope) has no quota row for provider \($p): not rankable"}
-      elif ($rows | length) == 0 then
-        {profile: $c, provider: $p, bounds: $bounds, eligible: true, unranked: true, unknown: true, reason: "no applicable quota row for provider \($p)"}
-      elif $profile_floor_state == "unknown" then
-        ([rows($p; $lane)[] | select(.scope == $c.floor.scope)] | first) as $floor_row |
-        {profile: $c, provider: $p, bounds: $bounds, scope: $c.floor.scope, pct: ($floor_row.effectivePercentRemaining // null), runway: ($floor_row.runway.status // null), eligible: true, unranked: true, unknown: true, reason: "profile floor \($c.floor.scope) is unverifiable: not rankable"}
-      elif any($rows[]; .status != "known") then
-        ($rows | map(select(.status != "known")) | first) as $bad |
-        {profile: $c, provider: $p, bounds: $bounds, scope: $bad.scope, eligible: true, unranked: true, unknown: true, reason: "quota row \($bad.scope) unknown: not rankable"}
-      elif any($rows[]; (.selection.spendPriority | type) != "number") then
-        ($rows | map(select((.selection.spendPriority | type) != "number")) | first) as $bad |
-        {profile: $c, provider: $p, bounds: $bounds, scope: $bad.scope, pct: $bad.effectivePercentRemaining, runway: $bad.runway.status, eligible: true, unranked: true, reason: "spendPriority missing or non-numeric at \($bad.scope): not rankable"}
-      else
-        ($rows | min_by(.selection.spendPriority)) as $limiting |
-        {profile: $c, provider: $p, bounds: $bounds, scope: $limiting.scope, pct: $limiting.effectivePercentRemaining,
-         spendPriority: $limiting.selection.spendPriority, runway: $limiting.runway.status, eligible: true, reason: "ok"}
-      end
+      ($tier_answer) as $t |
+      (if ($t | type) != "object" then {tier: "standard", why: "no usable tier answer (\(if $tier_note == "" then "absent" else $tier_note end)): standard"}
+       elif $t.probabilities.light >= 0.8 and $checkable == "" then
+         {tier: "standard", why: "light probability \($t.probabilities.light) but the brief names no checkable failure: standard"}
+       elif $t.probabilities.light >= 0.8 and ($cfg.tiers | has("light")) then
+         {tier: "light", why: "light probability \($t.probabilities.light) is 0.8 or more and the brief names a checkable failure (\($checkable))"}
+       elif $t.probabilities.light >= 0.8 then {tier: "standard", why: "no light tier is configured: standard"}
+       elif $t.choice == "light" then {tier: "standard", why: "light probability \($t.probabilities.light) is below 0.8: standard"}
+       elif $t.choice == "strong" and ($cfg.tiers | has("strong") | not) then {tier: "standard", why: "no strong tier is configured: standard"}
+       elif $t.choice == "strong" and $t.confidence >= ($floor | tonumber) then {tier: "strong", why: "Jev picked strong at confidence \($t.confidence)"}
+       elif $t.choice == "strong" then {tier: "standard", why: "strong confidence \($t.confidence) is below \($floor): standard"}
+       else {tier: "standard", why: "Jev picked standard"} end)
     end;
+  (tier_pick) as $tp |
+  (if $tp == null then profiles($cfg.default // null) else profiles($cfg.tiers[$tp.tier].use) end) as $default_use |
+  (if $tp == null then "" else "; tier \($tp.tier)" end) as $tier_suffix |
   def rule_at($c):
     if ($c | test("^rule_[1-9][0-9]*$")) then
       ($c | ltrimstr("rule_") | tonumber) as $n |
@@ -713,15 +863,15 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
   (rule_at($choice)) as $rule |
   (if $sq or $rule == null then "none" else floor_state($rule.floor; $rule.floor.provider; "") end) as $rule_floor_state |
   (if $choice != "default" and $rule == null then []
-   elif $rule == null then profiles($cfg.default // null)
+   elif $rule == null then $default_use
    else profiles($rule.use)
    end) as $answer_use |
   (if $choice != "default" and $rule == null then {invalid: "rule \($choice) is not in the rules file"}
-   elif $rule == null then {source: "default", use: profiles($cfg.default // null), note: "no rule matched"}
+   elif $rule == null then {source: "default", use: $default_use, note: ("no rule matched" + $tier_suffix)}
    elif ($rule.approval // "") == "captain" then {source: $choice, escalate: "rule requires the captain'"'"'s explicit approval before dispatch"}
    elif $rule_floor_state == "unknown" then {source: $choice, escalate: "rule \($choice) floor \($rule.floor.provider)/\($rule.floor.scope) is unverifiable"}
    elif $rule_floor_state == "below"
-     then {source: "default", use: profiles($cfg.default // null), note: "rule \($choice) floor \($rule.floor.scope) below \($rule.floor.min_percent)%: fall through to default"}
+     then {source: "default", use: $default_use, note: ("rule \($choice) floor \($rule.floor.scope) below \($rule.floor.min_percent)%: fall through to default" + $tier_suffix)}
    else {source: $choice, use: profiles($rule.use), note: "rule matched"} end) as $sel |
   def when_of($c): (if rule_at($c) == null then $none_criterion else rule_at($c).when end | .[0:60]);
   {
@@ -730,6 +880,7 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
     rule_when: when_of($picked),
     confidence: $a.confidence, probabilities: $a.probabilities
   }
+  + (if $tp != null and $sel.source == "default" then {tier: $tp.tier, tier_why: $tp.why} else {} end)
   + (if $fb.to then {fallback: "\($choice) (\(when_of($choice))) probability \($fb.p) clears its floor \($fb.to_floor); \($picked) probability \($a.probabilities[$picked]) is below its floor \($picked_floor)"} else {} end)
   as $ev |
   if $sel.invalid then $ev + {status: "error", reason: $sel.invalid}
@@ -741,59 +892,15 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
     $ev + {status: "escalate", reason: $sel.escalate, candidates: ($answer_use | map(evaluate(.)))}
   elif ($sel.use | length) == 0 then $ev + {status: "escalate", reason: "no profiles configured for \($sel.source)", note: $sel.note, candidates: []}
   else
-    ($sel.use | map(evaluate(.))) as $cands |
-    ([$cands[] | select(.provider == $cfg.preferred_provider)]) as $family |
-    ([$family[] | select(.eligible)]) as $preferred |
-    (if ($preferred | length) > 0 then $preferred else $cands end) as $pool |
-    ($ev + (if $cfg.preferred_provider == null then {}
-      else {preferred_provider: ($cfg.preferred_provider + ": " +
-        (if ($family | length) == 0 then "not in matched profiles; preserve the selected rule"
-         elif ($preferred | length) > 0 then "prefer eligible family candidates"
-         else "fall back; every matched family candidate is ineligible" end))} end)) as $ev |
-    ([$pool[] | select(.eligible and ((.unranked // false) | not))]) as $elig |
-    ([$cands[] | select(.unranked)]) as $unranked |
-    if ($elig | length) == 0 then $ev + {status: "escalate",
-      reason: ("no rankable eligible candidate" +
-        (if ($preferred | length) > 0 then " in preferred provider \($cfg.preferred_provider); uncertainty does not authorize fallback" else "" end)),
-      note: $sel.note, candidates: $cands}
-    else
-      (if $sq then ($elig | first) else ($elig | max_by(.spendPriority)) end) as $best |
-      (if $sq then 1 else ([$elig[] | select(.spendPriority == $best.spendPriority)] | length) end) as $ties |
-      if $ties > 1 then $ev + {status: "escalate", reason: "genuine spendPriority tie", note: $sel.note, candidates: $cands}
-      else $ev + {status: "clear", note: $sel.note, candidates: $cands, chosen: $best}
-        + (if ($unranked | length) > 0 then
-             {unranked_note: "\($unranked | length) eligible candidate(s) unranked (\([$unranked[].provider] | unique | join(", ")))"}
-           else {} end)
-      end
-    end
+    $ev + pick($sel.use; $sel.note)
   end') || emit_error "resolution failed"
 
-TEXT=$(jq -r '
-  def flat: tostring | gsub("[\t\r\n]"; " ");
-  def show($value): ($value // "-") | flat;
-  def shell_arg: flat | @sh;
-  "dispatch-resolve:",
-  "  status: \(.status | flat)",
-  "  model: \(show(.model))   latency_ms: \(show(.latency_ms))   tokens: \(show(.tokens.input_tokens))/\(show(.tokens.output_tokens))",
-  "  rule: \(.rule | flat) (\(.rule_when | flat))   confidence: \(.confidence | flat)",
-  "  probabilities: \([.probabilities | to_entries[] | "\(.key | flat)=\(.value | flat)"] | join(" "))",
-  (if .fallback then "  fallback: \(.fallback | flat)" else empty end),
-  (if .reason then "  reason: \(.reason | flat)" else empty end),
-  (if .note then "  note: \(.note | flat)" else empty end),
-  (if .preferred_provider then "  preferred_provider: \(.preferred_provider | flat)" else empty end),
-  (if .unranked_note then "  note: \(.unranked_note | flat)" else empty end),
-  (.candidates[]? | "  candidate: \(.profile.harness | flat):\(show(.profile.model))"
-      + (if .provider then "  provider=\(.provider | flat)" else "" end)
-      + (if .scope then "  scope=\(.scope | flat)  remaining=\(show(.pct))%  spendPriority=\(show(.spendPriority))  runway=\(show(.runway))" else "" end)
-      + (if (.bounds // [] | length) > 1 then "  bounds=" + ([.bounds[] | "\(.scope | flat):\(show(.pct))%/\((.runway // .status) | flat)"] | join(",")) else "" end)
-      + "  -> " + (if .unranked then "eligible, unranked: \(.reason | flat): disclosed uncertainty" elif .sq then "eligible (quota ranking off: home declares a single shared quota)" elif .eligible then "eligible" else "not eligible: \(.reason | flat)" end)),
-  (if .chosen then "  profile: --harness \(.chosen.profile.harness | shell_arg)"
-      + (if .chosen.profile.model then " --model \(.chosen.profile.model | shell_arg)" else "" end)
-      + (if .chosen.profile.effort then " --effort \(.chosen.profile.effort | shell_arg)" else "" end) else empty end)' <<<"$RESULT") || emit_error "output rendering failed"
+render_text
 STATUS=$(jq -r '.status' <<<"$RESULT") || emit_error "status rendering failed"
 PROFILE=$(jq -c 'if .chosen then .chosen.profile | {harness, model: (.model // null), effort: (.effort // null)} else null end' <<<"$RESULT") \
   || emit_error "profile rendering failed"
-record_task "$STATUS" "$PROFILE" || emit_error "could not record the dispatch resolution"
+TIER_RESOLVED=$(jq -c 'if .status == "clear" and .tier then .tier else null end' <<<"$RESULT") || TIER_RESOLVED=null
+record_task "$STATUS" "$PROFILE" "$TIER_RESOLVED" || emit_error "could not record the dispatch resolution"
 dispatch_log "$STATUS"
 printf '%s\n' "$TEXT"
 exit 0

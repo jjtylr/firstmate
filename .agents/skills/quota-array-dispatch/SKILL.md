@@ -24,6 +24,10 @@ Make no `quota-axi` call, apply no quota row, quota floor, runway gate, or `spen
 Account for every candidate as always, stating in place of quota evidence that quota ranking is off by home declaration.
 The declared value must be a boolean; anything else is an actionable configuration error.
 
+## Tier table
+
+When the home's `config/crew-dispatch.json` declares `tiers`, a job no rule matches resolves among the `standard` tier's profiles in place of `default` (a resolver `clear` may name another tier), and a job's step up one tier uses `bin/fm-tier.sh`; [Worker tiers](../../../docs/configuration.md#worker-tiers-configcrew-dispatchjson-tiers) owns both.
+
 ## Worker-side quota helper
 
 The canonical shell helper for a worker that has already performed its model-selection reasoning and now needs to pick the first viable candidate is `bin/fm-quota-choose.sh`.

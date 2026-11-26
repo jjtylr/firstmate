@@ -2038,7 +2038,10 @@ This section is the single owner of the canonical schema and its per-field seman
   ],
   "default": [
     { "harness": "<adapter>", "model": "<optional model>", "effort": "<optional effort>" }
-  ]
+  ],
+  "tiers": {
+    "standard": { "budget_minutes": 180, "use": [ { "harness": "<adapter>", "model": "<model>", "effort": "<effort>", "provider": "<optional quota-axi provider>" } ] }
+  }
 }
 ```
 
@@ -2053,6 +2056,7 @@ This section is the single owner of the canonical schema and its per-field seman
 | Profile `model` and `effort`; rule `why` | Optional. |
 | Top-level `preferred_provider` | Optional provider-family preference, applied after eligibility checks under `quota-array-dispatch`. |
 | Top-level `shared_quota` | Optional; see "Shared-quota opt-out" below. |
+| Top-level `tiers` | Optional worker tier table; [Worker tiers](#worker-tiers-configcrew-dispatchjson-tiers) owns its fields and meaning. |
 
 **Preferred provider**
 
@@ -2123,7 +2127,7 @@ This single-provider table is separate from the frozen legacy mapping used by `f
 - On pane backends, an omitted model or effort means the selected harness uses its own default for that axis; [T3 selection](t3code-backend.md#provider-instances-and-models) owns server-backed defaults.
 - OpenCode receives the effort as its default `build` agent's `variant`, keyed to the resolved model, inside the `OPENCODE_CONFIG_CONTENT` JSON its launch already writes (the per-model reasoning-effort field of the config schema, verified on opencode 1.18.32); with no model resolved, the effort is recorded in task metadata but omitted from the launch.
 - Every profile array is an implicit quota-aware choice resolved through `quota-array-dispatch`.
-- If no dispatch rule fits, firstmate resolves `default` through the same object-or-array path before falling back to `config/crew-harness`.
+- If no dispatch rule fits, firstmate resolves `default` through the same object-or-array path before falling back to `config/crew-harness`; when the file declares `tiers`, the `standard` tier's profiles take the place of `default` for that fallback (see [Worker tiers](#worker-tiers-configcrew-dispatchjson-tiers)).
 - On pane backends, except for `ultra` under the native-effort contract above, an effort value the chosen harness does not accept is recorded as `effort=` in task meta for traceability but omitted from the launch flags.
   For T3 Code, follow the [catalog validation contract](t3code-backend.md#provider-instances-and-models).
 - Bootstrap reports unsupported harness/model/effort combinations as a `CREW_DISPATCH` diagnostic when they are visible in the file.
@@ -2134,7 +2138,7 @@ See [`docs/examples/crew-dispatch.json`](examples/crew-dispatch.json) for a star
 
 - When the file exists, bootstrap validates it with `jq`.
 - Valid files stay silent by default; with `FM_BOOTSTRAP_VERBOSE_FACTS=1`, bootstrap emits `BOOTSTRAP_INFO: crew dispatch active config/crew-dispatch.json`, one `BOOTSTRAP_INFO:` fact per rule, and one fact for the optional default profile set.
-- Malformed JSON, malformed rules, an empty or malformed profile array, a malformed `preferred_provider`, an unverified harness, or an effort value unsupported by that harness is reported as `CREW_DISPATCH: invalid config/crew-dispatch.json - ...`.
+- Malformed JSON, malformed rules, an empty or malformed profile array, a malformed `preferred_provider`, a malformed tier table, an unverified harness, or an effort value unsupported by that harness is reported as `CREW_DISPATCH: invalid config/crew-dispatch.json - ...`.
 - Bootstrap enables resolver-only checks for `approval`, `min_confidence`, `floor`, and present `provider` declarations when `TYPESAFE_API_KEY` is non-empty in the environment or the home's `.env`, or when the home's valid `config/dispatch-credential-sources.json` names a `typesafe` source, regardless of `FM_DISPATCH_PROVIDER`.
   Bootstrap only checks that declaration; it never reads the key or runs the source's tool.
   An OpenRouter key or OpenRouter declaration alone does not enable these bootstrap checks; the resolver validates those declarations itself before any request.
@@ -2189,7 +2193,7 @@ Firstmate invokes the resolve path directly after writing the brief, without a p
 
 When on and at least one rule exists, the tool sends the project name and the brief's task-specific text as state and asks one Choice question whose options are every rule's `when` plus the fixed neutral option for no matching rule; the model never sees quota, catalogs, `why`, `use`, approvals, or confidence floors.
 The same request also asks one shadow Choice question, `tier`, whose fixed options `light`, `standard`, and `strong` each say what that tier covers and what belongs in another tier; Jev is never offered the top tier.
-The tier answer is written only to the dispatch record (below) and never changes the outcome, the profile, or any check below.
+Without a `tiers` table the tier answer is written only to the dispatch record (below) and changes nothing; with one, it picks the tier for a job that resolves to `default`, as [Worker tiers](#worker-tiers-configcrew-dispatchjson-tiers) describes, and changes nothing for a job a rule matches.
 The rule-only request passes the never-send check first, and the tier question is added only when its fixed text passes too, so a list entry that matches it withholds the question rather than the request.
 A provider that answers HTTP 400 or 422 to the two-question request is sent the rule-only request once.
 OpenRouter's Decisions API and a `systemone` host accept the same Choice request shape and return the same typed answer, including confidence and a probability per option.
@@ -2290,8 +2294,9 @@ Firstmate passes its profile line unless it states a reason to override, such as
 **Task record (data/<id>/dispatch-resolution.json)**
 
 For a brief at `data/<id>/brief.md`, or `<FM_DATA_OVERRIDE>/<id>/brief.md` when that override is set, each run first removes that task's `dispatch-resolution.json`, so a decision never outlives a later run.
-Every outcome that exits 0, including off, then writes one JSON object there: `task` (the `<id>`), `status` (`clear`, `ambiguous`, `escalate`, `error`, or `off`), and `profile`.
+Every outcome that exits 0, including off, then writes one JSON object there: `task` (the `<id>`), `status` (`clear`, `ambiguous`, `escalate`, `error`, or `off`), `profile`, and `tier`.
 On `clear`, `profile` holds `harness`, `model`, and `effort`, each `null` when the chosen profile leaves it unset; otherwise `profile` is `null`.
+`tier` names the tier a `clear` job resolved through, and is `null` otherwise.
 A usage or configuration error (exit 2) writes no record.
 `fm-spawn.sh` reads this record as the task's decision, as "Per-launch overrides and inherited defaults" describes.
 
@@ -2305,10 +2310,11 @@ Readers must ignore members and events they do not recognize.
 
 | Event | Written by | Extra members |
 | --- | --- | --- |
-| `dispatch.resolved` | `bin/fm-dispatch-resolve.sh`, for a brief at `data/<id>/brief.md`, on every outcome except exit 2 | `kind` (`ship` or `scout`), `project`, `status`, `reason`, `note`, `provider`, `requested_model`, `jev_model`, `latency_ms`, `tokens`, `rule`, `rule_when`, `picked_rule`, `confidence`, `probabilities`, `profile`, `shadow_tier`, `shadow_tier_note` |
+| `dispatch.resolved` | `bin/fm-dispatch-resolve.sh`, for a brief at `data/<id>/brief.md`, on every outcome except exit 2 | `kind` (`ship` or `scout`), `project`, `status`, `reason`, `note`, `provider`, `requested_model`, `jev_model`, `latency_ms`, `tokens`, `rule`, `rule_when`, `picked_rule`, `confidence`, `probabilities`, `profile`, `shadow_tier`, `shadow_tier_note`, `tier`, `tier_reason`, `checkable_failure` |
 | `dispatch.spawned` | `bin/fm-spawn.sh`, for every fresh ship or scout launch, with or without `--dispatch-override` | `kind`, `project`, `profile`, `override`, `override_reason`, `resolution_status`, `resolution_profile`, `matches_resolution` |
 | `dispatch.relaunched` | `bin/fm-spawn.sh --relaunch`, including through `bin/fm-control.sh relaunch` | `profile`, `via` (`control` or `spawn`) |
 | `dispatch.outcome` | `bin/fm-teardown.sh`, for a ship or scout task the record already names | `outcome`, `forced`, `pr`, `relaunched`, `relaunched_to` |
+| `dispatch.stepped_up` | `bin/fm-tier.sh step-up`, after its relaunch succeeds | `from_tier`, `to_tier`, `trigger`, `detail`, `automatic`, `from_profile`, `to_profile` |
 
 Member meanings:
 
@@ -2320,11 +2326,13 @@ Member meanings:
 - An `error` reason keeps only the text before its first colon, so a provider's error body never reaches the record.
 - `outcome` is `merged` when a merge of the task's PR was recorded (firstmate's merge path or merge poll) or teardown itself proved the PR merged, `landed_local` for a local-only ship cleaned up without `--force`, `report_done` for a scout cleaned up with its report and without `--force`, and `not_landed` otherwise, including cancelled and force-discarded work.
 - `relaunched` counts relaunches since the task's latest `dispatch.spawned`, and `relaunched_to` is the last relaunch's profile, or `null`.
+- `tier` is the tier a job that resolved to `default` took from a `tiers` table, with `tier_reason` saying why, and both are `null` for a rule match or a home without tiers; `checkable_failure` is the kind (`tests`, `check`, or `runbook`) of the brief's checkable-failure line, never its text, or `null`.
+- `automatic` is `true` for a job's one automatic step up and `false` for a step firstmate ran with `--by-firstmate`.
 
 The record never holds the brief text, a key, or anything the resolver withholds from the provider.
 Review findings and rework are not recorded yet, because no machine-readable source for them exists.
 
-Read it with the summary command, which counts each task's latest resolution per rule and per shadow tier, and each task's latest outcome:
+Read it with the summary command, which counts each task's latest resolution per rule, per shadow tier, and per tier taken, every step up by tiers and trigger, and each task's latest outcome:
 
 ```sh
 bin/fm-dispatch-record.sh summary          # plain counts
@@ -2405,6 +2413,99 @@ FM_DISPATCH_BASE_URL=http://127.0.0.1:8080
 ```
 
 The live rule-match evidence is recorded in [`verification/dispatch-resolve.md`](verification/dispatch-resolve.md).
+
+## Worker tiers (config/crew-dispatch.json tiers)
+
+The optional top-level `tiers` table in `config/crew-dispatch.json` sizes the worker for a job no special rule matches, and restarts a job one tier up when it clearly fails.
+There are four tiers, lowest first: `light`, `standard`, `strong`, and `top`.
+The special rules stay rules beside the table, and typed resolution keeps answering which rule fits; only a job that resolves to `default` takes its profile from a tier.
+A home without `tiers` behaves exactly as before.
+
+**Fields**
+
+| Field | Meaning |
+| --- | --- |
+| `tiers.<name>` | One of `light`, `standard`, `strong`, `top`; `standard` is required, and any other is optional. |
+| `use` | One profile object or a non-empty array, as in a rule; each profile needs `harness`, `model`, and `effort`, plus `provider` where the harness has no single provider family. |
+| `budget_minutes` | Optional positive number: how long the job's worker may run before the job is due one step up. |
+
+A profile (harness, model, and effort together) may appear in one tier only, so a running job's tier is read from the profile its task record names.
+Give each tier one profile per tool family (Claude, and OpenAI through Pi); the existing quota-aware choice among a profile array (`quota-array-dispatch`, and the resolver's own ranking) picks the family, so the table adds no second chooser.
+Bootstrap and the resolver validate the table with the rest of the file.
+
+The tier table signed off for this fork, with proposed time budgets, as a starting point to copy into `config/crew-dispatch.json`:
+
+```json
+"tiers": {
+  "light": { "budget_minutes": 60, "use": [
+    { "harness": "claude", "model": "claude-haiku-5-5", "effort": "high" },
+    { "harness": "pi", "model": "openai-codex/gpt-6-luna", "effort": "high", "provider": "codex" } ] },
+  "standard": { "budget_minutes": 180, "use": [
+    { "harness": "claude", "model": "claude-sonnet-5-5", "effort": "high" },
+    { "harness": "pi", "model": "openai-codex/gpt-6.2-sol", "effort": "high", "provider": "codex" } ] },
+  "strong": { "budget_minutes": 360, "use": [
+    { "harness": "claude", "model": "claude-opus-5-5", "effort": "high" },
+    { "harness": "pi", "model": "openai-codex/gpt-6.2-sol", "effort": "xhigh", "provider": "codex" } ] },
+  "top": { "use": [
+    { "harness": "claude", "model": "claude-fable-5-2", "effort": "xhigh" },
+    { "harness": "claude", "model": "claude-fable-5-2", "effort": "high" } ] }
+}
+```
+
+Top is Fable 5.2, xhigh for design and high for builds, and the captain approves and picks each top job.
+Reviews stay cross-family through their own rules: Opus 5.5 high reviews OpenAI-built work, and GPT-6.2 Sol xhigh reviews Claude-built work.
+
+**How a job's tier is picked**
+
+Typed resolution asks its tier question in the same request as the rule question, offering `light`, `standard`, and `strong`; Jev is never offered `top`.
+For a job that resolves to `default`:
+
+- `light` when light's probability is 0.8 or more and the brief names a checkable failure;
+- `strong` when Jev picks strong with confidence at the resolver's 0.6 floor or above;
+- `standard` otherwise, including a standard pick, an unsure pick, and an absent or malformed answer.
+
+Each `clear` result prints a `tier:` line with the reason, and the task record and dispatch record keep the tier.
+When the resolver is off, unreachable, or returns anything but `clear`, firstmate's own intake places a job no rule matches on `standard`, which is the behavior before tiers.
+`bin/fm-dispatch-resolve.sh --tier <name>` resolves one tier's profiles through the same quota-aware choice with no brief and no model request; `top` always escalates.
+
+**Stating a checkable failure**
+
+A job goes below standard only when something other than the worker can show it failed.
+Firstmate states that in the brief's `## Firstmate spec` as one line:
+
+```text
+Checkable failure: tests: tests/fm-pager.test.sh fails while the old flag remains.
+```
+
+The kind after `Checkable failure:` is `tests`, `check` (a required check), or `runbook` (a written runbook step that shows the result), followed by a colon and what shows the failure; a line of any other kind does not count.
+The dispatch record keeps only the kind.
+
+**One automatic step up**
+
+A job steps up one tier, restarted fresh through `bin/fm-control.sh <id> relaunch` with its unchanged instructions and a note carrying the previous worker's profile, its latest status reports, and any notes firstmate adds:
+
+| Trigger | How firstmate learns of it |
+| --- | --- |
+| `failed`, `blocked` | The worker's latest status line, stamped after the current worker's launch. |
+| `check-failed-twice` | The same check of the task's PR failing at two different commits in `state/pr-health.json`, when the [PR health monitor](#pr-health-monitor-configpr-health-monitor) is on; otherwise firstmate names it from the check results it sees. |
+| `over-budget` | The current worker has run past its tier's `budget_minutes`, and its latest line is not `done:`, `paused:`, or `needs-decision:`. |
+| `review-class-a` | Firstmate's judgement: a review found a class-A defect the worker could not fix in its round. |
+
+`bin/fm-tier.sh due` lists the jobs due a step up from the home's own records, and `bin/fm-tier.sh arm` registers a watcher check that wakes firstmate once per new event with the command to run.
+A blocker the worker cannot clear itself - a credential, the shared pipeline daemon, a decision above it - is not a sign the model is too small; firstmate answers it as before rather than stepping the job up.
+
+```sh
+bin/fm-tier.sh step-up <id> --trigger <trigger> [--detail <text>] [--notes-file <path>]
+```
+
+The limits are enforced by that command:
+
+- one automatic step per job, counted from the dispatch record since the job's latest spawn;
+- a second step is firstmate's call, run with `--by-firstmate` and recorded as not automatic;
+- moving into `top` always needs the captain, so the command refuses it; a job whose profile is not in the table is stepped by hand.
+
+Each step appends `dispatch.stepped_up` to the [dispatch record](#typed-dispatch-resolution-env-fm_dispatch_provider-fm_dispatch_model), and the summary counts steps per tier and trigger.
+The script header owns the exact flags and output.
 
 ## Toolchain
 

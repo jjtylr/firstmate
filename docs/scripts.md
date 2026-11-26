@@ -139,6 +139,8 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-credential-source-lib.sh` | Single owner of the declared credential-source schema and its adapters, read by `fm-dispatch-resolve.sh` and checked by `fm-bootstrap.sh` |
 | `fm-dispatch-record.sh` | Append spawn, relaunch, and cleanup outcome lines to the per-dispatch record and print its summary counts |
 | `fm-dispatch-record-lib.sh` | Single owner of the per-dispatch record's path and append, shared by `fm-dispatch-resolve.sh` and `fm-dispatch-record.sh` |
+| `fm-tier.sh`            | Read a job's worker tier, list jobs due one step up, and restart a job fresh one tier up through `fm-control.sh relaunch` |
+| `fm-tier-lib.sh`        | Shared tier-table validation, profile-to-tier lookup, and checkable-failure line reader for `fm-dispatch-resolve.sh`, `fm-bootstrap.sh`, and `fm-tier.sh` |
 | `fm-quota-choose.sh`     | Choose the first candidate with known positive quota from an ordered harness:model list |
 | `fm-vendor-auth-probe.sh`| Run one hard-bounded, non-destructive authentication probe of a named vendor CLI and report the fact |
 | `fm-wake-drain.sh`       | Present and acknowledge the current actor's claimed wake rows alongside status, outcome-backstop, decision, divergence, supervision-host outcome, recovery, and supervision checks |
