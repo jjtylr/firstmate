@@ -193,6 +193,8 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 . "$SCRIPT_DIR/fm-backlog-transition-lib.sh"
 # shellcheck source=bin/fm-quota-axi-lib.sh disable=SC1091
 . "$SCRIPT_DIR/fm-quota-axi-lib.sh"
+# shellcheck source=bin/fm-tier-lib.sh disable=SC1091
+. "$SCRIPT_DIR/fm-tier-lib.sh"
 # shellcheck source=bin/fm-control-lib.sh disable=SC1091
 . "$SCRIPT_DIR/fm-control-lib.sh"
 # shellcheck source=bin/fm-env-lib.sh disable=SC1091
@@ -1189,7 +1191,7 @@ crew_dispatch_validate() {
   else
     verified_harnesses='["claude","codex","opencode","pi","pi-signed","grok","kimi","cursor","agy","muse","rovo","omp","devin","commandcode","polytoken","cortex","kiro","hermes"]'
   fi
-  err=$(jq -r --argjson typed "$typed_active" --argjson verified_harnesses "$verified_harnesses" --arg provider_re "$FM_QUOTA_PROVIDER_ID_RE" '
+  err=$(jq -r --argjson typed "$typed_active" --argjson verified_harnesses "$verified_harnesses" --arg provider_re "$FM_QUOTA_PROVIDER_ID_RE" "$FM_TIER_JQ"'
     def verified($h): $verified_harnesses | index($h);
     def provider_id($p): ($p | type) == "string" and ($p | test($provider_re));
     def effort_ok($h; $m; $e):
@@ -1214,7 +1216,8 @@ crew_dispatch_validate() {
       end;
     def configured_profiles:
       ([(.rules // [])[]? | profiles(.use?)[]?]
-        + (if has("default") then [profiles(.default)[]?] else [] end));
+        + (if has("default") then [profiles(.default)[]?] else [] end)
+        + fm_tier_profiles);
     def malformed_optional_fields($items):
       ($items | any(has("model") and (((.model | type) != "string") or (.model | length) == 0)))
       or ($items | any(has("effort") and (((.effort | type) != "string") or (.effort | length) == 0)))
@@ -1274,6 +1277,10 @@ crew_dispatch_validate() {
       end
     elif $typed and has("default") and malformed_quota_scopes([profiles(.default)[]?]) then "default profile quota_scope must be a non-empty string when present"
     elif $typed and has("default") and malformed_profile_floors([profiles(.default)[]?]) then "default profile floor needs scope and min_percent 0..100"
+    elif (fm_tier_err // "") != "" then fm_tier_err
+    elif $typed and malformed_optional_fields(fm_tier_profiles) then "tier profile provider must match ^[a-z0-9]+(-[a-z0-9]+)*\\z when present"
+    elif $typed and malformed_quota_scopes(fm_tier_profiles) then "tier profile quota_scope must be a non-empty string when present"
+    elif $typed and malformed_profile_floors(fm_tier_profiles) then "tier profile floor needs scope and min_percent 0..100"
     else
       (configured_profiles
         | map(.harness)
@@ -1305,7 +1312,9 @@ crew_dispatch_validate() {
       end;
     (["BOOTSTRAP_INFO: crew dispatch active config/crew-dispatch.json"]
       + [(.rules // [])[]? | "BOOTSTRAP_INFO: crew dispatch rule: " + (.when | tostring) + " -> " + profile_set(.use; .select?)]
-      + (if has("default") then ["BOOTSTRAP_INFO: crew dispatch default: " + profile_set(.default; null)] else [] end))
+      + (if has("default") then ["BOOTSTRAP_INFO: crew dispatch default: " + profile_set(.default; null)] else [] end)
+      + [(.tiers // {}) | to_entries[] | "BOOTSTRAP_INFO: crew dispatch tier \(.key): " + profile_set(.value.use; null)
+          + (if .value.budget_minutes then " budget \(.value.budget_minutes)m" else "" end)])
     | .[]
   ' "$file"
   fi

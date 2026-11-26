@@ -8,8 +8,12 @@
 # report, decision, or PR the ask refers to, without added speaker labels or
 # direct address) and `{FIRSTMATE_SPEC}`
 # under `## Firstmate spec` (build instructions, which are never the captain's
-# intent). bin/fm-dod-lib.sh owns the no-mistakes `--intent` contract those
-# subsections feed; bin/fm-spawn.sh refuses leftover placeholders and a
+# intent). When a job's failure would show in tests, a required check, or a
+# written runbook step, `## Firstmate spec` names it on one line,
+# "Checkable failure: <tests|check|runbook>: <what shows it>", which is what
+# lets typed resolution place a job no rule matches on the light tier
+# (docs/configuration.md "Worker tiers"). bin/fm-dod-lib.sh owns the
+# no-mistakes `--intent` contract those subsections feed; bin/fm-spawn.sh refuses leftover placeholders and a
 # `## Captain's intent` line opening with a Captain label or address. Secondmate
 # charters still use a single `{TASK}` charter fill. Firstmate may adjust other
 # sections when the task genuinely deviates (e.g. working an existing external

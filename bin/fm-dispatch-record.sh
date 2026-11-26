@@ -19,6 +19,7 @@
 #   bin/fm-spawn.sh             spawned (fresh ship and scout launches) and
 #                               relaunched (every --relaunch of one)
 #   bin/fm-teardown.sh          outcome (ship and scout cleanup)
+#   bin/fm-tier.sh              dispatch.stepped_up (through the library)
 #
 # spawned also copies the status and profile from the task's
 # data/<task>/dispatch-resolution.json when one exists, and says whether the
@@ -29,10 +30,11 @@
 # orphan outcome. It also records how many relaunched records follow the task's
 # latest spawned record and the profile of the last of them.
 # summary reads every line, skips lines that are not JSON objects (and counts
-# them), and prints counts per rule and per shadow tier over each task's latest
-# dispatch.resolved record, and per outcome over each spawned or closed task's
-# latest outcome ("no outcome yet" while none). --json prints the same counts
-# as one JSON object.
+# them), and prints counts per rule, per shadow tier, and per tier taken over
+# each task's latest dispatch.resolved record, per step up (from, to, and
+# trigger) over every dispatch.stepped_up record, and per outcome over each
+# spawned or closed task's latest outcome ("no outcome yet" while none).
+# --json prints the same counts as one JSON object.
 #
 # Environment: FM_HOME and FM_DATA_OVERRIDE resolve the data directory exactly
 # as bin/fm-spawn.sh does.
@@ -185,6 +187,9 @@ case "$cmd" in
          shadow_tier: ($resolved | tally(
            if (.shadow_tier.choice | type) == "string" then .shadow_tier.choice
            else "none (" + (.shadow_tier_note // "not asked") + ")" end)),
+         tier: ($resolved | map(select((.tier | type) == "string")) | tally(.tier)),
+         step_up: ([$recs[] | select(.event == "dispatch.stepped_up")]
+           | tally("\(.from_tier // "?") -> \(.to_tier // "?") (\(.trigger // "?")\(if .automatic == false then ", by firstmate" else "" end))")),
          outcome: ([$spawned[].task, $outcomes[].task] | unique
            | map($by_task[.] // "no outcome yet") | tally(.))}' "$path" 2>/dev/null) \
       || { echo "error: could not read dispatch record: $path" >&2; exit 1; }
@@ -200,6 +205,8 @@ case "$cmd" in
         "  tasks: \(.tasks.resolved) resolved, \(.tasks.spawned) spawned, \(.tasks.relaunched) relaunched, \(.tasks.with_outcome) with an outcome",
         section("rule"; .rule),
         section("shadow_tier"; .shadow_tier),
+        section("tier"; .tier),
+        section("step_up"; .step_up),
         section("outcome"; .outcome)' <<<"$counts"
     fi
     ;;
