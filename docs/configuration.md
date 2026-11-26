@@ -100,6 +100,7 @@ Each effective `FM_HOME` contains private operational directories.
 - Project and secondmate registries.
 - Captain preferences and optional shared captain preferences.
 - Learnings, backlog, briefs, scout reports, optional task status archives, and the optional per-task no-mistakes pipeline-spend ledger.
+- The per-dispatch record `data/dispatch-record.jsonl`, kept for tuning dispatch on the home's own outcomes (see "Dispatch record" under [typed dispatch resolution](#typed-dispatch-resolution-env-fm_dispatch_provider-fm_dispatch_model)).
 - Explicitly installed content-addressed extension packages under `data/extensions/packages/`.
 
 `state/` holds runtime records:
@@ -2162,6 +2163,12 @@ Its path must not contain literal `[` or `]` characters; IPv6 host brackets rema
 An invalid value exits 2 before credential lookup and sends nothing, even when no key is available.
 Trailing slashes are removed before appending `/v1/systemone`, so `TYPESAFE_BASE=https://ai-gateway.vercel.sh/typesafe/` sends to `https://ai-gateway.vercel.sh/typesafe/v1/systemone`.
 To select a gateway-specific model ID, set `FM_DISPATCH_PROVIDER=typesafe` and `FM_DISPATCH_MODEL` to that ID.
+
+**Pin the Jev version.**
+Every home that runs the resolver should pin the model version rather than follow `jev-latest`, so the confidence floors and the dispatch record's shadow answers stay comparable across a version change.
+Pinning takes both settings, because `FM_DISPATCH_MODEL` is ignored while `FM_DISPATCH_PROVIDER` is unset: `FM_DISPATCH_PROVIDER=typesafe` and `FM_DISPATCH_MODEL=jev-<version>`.
+Firstmate sets both in each home's `.env`; the script carries no version of its own.
+Move the pin only after re-running the labelled jobs against the new version.
 The selected provider needs a non-empty key from the environment, else `.env`, else, for `typesafe` and `openrouter` only, the credential source the home declares for that provider; `systemone` is the exception, where an absent `FM_DISPATCH_API_KEY` means the request carries no `Authorization` header.
 
 Off means one `dispatch-resolve: off` line on stderr, nothing on stdout, exit 0, and no network call, so firstmate dispatches exactly as it does without the tool.
@@ -2181,6 +2188,10 @@ Firstmate invokes the resolve path directly after writing the brief, without a p
 **What the model receives**
 
 When on and at least one rule exists, the tool sends the project name and the brief's task-specific text as state and asks one Choice question whose options are every rule's `when` plus the fixed neutral option for no matching rule; the model never sees quota, catalogs, `why`, `use`, approvals, or confidence floors.
+The same request also asks one shadow Choice question, `tier`, whose fixed options `light`, `standard`, and `strong` each say what that tier covers and what belongs in another tier; Jev is never offered the top tier.
+The tier answer is written only to the dispatch record (below) and never changes the outcome, the profile, or any check below.
+The rule-only request passes the never-send check first, and the tier question is added only when its fixed text passes too, so a list entry that matches it withholds the question rather than the request.
+A provider that answers HTTP 400 or 422 to the two-question request is sent the rule-only request once.
 OpenRouter's Decisions API and a `systemone` host accept the same Choice request shape and return the same typed answer, including confidence and a probability per option.
 For OpenAI's Decisions API the resolver rewrites that request into OpenAI's shape - the state as JSON text `input` and one `choice` question named `rule` whose `choices` are the same options - and maps the answer's per-option probability array back; a refusal, a missing or duplicated rule answer, or duplicated option values is rejected as malformed.
 Every provider then uses the same response validation and post-model gates.
@@ -2283,6 +2294,42 @@ Every outcome that exits 0, including off, then writes one JSON object there: `t
 On `clear`, `profile` holds `harness`, `model`, and `effort`, each `null` when the chosen profile leaves it unset; otherwise `profile` is `null`.
 A usage or configuration error (exit 2) writes no record.
 `fm-spawn.sh` reads this record as the task's decision, as "Per-launch overrides and inherited defaults" describes.
+
+**Dispatch record (data/dispatch-record.jsonl)**
+
+The dispatch record is the home's history of what dispatch chose and how each job ended, kept so tier thresholds can later be tuned on the fleet's own jobs.
+It lives in `data/`, or under `FM_DATA_OVERRIDE` when set, because it is a durable private record that must outlive each task's runtime state; it is local, gitignored, and never sent anywhere.
+It is always on and append-only, one JSON object per line, each carrying `v` (currently `1`), `ts` (Unix seconds), `event`, and `task`.
+A write that fails prints at most one stderr line and never changes the step it describes.
+Readers must ignore members and events they do not recognize.
+
+| Event | Written by | Extra members |
+| --- | --- | --- |
+| `dispatch.resolved` | `bin/fm-dispatch-resolve.sh`, for a brief at `data/<id>/brief.md`, on every outcome except exit 2 | `kind` (`ship` or `scout`), `project`, `status`, `reason`, `note`, `provider`, `requested_model`, `jev_model`, `latency_ms`, `tokens`, `rule`, `rule_when`, `picked_rule`, `confidence`, `probabilities`, `profile`, `shadow_tier`, `shadow_tier_note` |
+| `dispatch.spawned` | `bin/fm-spawn.sh`, for every fresh ship or scout launch, with or without `--dispatch-override` | `kind`, `project`, `profile`, `override`, `override_reason`, `resolution_status`, `resolution_profile`, `matches_resolution` |
+| `dispatch.relaunched` | `bin/fm-spawn.sh --relaunch`, including through `bin/fm-control.sh relaunch` | `profile`, `via` (`control` or `spawn`) |
+| `dispatch.outcome` | `bin/fm-teardown.sh`, for a ship or scout task the record already names | `outcome`, `forced`, `pr`, `relaunched`, `relaunched_to` |
+
+Member meanings:
+
+- `jev_model` is the model string exactly as the provider's answer returned it, and `requested_model` is the configured `FM_DISPATCH_MODEL` the request named.
+- `rule` is the rule the resolver acted on (after any fallback), `picked_rule` is the model's own pick, and `rule_when` is that rule's `when` text, or `default`.
+- `probabilities` is the rule answer's per-option probabilities, and `profile` is the clear result's `harness`, `model`, and `effort`, or `null`.
+- `shadow_tier` is `{choice, confidence, probabilities}` when the tier answer was well formed, else `null` with `shadow_tier_note` saying why: `absent`, `malformed`, `withheld by the never-send list`, a rejected two-question request, `asked` when the request failed before any answer, or `not asked` when no request was sent.
+- `project` is present only once the request passed the never-send check; on `off` and early `error` it is `null`.
+- An `error` reason keeps only the text before its first colon, so a provider's error body never reaches the record.
+- `outcome` is `merged` when a merge of the task's PR was recorded (firstmate's merge path or merge poll) or teardown itself proved the PR merged, `landed_local` for a local-only ship cleaned up without `--force`, `report_done` for a scout cleaned up with its report and without `--force`, and `not_landed` otherwise, including cancelled and force-discarded work.
+- `relaunched` counts relaunches since the task's latest `dispatch.spawned`, and `relaunched_to` is the last relaunch's profile, or `null`.
+
+The record never holds the brief text, a key, or anything the resolver withholds from the provider.
+Review findings and rework are not recorded yet, because no machine-readable source for them exists.
+
+Read it with the summary command, which counts each task's latest resolution per rule and per shadow tier, and each task's latest outcome:
+
+```sh
+bin/fm-dispatch-record.sh summary          # plain counts
+bin/fm-dispatch-record.sh summary --json   # the same counts as one JSON object
+```
 
 **Credential source declaration (config/dispatch-credential-sources.json)**
 

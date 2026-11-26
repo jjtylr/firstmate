@@ -525,7 +525,9 @@ test_recorded_dispatch_selection_allows_matching_flags() {
   expect_code 0 "$status" "flags equal to the recorded selection should launch: $out"
   assert_meta_profile "$HOME_DIR/state/$id.meta" codex gpt-5 high
   assert_no_grep 'dispatch_override=' "$HOME_DIR/state/$id.meta" "a matching launch should record no override"
-  pass "a recorded dispatch selection allows the matching launch flags"
+  assert_equals '{"event":"dispatch.spawned","task":"'"$id"'","kind":"ship","project":"project","profile":{"harness":"codex","model":"gpt-5","effort":"high"},"override":false,"override_reason":null,"resolution_status":"clear","resolution_profile":{"harness":"codex","model":"gpt-5","effort":"high"},"matches_resolution":true}' \
+    "$(jq -c 'del(.v, .ts)' "$HOME_DIR/data/dispatch-record.jsonl")" "the spawn appends one dispatch record line naming the launched profile and its resolution"
+  pass "a recorded dispatch selection allows the matching launch flags and records the spawn"
 }
 
 test_recorded_dispatch_selection_allows_recorded_override() {
@@ -543,6 +545,9 @@ test_recorded_dispatch_selection_allows_recorded_override() {
   expect_code 0 "$status" "a recorded task override should permit a different launch: $out"
   assert_contains "$out" "spawned $id harness=codex" "spawn did not report the overridden Codex launch"
   assert_grep 'dispatch_override=authorized account test' "$HOME_DIR/state/$id.meta" "task record omitted the override reason"
+  assert_equals 'dispatch.spawned true authorized account test codex/gpt-5/high clear false' \
+    "$(jq -r '"\(.event) \(.override) \(.override_reason) \(.profile.harness)/\(.profile.model)/\(.profile.effort) \(.resolution_status) \(.matches_resolution)"' "$HOME_DIR/data/dispatch-record.jsonl")" \
+    "an overridden spawn records the override, its reason, and the profile actually launched"
   pass "a task override with its reason permits a different launch and is recorded"
 }
 

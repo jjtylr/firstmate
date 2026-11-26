@@ -64,6 +64,13 @@
 #   The model never sees quota, catalogs, approvals, preferred_provider,
 #   confidence floors, `why`, or `use`. With no rules, it returns a non-clear
 #   result so firstmate keeps using the existing intake.
+#   The same request also asks a shadow `tier` Choice question (light,
+#   standard, strong); its answer is written only to the dispatch record and
+#   nothing here reads it. The rule-only request passes the never-send check
+#   first; the tier question is added only when its fixed text passes too. A
+#   provider answering 400 or 422 to the two-question request gets the
+#   rule-only request once. An absent or malformed tier answer is recorded as
+#   such and changes nothing.
 #
 # Shared-quota opt-out: an optional top-level "shared_quota": true in the
 #   rules file declares this home draws every provider's usage from one single
@@ -105,6 +112,12 @@
 #   {"task", "status" (clear, ambiguous, escalate, error, or off), "profile"}
 #   there; profile holds harness, model, and effort on clear and is null
 #   otherwise. fm-spawn.sh reads it as the task's dispatch decision.
+#   Dispatch record: for the same task briefs, every outcome except exit 2 also
+#   appends one dispatch.resolved line to <data>/dispatch-record.jsonl
+#   (bin/fm-dispatch-record-lib.sh; fields in docs/configuration.md "Dispatch
+#   record"). It never holds the brief text, a key, or a provider error body,
+#   and holds the project name only once the request passed the never-send
+#   check. A failed append prints one stderr line and changes nothing else.
 #   clear     -> pass the profile line to fm-spawn.sh unless you state a reason to override
 #   ambiguous -> confidence below the floor; decide as today from the probabilities
 #   escalate  -> the rule requires captain approval, no candidate is rankable, or a genuine tie
@@ -151,9 +164,18 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 . "$SCRIPT_DIR/fm-brief-heading-lib.sh"
 # shellcheck source=bin/fm-credential-source-lib.sh
 . "$SCRIPT_DIR/fm-credential-source-lib.sh"
+# shellcheck source=bin/fm-dispatch-record-lib.sh
+. "$SCRIPT_DIR/fm-dispatch-record-lib.sh"
 
 CONFIDENCE_FLOOR=0.6
 DEFAULT_WHEN="No listed rule applies to this task."
+SCOUT_CONTRACT_LINE='This is a SCOUT task: the deliverable is a written report, not a PR.'
+# Shadow tier question (docs/configuration.md "Dispatch record"): asked in the
+# same request, recorded only, never read by the resolution below.
+TIER_INSTRUCTIONS="Which ONE worker tier fits \`task\` (read \`task.brief\` and \`task.project\`)? Each option says what that tier covers and what belongs in another tier."
+TIER_LIGHT="Wording, docs, renames, one-line config, a written runbook step, or a fix whose cause and place are already known, and only when tests, a required check, or the runbook can show that it failed. Work whose cause is unknown, that needs design choices, or that has no check able to show failure belongs in standard or strong."
+TIER_STANDARD="Ordinary features, known-cause fixes across a few files, reports, reviews against a written spec, and turn-on-and-watch runs. A small edit that a check can show failed belongs in light; spec builds where a mistake can corrupt data, hard diagnosis, and hard design belong in strong."
+TIER_STRONG="Spec builds where a mistake can corrupt data, hard diagnosis, and hard design. Ordinary features, known-cause fixes, reports, and reviews against a written spec belong in standard; small edits that a check can show failed belong in light."
 
 die() { printf 'error: %s\n' "$1" >&2; exit 2; }
 record_task() {
@@ -166,19 +188,72 @@ record_task() {
     return 1
   fi
 }
+# Append this run to the per-dispatch record (bin/fm-dispatch-record-lib.sh),
+# once, for a task brief only. It holds what was sent or decided, never the
+# brief text, a key, or a provider error body; the project name is kept only
+# once the request passed the never-send check. A failed append changes nothing.
+RESP_OK=0 RESULT='' PROJECT_SENT=0 TIER_NOTE='not asked' TIER_ANSWER=null DISPATCH_LOGGED=0
+dispatch_log() {  # <status> [<reason>]
+  local status=$1 reason=${2-} kind=ship resp=null result=null rules=null record
+  [ -n "$TASK_ID" ] && [ -n "$data_dir" ] && [ "$DISPATCH_LOGGED" = 0 ] || return 0
+  DISPATCH_LOGGED=1
+  command -v jq >/dev/null 2>&1 || return 0
+  if [ -r "$BRIEF" ] && grep -qxF "$SCOUT_CONTRACT_LINE" "$BRIEF" 2>/dev/null; then kind=scout; fi
+  if [ "$RESP_OK" = 1 ]; then
+    resp=$(jq -c '{model: (if (.model | type) == "string" then .model else null end), rule: .answers.rule,
+      usage: (.usage // null)}' "$RESP_FILE" 2>/dev/null) || resp=null
+  fi
+  [ -z "$RESULT" ] || result=$(jq -c . <<<"$RESULT" 2>/dev/null) || result=null
+  [ -n "$result" ] || result=null
+  if [ -n "$RULES" ] && [ -r "$RULES" ]; then
+    rules=$(jq -c '[(.rules // [])[] | .when]' "$RULES" 2>/dev/null) || rules=null
+  fi
+  record=$(jq -cn --arg task "$TASK_ID" --arg kind "$kind" --arg status "$status" --arg reason "$reason" \
+    --arg project "$PROJECT" --argjson sent "$PROJECT_SENT" \
+    --arg provider "${DISPATCH_PROVIDER:-}" --arg model "${DISPATCH_MODEL:-}" \
+    --argjson resp "${resp:-null}" --argjson result "$result" --argjson whens "${rules:-null}" \
+    --argjson tier "$TIER_ANSWER" --arg tier_note "$TIER_NOTE" '
+    def opt($v): if $v == "" then null else $v end;
+    ($result.chosen_rule // $resp.rule.choice // null) as $rule |
+    {event: "dispatch.resolved", task: $task, kind: $kind,
+     project: (if $sent == 1 then opt($project) else null end),
+     status: $status,
+     reason: (opt($reason) // $result.reason // null),
+     note: ($result.note // null),
+     provider: opt($provider), requested_model: opt($model),
+     jev_model: ($resp.model // null),
+     latency_ms: ($result.latency_ms // null), tokens: ($resp.usage // null),
+     rule: $rule,
+     rule_when: (if ($rule | type) == "string" and ($rule | test("^rule_[1-9][0-9]*$")) and ($whens | type) == "array"
+       then $whens[($rule | ltrimstr("rule_") | tonumber) - 1] // null
+       elif $rule == "default" then "default" else null end),
+     picked_rule: ($resp.rule.choice // null),
+     confidence: ($resp.rule.confidence // null),
+     probabilities: ($resp.rule.probabilities // null),
+     profile: (if $result.chosen then $result.chosen.profile | {harness, model: (.model // null), effort: (.effort // null)} else null end),
+     shadow_tier: $tier,
+     shadow_tier_note: opt($tier_note)}') || return 0
+  fm_dispatch_record_append "$data_dir" "$record" \
+    || echo "dispatch-resolve: could not append to $(fm_dispatch_record_path "$data_dir")" >&2
+  return 0
+}
 resolver_off() {
   echo "dispatch-resolve: off ($1)" >&2
   record_task off || true
+  dispatch_log off "$1"
   exit 0
 }
 no_rules() {
   record_task escalate || true
+  dispatch_log escalate "no rules to match"
   printf 'dispatch-resolve:\n  status: escalate\n  reason: no rules to match\n'
   exit 0
 }
 emit_error() {
   local reason=$1
   record_task error || true
+  # Keep only the reason's lead: an http failure's tail is the provider's body.
+  dispatch_log error "${reason%%:*}"
   echo "dispatch-resolve: error ($reason)" >&2
   printf 'dispatch-resolve:\n  status: error\n  reason: %s\n' "$reason"
   exit 0
@@ -339,7 +414,9 @@ TASK_TEXT=$(mktemp) || { rm -f "$RESP_FILE" "$QUOTA"; die "mktemp failed"; }
 SEND_TEXT=$(mktemp) || { rm -f "$RESP_FILE" "$QUOTA" "$TASK_TEXT"; die "mktemp failed"; }
 trap 'rm -f "$RULES" "$RESP_FILE" "$QUOTA" "$TASK_TEXT" "$SEND_TEXT"' EXIT
 
+NEVER_SEND_SOFT=0 NEVER_SEND_HIT=0
 never_send_off() {
+  if [ "$NEVER_SEND_SOFT" = 1 ]; then NEVER_SEND_HIT=1; return 0; fi
   resolver_off "$1; nothing sent"
 }
 
@@ -349,7 +426,7 @@ never_send_off() {
 # A brief with neither section goes whole. Ship delivery mode is deliberately
 # not sent: live runs showed it pushing routine ship briefs to the top tier.
 brief_kind() {
-  if grep -qxF 'This is a SCOUT task: the deliverable is a written report, not a PR.' "$BRIEF"; then
+  if grep -qxF "$SCOUT_CONTRACT_LINE" "$BRIEF"; then
     printf 'Brief kind: scout (report only)\n\n'
   fi
 }
@@ -368,37 +445,78 @@ else
 fi
 LAT_MS=null
 command -v curl >/dev/null 2>&1 || emit_error "curl not installed"
+# build_body <0|1>: the provider-specific request, with or without the shadow
+# tier question. Without it the body is exactly the rule-only request.
+build_body() {
+  local with_tier=$1
   REQUEST=$(jq -n --rawfile brief "$TASK_TEXT" --arg project "$PROJECT" --arg model "$DISPATCH_MODEL" \
-    --arg none_criterion "$DEFAULT_WHEN" --slurpfile rules "$RULES" '
+    --arg none_criterion "$DEFAULT_WHEN" --slurpfile rules "$RULES" --argjson with_tier "$with_tier" \
+    --arg tier_instructions "$TIER_INSTRUCTIONS" --arg tier_light "$TIER_LIGHT" \
+    --arg tier_standard "$TIER_STANDARD" --arg tier_strong "$TIER_STRONG" '
     ($rules[0]) as $cfg |
     ($cfg.rules | to_entries | map({key: ("rule_" + ((.key + 1) | tostring)), value: .value.when}) | from_entries) as $criteria |
     {
       model: $model,
       state: {task: {project: $project, brief: $brief}},
-      questions: {
+      questions: ({
         rule: {
           type: "choice",
           instructions: "Which ONE dispatch rule best fits `task` (read `task.brief` and `task.project`)? Each option is the rule'"'"'s own matching condition; pick `default` when no rule'"'"'s condition is met, including when a rule'"'"'s own exemption text excludes this task.",
           criteria: ($criteria + {default: $none_criterion})
         }
-      }
-    }')
+      } + (if $with_tier == 1 then {
+        tier: {
+          type: "choice",
+          instructions: $tier_instructions,
+          criteria: {light: $tier_light, standard: $tier_standard, strong: $tier_strong}
+        }
+      } else {} end))
+    }') || return 1
   # OpenAI's Decisions API takes text input and a named choices array, so the
-  # same state and Choice question are rewritten into its shape.
+  # same state and Choice questions are rewritten into its shape.
   if [ "$DISPATCH_PROVIDER" = openai ]; then
     BODY=$(jq -c '{
       model,
       input: (.state | tojson),
-      questions: [{
-        type: "choice", name: "rule", instructions: .questions.rule.instructions,
-        choices: [.questions.rule.criteria | to_entries[] | {value: .key, description: .value}]
+      questions: [.questions | to_entries[] | {
+        type: "choice", name: .key, instructions: .value.instructions,
+        choices: [.value.criteria | to_entries[] | {value: .key, description: .value}]
       }]
-    }' <<<"$REQUEST") || emit_error "could not build the OpenAI request"
+    }' <<<"$REQUEST") || return 1
   else
     BODY=$REQUEST
   fi
+}
+  build_body 0 || emit_error "could not build the request"
+  # The rule-only request passes exactly today's never-send gate first. The
+  # shadow tier question is then added only when its fixed text passes too, so
+  # a list entry that matches it withholds the question, never the request.
   never_send_check
+  PROJECT_SENT=1
+  RULE_ONLY_BODY=$BODY
+  if build_body 1; then
+    NEVER_SEND_SOFT=1 NEVER_SEND_HIT=0
+    never_send_check
+    NEVER_SEND_SOFT=0
+    if [ "$NEVER_SEND_HIT" = 1 ]; then
+      BODY=$RULE_ONLY_BODY TIER_NOTE='withheld by the never-send list'
+    else
+      TIER_NOTE=asked
+    fi
+  else
+    BODY=$RULE_ONLY_BODY TIER_NOTE='could not build the tier question'
+  fi
   fm_jev_post
+  # A provider that rejects the two-question request gets today's rule-only
+  # request once, so the tier question can never cost the rule answer.
+  if [ "$BODY" != "$RULE_ONLY_BODY" ]; then
+    case "$HTTP" in
+      400|422)
+        TIER_NOTE="request rejected (http $HTTP); retried without the tier question"
+        BODY=$RULE_ONLY_BODY
+        fm_jev_post ;;
+    esac
+  fi
   if [ "$DISPATCH_PROVIDER" = typesafe ]; then
     [ "$HTTP" = 200 ] || emit_error "http $HTTP after ${LAT_MS} ms: $(head -c 200 "$RESP_FILE" 2>/dev/null | tr '\n' ' ')"
   else
@@ -419,12 +537,18 @@ command -v curl >/dev/null 2>&1 || emit_error "curl not installed"
       "$RESP_FILE" >/dev/null 2>&1 || emit_error "response is not a rule Choice answer"
     if ! jq --arg model "$DISPATCH_MODEL" '
       ([.answers[] | select(type == "object" and .name == "rule")][0]) as $a |
+      ([.answers[] | select(type == "object" and .name == "tier")]) as $t |
       {
         model: (if (.model | type) == "string" then .model else $model end),
-        answers: {rule: {
+        answers: ({rule: {
           choice: $a.choice, confidence: $a.confidence,
           probabilities: ($a.probabilities | map({key: .value, value: .probability}) | from_entries)
-        }}
+        }} + (if ($t | length) == 0 then {}
+          elif ($t | length) > 1 then {tier: "duplicated"}
+          else {tier: (try {
+            choice: $t[0].choice, confidence: $t[0].confidence,
+            probabilities: ($t[0].probabilities | map({key: .value, value: .probability}) | from_entries)
+          } catch "unmappable")} end))
       }
       + (if (.usage.input_tokens | type) == "number" and (.usage.output_tokens | type) == "number"
          then {usage: {input_tokens: .usage.input_tokens, output_tokens: .usage.output_tokens}} else {} end)' \
@@ -447,6 +571,28 @@ jq -e --slurpfile rules "$RULES" '
        (.usage.input_tokens | type) == "number" and
        (.usage.output_tokens | type) == "number"))' \
   "$RESP_FILE" >/dev/null 2>&1 || emit_error "response is not a rule Choice answer"
+RESP_OK=1
+
+# ---- shadow tier answer: recorded only; nothing below reads it -----------------
+# The same shape checks as the rule answer. Absent or malformed leaves the
+# record's shadow_tier null with a note, and changes nothing else.
+if [ "$TIER_NOTE" = asked ]; then
+  tier_state=$(jq -c '
+    (.answers.tier) as $t |
+    if (.answers | type) != "object" or (.answers | has("tier") | not) then {note: "absent"}
+    elif ($t | type) == "object" and
+      ($t.choice | type) == "string" and (["light", "standard", "strong"] | index($t.choice)) != null and
+      ($t.confidence | type) == "number" and $t.confidence >= 0 and $t.confidence <= 1 and
+      ($t.probabilities | type) == "object" and
+      (($t.probabilities | keys) == ["light", "standard", "strong"]) and
+      all($t.probabilities[]; type == "number" and . >= 0 and . <= 1) and
+      (($t.probabilities | [.[]] | add) as $total | $total >= 0.99 and $total <= 1.01)
+    then {answer: {choice: $t.choice, confidence: $t.confidence, probabilities: $t.probabilities}}
+    else {note: "malformed"} end' "$RESP_FILE" 2>/dev/null) || tier_state='{"note":"malformed"}'
+  TIER_ANSWER=$(jq -c '.answer // null' <<<"$tier_state" 2>/dev/null) || TIER_ANSWER=null
+  [ -n "$TIER_ANSWER" ] || TIER_ANSWER=null
+  TIER_NOTE=$(jq -r '.note // ""' <<<"$tier_state" 2>/dev/null) || TIER_NOTE=malformed
+fi
 
 # ---- quota evidence: one quota-axi --json snapshot, skipped entirely under the
 # ---- shared-quota opt-out (a stub keeps the slurpfile contract intact) ---------
@@ -580,7 +726,7 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
   def when_of($c): (if rule_at($c) == null then $none_criterion else rule_at($c).when end | .[0:60]);
   {
     model: $r.model, latency_ms: $lat, tokens: ($r.usage // null),
-    rule: $picked,
+    rule: $picked, chosen_rule: $choice,
     rule_when: when_of($picked),
     confidence: $a.confidence, probabilities: $a.probabilities
   }
@@ -648,5 +794,6 @@ STATUS=$(jq -r '.status' <<<"$RESULT") || emit_error "status rendering failed"
 PROFILE=$(jq -c 'if .chosen then .chosen.profile | {harness, model: (.model // null), effort: (.effort // null)} else null end' <<<"$RESULT") \
   || emit_error "profile rendering failed"
 record_task "$STATUS" "$PROFILE" || emit_error "could not record the dispatch resolution"
+dispatch_log "$STATUS"
 printf '%s\n' "$TEXT"
 exit 0

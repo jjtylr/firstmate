@@ -150,7 +150,16 @@ while [ $# -gt 0 ]; do
   esac
 done
 cat > "$FAKE_CURL_LOG/body"
+cat "$FAKE_CURL_LOG/body" >> "$FAKE_CURL_LOG/bodies"
+printf '\n' >> "$FAKE_CURL_LOG/bodies"
 cat /dev/fd/3 > "$FAKE_CURL_LOG/header" 2>/dev/null || printf 'fd3 unreadable\n' > "$FAKE_CURL_LOG/header"
+# FAKE_CURL_TIER_HTTP answers a request that carries the tier question with
+# that status, so a test can make the provider reject the two-question shape.
+if [ -n "${FAKE_CURL_TIER_HTTP:-}" ] && jq -e '.questions.tier // (.questions | arrays | map(select(.name == "tier")) | first)' "$FAKE_CURL_LOG/body" >/dev/null 2>&1; then
+  printf '{"error":"unsupported question"}' > "$out"
+  printf '%s' "$FAKE_CURL_TIER_HTTP"
+  exit 0
+fi
 if [ -n "${FAKE_CURL_MUTATE_SOURCE:-}" ]; then
   cp "$FAKE_CURL_MUTATE_SOURCE" "${FAKE_CURL_MUTATE_TARGET:?}"
 fi
@@ -440,14 +449,16 @@ printf '%s\n' "$body" > "$TMP_ROOT/typesafe-body.json"
 assert_equals 'jev-latest' "$(jq -r .model <<<"$body")" "default model is jev-latest"
 assert_equals 'pager' "$(jq -r .state.task.project <<<"$body")" "project rides in the state"
 assert_contains "$(jq -r .state.task.brief <<<"$body")" 'off-by-one in the pager' "a brief without task headings rides whole in the state"
-assert_equals '["rule"]' "$(jq -c '.questions | keys' <<<"$body")" "only the rule Choice is asked"
+assert_equals '["rule","tier"]' "$(jq -c '.questions | keys_unsorted' <<<"$body")" "the rule Choice and the shadow tier Choice are asked in one request"
+assert_equals '["light","standard","strong"]' "$(jq -c '.questions.tier.criteria | keys' <<<"$body")" "the tier Choice offers light, standard, and strong, never top"
+assert_contains "$(jq -r '.questions.tier.criteria.light' <<<"$body")" 'belongs in standard or strong' "each tier option says what belongs elsewhere"
 assert_equals '["default","rule_1","rule_2","rule_3","rule_4"]' "$(jq -c '.questions.rule.criteria | keys' <<<"$body")" "one option per rule plus default"
 assert_equals 'No listed rule applies to this task.' "$(jq -r '.questions.rule.criteria.default' <<<"$body")" "the fixed generic none criterion is the default option"
 assert_equals 'A simple bug fix with a stated root cause.' "$(jq -r '.questions.rule.criteria.rule_4' <<<"$body")" "rule when text is the option verbatim"
 assert_not_contains "$body" 'SECRET-WHY-TEXT' "why text never leaves the machine"
 assert_not_contains "$body" 'spendPriority' "quota never leaves the machine"
 assert_not_contains "$body" 'cursor-grok' "use profiles never leave the machine"
-pass "clear: one rule Choice request, key on the fd header only, spendPriority argmax over every candidate"
+pass "clear: one request with the rule and shadow tier Choices, key on the fd header only, spendPriority argmax over every candidate"
 
 # --- TypeSafe base: default, environment/.env precedence, and safe URLs ------
 while IFS='|' read -r base endpoint; do
@@ -1061,7 +1072,9 @@ assert_equals $'curl:clean\nquota-axi:clean' "$(cat "$LOG/child-env")" "openai k
 body=$(cat "$LOG/body")
 assert_equals 'gpt-6-luna' "$(jq -r .model <<<"$body")" "openai model is explicit"
 assert_equals "$(jq -c .state "$TMP_ROOT/typesafe-body.json")" "$(jq -c '.input | fromjson' <<<"$body")" "openai input carries the same state as JSON text"
-assert_equals '1 choice rule' "$(jq -r '"\(.questions | length) \(.questions[0].type) \(.questions[0].name)"' <<<"$body")" "openai asks one named choice question"
+assert_equals '2 choice rule choice tier' "$(jq -r '"\(.questions | length) \(.questions[0].type) \(.questions[0].name) \(.questions[1].type) \(.questions[1].name)"' <<<"$body")" "openai asks the rule and the shadow tier as named choice questions"
+assert_equals "$(jq -Sc '.questions.tier.criteria' "$TMP_ROOT/typesafe-body.json")" \
+  "$(jq -Sc '.questions[1].choices | map({key: .value, value: .description}) | from_entries' <<<"$body")" "openai tier choices are the same three tiers"
 assert_equals "$(jq -r .questions.rule.instructions "$TMP_ROOT/typesafe-body.json")" "$(jq -r '.questions[0].instructions' <<<"$body")" "openai keeps the question instructions"
 assert_equals "$(jq -Sc '.questions.rule.criteria' "$TMP_ROOT/typesafe-body.json")" \
   "$(jq -Sc '.questions[0].choices | map({key: .value, value: .description}) | from_entries' <<<"$body")" "openai choices are every rule plus the none option"
@@ -1412,6 +1425,113 @@ write_response "$RESPONSE" rule_4 0.9
 TYPESAFE_API_KEY=$KEY run code out err "$TMP_ROOT/data/pager-fix/brief.md" --project pager
 assert_absent "$TMP_ROOT/data/pager-fix/dispatch-resolution.json" "a data/<id>/ directory outside the configured data root writes no task record"
 pass "task record: the configured data root, including FM_DATA_OVERRIDE, decides where the record goes"
+
+# --- dispatch record: data/dispatch-record.jsonl and the shadow tier ----------
+DISPATCH_RECORD="$HOME_DIR/data/dispatch-record.jsonl"
+write_tier_response() {  # <path> <tier answer JSON, or empty for none>
+  local tier=${2:-}
+  jq -n --argjson tier "${tier:-null}" '
+    {model: "jev-1.14.0",
+     answers: ({rule: {type: "choice", choice: "rule_4", confidence: 0.9,
+       probabilities: {rule_1: 0.01, rule_2: 0.01, rule_3: 0.01, rule_4: 0.96, default: 0.01}}}
+       + (if $tier == null then {} else {tier: $tier} end)),
+     usage: {input_tokens: 900, output_tokens: 70}}' > "$1"
+}
+last_record() { tail -n 1 "$DISPATCH_RECORD"; }
+without_latency() { grep -v 'latency_ms:' <<<"$1"; }
+rm -f "$DISPATCH_RECORD"
+
+reset_log
+write_tier_response "$RESPONSE" ''
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
+assert_absent "$DISPATCH_RECORD" "a brief outside data/<id>/ appends no dispatch record"
+
+reset_log
+TYPESAFE_API_KEY=$KEY run code out err "$TASK_BRIEF" --project pager
+baseline_out=$(without_latency "$out")
+baseline_task=$(cat "$TASK_RECORD")
+assert_equals 1 "$(wc -l < "$DISPATCH_RECORD" | tr -d ' ')" "one resolve appends exactly one record line"
+assert_equals 'dispatch.resolved pager-fix ship pager clear rule_4 A simple bug fix with a stated root cause. jev-1.14.0 typesafe jev-latest cursor/cursor-grok-4.6-medium/null absent null' \
+  "$(last_record | jq -r '"\(.event) \(.task) \(.kind) \(.project) \(.status) \(.rule) \(.rule_when) \(.jev_model) \(.provider) \(.requested_model) \(.profile.harness)/\(.profile.model)/\(.profile.effort) \(.shadow_tier_note) \(.shadow_tier)"')" \
+  "the record names the task, kind, project, rule, answering Jev model, and spawned-ready profile"
+assert_equals '{"rule_1":0.01,"rule_2":0.01,"rule_3":0.01,"rule_4":0.96,"default":0.01}' \
+  "$(last_record | jq -c .probabilities)" "the record keeps Jev's per-option probabilities"
+assert_not_contains "$(cat "$DISPATCH_RECORD")" 'off-by-one' "the record never holds the brief text"
+assert_not_contains "$(cat "$DISPATCH_RECORD")" "$KEY" "the record never holds the key"
+assert_not_contains "$(cat "$DISPATCH_RECORD")" 'SECRET-WHY-TEXT' "the record never holds rule why text"
+
+reset_log
+write_tier_response "$RESPONSE" '{"type":"choice","choice":"strong","confidence":0.83,"probabilities":{"light":0.02,"standard":0.15,"strong":0.83}}'
+TYPESAFE_API_KEY=$KEY run code out err "$TASK_BRIEF" --project pager
+assert_equals "$baseline_out" "$(without_latency "$out")" "a shadow tier answer leaves the printed resolution unchanged"
+assert_equals "$baseline_task" "$(cat "$TASK_RECORD")" "a shadow tier answer leaves the task's dispatch decision unchanged"
+assert_equals 'rule_4 cursor {"choice":"strong","confidence":0.83,"probabilities":{"light":0.02,"standard":0.15,"strong":0.83}} null' \
+  "$(last_record | jq -c '[.rule, .profile.harness, .shadow_tier, .shadow_tier_note]' | jq -r 'map(if type == "object" then tojson else tostring end) | join(" ")')" \
+  "the shadow tier answer and its probabilities are recorded beside the unchanged rule"
+pass "dispatch record: a resolve appends one line with the rule, probabilities, Jev model, profile, and shadow tier, and the tier changes nothing"
+
+for malformed in \
+  '"strong"' \
+  '{"choice":"top","confidence":0.9,"probabilities":{"light":0.05,"standard":0.05,"strong":0.9}}' \
+  '{"choice":"light","confidence":0.9,"probabilities":{"light":0.9,"standard":0.1}}' \
+  '{"choice":"light","confidence":2,"probabilities":{"light":0.9,"standard":0.05,"strong":0.05}}' \
+  '{"choice":"light","confidence":0.9,"probabilities":{"light":0.9,"standard":0.9,"strong":0.9}}'; do
+  reset_log
+  write_tier_response "$RESPONSE" "$malformed"
+  TYPESAFE_API_KEY=$KEY run code out err "$TASK_BRIEF" --project pager
+  expect_code 0 "$code" "a malformed tier answer exits 0"
+  assert_equals "$baseline_out" "$(without_latency "$out")" "a malformed tier answer ($malformed) leaves the resolution unchanged"
+  assert_equals "$baseline_task" "$(cat "$TASK_RECORD")" "a malformed tier answer leaves the task's dispatch decision unchanged"
+  assert_equals 'clear null malformed' "$(last_record | jq -r '"\(.status) \(.shadow_tier) \(.shadow_tier_note)"')" "a malformed tier answer is recorded as malformed"
+done
+pass "dispatch record: a malformed tier answer is recorded as malformed and dispatch behaves exactly as without it"
+
+reset_log
+write_tier_response "$RESPONSE" ''
+FAKE_CURL_TIER_HTTP=422 TYPESAFE_API_KEY=$KEY run code out err "$TASK_BRIEF" --project pager
+assert_equals "$baseline_out" "$(without_latency "$out")" "a provider rejecting the tier question still resolves the rule as before"
+assert_equals 2 "$(jq -s length "$LOG/bodies")" "the rejected two-question request is retried once"
+assert_equals 'null' "$(jq -c '.questions.tier' "$LOG/body")" "the retry is the rule-only request"
+assert_equals 'request rejected (http 422); retried without the tier question' "$(last_record | jq -r .shadow_tier_note)" "the record says the tier question was rejected"
+reset_log
+FAKE_CURL_HTTP=500 TYPESAFE_API_KEY=$KEY run code out err "$TASK_BRIEF" --project pager
+assert_contains "$out" '  status: error' "a server error is still an error"
+assert_equals 1 "$(jq -s length "$LOG/bodies")" "a server error is not retried"
+assert_equals 'error http 500 after' "$(last_record | jq -r '"\(.status) \(.reason)"' | sed 's/ [0-9]* ms$//')" "an error record keeps the reason's lead only"
+pass "dispatch record: a rejected two-question request falls back to today's request once"
+
+reset_log
+printf '%s\n' 'written runbook step' > "$HOME_DIR/config/dispatch-never-send"
+write_tier_response "$RESPONSE" ''
+TYPESAFE_API_KEY=$KEY run code out err "$TASK_BRIEF" --project pager
+assert_contains "$out" '  status: clear' "a never-send entry matching only the tier text still sends the rule request"
+assert_equals 'null' "$(jq -c '.questions.tier' "$LOG/body")" "the matching tier question is withheld"
+assert_equals 'withheld by the never-send list' "$(last_record | jq -r .shadow_tier_note)" "the record says the tier question was withheld"
+reset_log
+printf '%s\n' 'off-by-one in the pager' > "$HOME_DIR/config/dispatch-never-send"
+TYPESAFE_API_KEY=$KEY run code out err "$TASK_BRIEF" --project pager
+assert_absent "$LOG/argv" "a never-send brief match still sends nothing"
+assert_equals 'off null not asked' "$(last_record | jq -r '"\(.status) \(.project) \(.shadow_tier_note)"')" "a withheld request records off without the project"
+rm -f "$HOME_DIR/config/dispatch-never-send"
+reset_log
+run code out err "$TASK_BRIEF" --project pager
+assert_equals 'off null' "$(last_record | jq -r '"\(.status) \(.project)"')" "a keyless run records off"
+assert_contains "$(last_record | jq -r .reason)" 'TYPESAFE_API_KEY absent' "the off record says why"
+pass "dispatch record: the never-send list governs the tier question as it does the request, and off runs are recorded"
+
+reset_log
+write_tier_response "$RESPONSE" ''
+jq '.answers = [{type: "choice", name: "rule", choice: "rule_4", confidence: 0.9,
+    probabilities: [{value: "rule_1", probability: 0.01}, {value: "rule_2", probability: 0.01}, {value: "rule_3", probability: 0.01}, {value: "rule_4", probability: 0.96}, {value: "default", probability: 0.01}]},
+  {type: "choice", name: "tier", choice: "standard", confidence: 0.7,
+    probabilities: [{value: "light", probability: 0.2}, {value: "standard", probability: 0.7}, {value: "strong", probability: 0.1}]}]' \
+  "$RESPONSE" > "$TMP_ROOT/openai-tier.json"
+FM_DISPATCH_PROVIDER=openai FM_DISPATCH_MODEL=gpt-6-luna OPENAI_API_KEY=openai-key-never-recorded \
+  FAKE_CURL_RESPONSE="$TMP_ROOT/openai-tier.json" run code out err "$TASK_BRIEF" --project pager
+assert_contains "$out" '  status: clear' "an openai answer with a tier resolves"
+assert_equals 'openai gpt-6-luna jev-1.14.0 standard 0.7' "$(last_record | jq -r '"\(.provider) \(.requested_model) \(.jev_model) \(.shadow_tier.choice) \(.shadow_tier.probabilities.standard)"')" \
+  "an openai tier answer maps back into the record"
+pass "dispatch record: the openai tier answer maps back like the rule answer"
 
 # --- per-rule confidence floor ------------------------------------------------
 write_floor_response() {  # <path> <choice> <confidence> <rule_1> <rule_2> <rule_3> <rule_4> <default>

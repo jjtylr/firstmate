@@ -1004,7 +1004,10 @@ test_same_harness_relaunch_keeps_the_profile_axes() {
   expect_code 0 "$rc" "a same-harness relaunch should succeed"$'\n'"$out"
   [ "$(meta_field "$dir" rl6 model)" = opus ] || fail "the model should carry across a same-harness relaunch"
   [ "$(meta_field "$dir" rl6 effort)" = high ] || fail "the effort should carry across a same-harness relaunch"
-  pass "fm-control relaunch: a same-harness relaunch keeps the profile axes it was running with"
+  assert_equals 'dispatch.relaunched rl6 claude/opus/high control' \
+    "$(jq -r '"\(.event) \(.task) \(.profile.harness)/\(.profile.model)/\(.profile.effort) \(.via)"' "$dir/home/data/dispatch-record.jsonl")" \
+    "the relaunch appends its new profile to the dispatch record"
+  pass "fm-control relaunch: a same-harness relaunch keeps the profile axes it was running with and records the relaunch"
 }
 
 test_native_ultra_relaunch_preserves_profile_and_rejects_before_stop() {
