@@ -24,6 +24,10 @@ cp -R "$ROOT/bin" "$CODE/bin"
 cat > "$CODE/bin/fm-control.sh" <<'SH'
 #!/usr/bin/env bash
 printf 'control %s\n' "$*" >> "$FM_FAKE_CALLS"
+if [ -n "${FM_FAKE_HOLD:-}" ]; then
+  for _ in $(seq 1 300); do [ -e "$FM_FAKE_HOLD" ] || break; sleep 0.1; done
+  : > "$FM_FAKE_CALLS.finished"
+fi
 [ -z "${FM_FAKE_RELAUNCH_FAIL:-}" ] || { echo 'error: the replacement agent did not come up' >&2; exit 1; }
 SH
 cat > "$CODE/bin/fm-remote-secondmate-relaunch.sh" <<'SH'
@@ -69,7 +73,7 @@ SH
 chmod +x "$FAKEBIN/tmux"
 
 reset_world() {
-  rm -rf "$HOME_DIR/state" "$SM_HOME" "$CALLS" "$CALLS.remote-body"
+  rm -rf "$HOME_DIR/state" "$SM_HOME" "$CALLS" "$CALLS.remote-body" "$CALLS.finished"
   mkdir -p "$HOME_DIR/state" "$SM_HOME"
   printf 'sm1\n' > "$SM_HOME/.fm-secondmate-home"
   : > "$CALLS"
@@ -88,14 +92,48 @@ EOF
     "remote_host=box-2" "remote_backend=herdr"
 }
 
-# run_wake <args...>: sets OUT (stdout and stderr together) and RC.
-run_wake() {
-  RC=0
-  OUT=$(env PATH="$FAKEBIN:$PATH" FM_HOME="$HOME_DIR" FM_FAKE_CALLS="$CALLS" \
+wake_env() {
+  env PATH="$FAKEBIN:$PATH" FM_HOME="$HOME_DIR" FM_FAKE_CALLS="$CALLS" \
     FM_FAKE_PANE="${PANE:-claude}" FM_FAKE_REMOTE_STATE="${REMOTE_STATE:-alive}" \
     FM_FAKE_REMOTE_NOTE_RC="${REMOTE_NOTE_RC:-0}" \
-    FM_FAKE_RELAUNCH_FAIL="${RELAUNCH_FAIL:-}" \
-    "$CODE/bin/fm-alert-wake.sh" "$@" 2>&1) || RC=$?
+    FM_FAKE_RELAUNCH_FAIL="${RELAUNCH_FAIL:-}" FM_FAKE_HOLD="${HOLD:-}" \
+    "$CODE/bin/fm-alert-wake.sh" "$@"
+}
+
+# Background checks end with exactly one outcome line in the mate's log.
+outcome_count() {  # <mate-id>
+  grep -cE 'note only:|relaunched |relaunch of .* (failed|not attempted)' \
+    "$HOME_DIR/state/.alert-wake-$1.log" 2>/dev/null || true
+}
+
+wait_until() {  # <label> <command...>
+  local label=$1
+  shift
+  for _ in $(seq 1 200); do
+    "$@" && return 0
+    sleep 0.1
+  done
+  fail "timed out waiting for $label"
+}
+
+outcomes_reach() {  # <mate-id> <count>
+  [ "$(outcome_count "$1")" -ge "$2" ] 2>/dev/null
+}
+
+# run_wake <args...>: sets OUT (stdout and stderr together), RC, and, once any
+# background check it started has ended, LOGGED (that mate's log).
+run_wake() {
+  local before
+  before=$(outcome_count "$1")
+  RC=0
+  OUT=$(wake_env "$@" 2>&1) || RC=$?
+  LOGGED=
+  case "$OUT" in
+    *'in the background'*)
+      wait_until "the background check of $1" outcomes_reach "$1" "$((${before:-0} + 1))"
+      LOGGED=$(cat "$HOME_DIR/state/.alert-wake-$1.log")
+      ;;
+  esac
 }
 
 note_count() {  # <home>
@@ -159,7 +197,7 @@ for pane in zsh missing; do
   assert_equals 0 "$(note_count "$HOME_DIR")" "the primary inbox must not get the mate's note ($pane)"
   assert_grep 'captain inbox note' "$SM_HOME/state/.wake-queue" "the mate's own queue gets the wake ($pane)"
   assert_equals 'control sm1 relaunch' "$(cat "$CALLS")" "a down local mate is relaunched once ($pane)"
-  assert_contains "$OUT" 'relaunched sm1' "the relaunch should be reported ($pane)"
+  assert_contains "$LOGGED" 'relaunched sm1' "the relaunch should be logged ($pane)"
 done
 pass "a local mate proven not running is relaunched through fm-control"
 
@@ -171,20 +209,20 @@ for pane in claude node unreadable; do
   unset PANE
   expect_code 0 "$RC" "local mate reading $pane"$'\n'"$OUT"
   assert_equals 1 "$(note_count "$SM_HOME")" "note expected ($pane)"
-  assert_contains "$OUT" 'note only' "note-only outcome expected ($pane)"
+  assert_contains "$LOGGED" 'note only' "note-only outcome expected ($pane)"
   assert_no_relaunch "local $pane"
 done
 reset_world
 rm "$HOME_DIR/state/sm1.meta"
 PANE=zsh run_wake sm1 alerts-alpha 7 'Job failed' 15
 expect_code 0 "$RC" "mate without a record"$'\n'"$OUT"
-assert_contains "$OUT" 'no second mate record' "a missing record is unclear"
+assert_contains "$LOGGED" 'no second mate record' "a missing record is unclear"
 assert_no_relaunch "no record"
 reset_world
 printf 'remote_host=box-9\n' >> "$HOME_DIR/state/sm1.meta"
 PANE=zsh run_wake sm1 alerts-alpha 7 'Job failed' 15
 expect_code 0 "$RC" "mate whose records disagree"$'\n'"$OUT"
-assert_contains "$OUT" 'disagree on where sm1 runs' "disagreeing records are unclear"
+assert_contains "$LOGGED" 'disagree on where sm1 runs' "disagreeing records are unclear"
 assert_no_relaunch "records disagree"
 pass "a live or unclear local mate gets the note only"
 
@@ -205,11 +243,45 @@ PANE=zsh run_wake sm1 alerts-alpha 7 'Job failed' 15
 rm -f "$T/lock-held"
 wait "$HOLDER"
 expect_code 0 "$RC" "locked mate"$'\n'"$OUT"
-assert_contains "$OUT" 'is in progress' "a held liveness lock should be reported"
+assert_contains "$LOGGED" 'is in progress' "a held liveness lock should be reported"
 assert_no_relaunch "locked"
 PANE=zsh run_wake sm1 alerts-alpha 7 'Job failed' 30
 assert_grep 'control sm1 relaunch' "$CALLS" "the lock should be free again afterwards"
 pass "a mate another liveness episode holds is not relaunched"
+
+# --- the command returns before the relaunch finishes ----------------------------
+reset_world
+: > "$T/hold"
+RC=0
+# The command substitution returns only once nothing holds its output open.
+OUT=$(PANE=zsh HOLD="$T/hold" wake_env sm1 alerts-alpha 7 'Job failed' 15 2>&1) || RC=$?
+expect_code 0 "$RC" "wake with a slow relaunch"$'\n'"$OUT"
+assert_absent "$CALLS.finished" "the command must return before the relaunch finishes"
+assert_contains "$OUT" 'checking sm1 in the background' "the handoff should be reported"
+wait_until "the relaunch to start" grep -q '^control sm1 relaunch$' "$CALLS"
+PANE=zsh run_wake sm1 alerts-alpha 7 'Job failed' 30
+assert_contains "$LOGGED" 'is in progress' "the running relaunch should still hold the liveness lock"
+assert_equals 1 "$(grep -c '^control ' "$CALLS")" "a mate mid-relaunch must not be relaunched again"
+rm -f "$T/hold"
+wait_until "the held relaunch to be logged" outcomes_reach sm1 2
+assert_present "$CALLS.finished" "the background relaunch should run to completion"
+assert_grep 'relaunched sm1' "$HOME_DIR/state/.alert-wake-sm1.log" "its success should be logged"
+pass "the command returns while the relaunch still runs under the liveness lock"
+
+# --- a caller that kills its process group does not stop the relaunch -------------
+reset_world
+: > "$T/hold"
+set -m
+( PANE=zsh HOLD="$T/hold" wake_env sm1 alerts-alpha 7 'Job failed' 15; sleep 30 ) > "$T/caller.out" 2>&1 &
+CALLER=$!
+set +m
+wait_until "the relaunch to start" grep -q '^control sm1 relaunch$' "$CALLS"
+kill -KILL -- "-$CALLER" || fail "could not kill the caller's process group"
+wait "$CALLER" 2>/dev/null || true
+rm -f "$T/hold"
+wait_until "the relaunch to outlive its caller" outcomes_reach sm1 1
+assert_present "$CALLS.finished" "the relaunch should survive the caller's process group"
+pass "killing the caller's process group leaves the relaunch running"
 
 # --- a down remote mate is started through the remote helper ---------------------
 for state in dead missing; do
@@ -231,7 +303,7 @@ for state in alive ambiguous unreadable unverified unreachable; do
   REMOTE_STATE=$state run_wake far alerts-beta 9 'Feed silent' 15
   expect_code 0 "$RC" "remote mate reading $state"$'\n'"$OUT"
   assert_grep 'fm-inbox.sh note' "$CALLS" "note expected ($state)"
-  assert_contains "$OUT" 'note only' "note-only outcome expected ($state)"
+  assert_contains "$LOGGED" 'note only' "note-only outcome expected ($state)"
   assert_no_relaunch "remote $state"
 done
 pass "a live or unclear remote mate gets the note only"
@@ -240,13 +312,13 @@ pass "a live or unclear remote mate gets the note only"
 reset_world
 PANE=zsh RELAUNCH_FAIL=1 run_wake sm1 alerts-alpha 7 'Job failed' 15
 expect_code 0 "$RC" "failed local relaunch"$'\n'"$OUT"
-assert_contains "$OUT" 'relaunch of sm1 failed (exit 1)' "local failure should be reported"
-assert_contains "$OUT" 'the replacement agent did not come up' "local failure reason"
+assert_contains "$LOGGED" 'relaunch of sm1 failed (exit 1)' "local failure should be logged"
+assert_contains "$LOGGED" 'the replacement agent did not come up' "local failure reason"
 assert_equals 1 "$(note_count "$SM_HOME")" "the note survives a failed relaunch"
 reset_world
 REMOTE_STATE=dead RELAUNCH_FAIL=1 run_wake far alerts-beta 9 'Feed silent' 15
 expect_code 0 "$RC" "failed remote relaunch"$'\n'"$OUT"
-assert_contains "$OUT" 'the host refused the relaunch' "remote failure reason"
+assert_contains "$LOGGED" 'the host refused the relaunch' "remote failure reason"
 pass "a failed relaunch exits 0 after the note and reports why"
 
 # --- the note decides the exit status ---------------------------------------------
@@ -259,6 +331,12 @@ REMOTE_STATE=dead REMOTE_NOTE_RC=3 run_wake far alerts-beta 9 'Feed silent' 15
 expect_code 0 "$RC" "saved note with no wake"$'\n'"$OUT"
 assert_contains "$OUT" 'wake was not queued' "a missing wake should be reported"
 assert_grep 'remote-relaunch far' "$CALLS" "a saved note still lets the down mate start"
+reset_world
+mkdir "$HOME_DIR/state/.alert-wake-sm1.log"
+PANE=zsh run_wake sm1 alerts-alpha 7 'Job failed' 15
+expect_code 0 "$RC" "unwritable log"$'\n'"$OUT"
+assert_contains "$OUT" 'sm1 was not checked' "an unstartable check should be reported"
+assert_no_relaunch "unwritable log"
 reset_world
 printf 'other\n' > "$SM_HOME/.fm-secondmate-home"
 PANE=zsh run_wake sm1 alerts-alpha 7 'Job failed' 15
