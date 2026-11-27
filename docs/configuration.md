@@ -1521,6 +1521,7 @@ When the record is `clear`, the spawn must match its harness, and its model and 
 A model or effort the record leaves empty is not bound, so the documented effort fallback still applies.
 When the record is `ambiguous`, `escalate`, `error`, or `off`, the explicit flags from the manual intake are enough.
 An `fm-spawn.sh --relaunch` skips this check.
+`--dispatch-rule <rule_N|default>` records the rule the job should have had on its `dispatch.spawned` line, for [replaying a proposed rules file](#replaying-a-proposed-rules-file); it names a rule by its position in `config/crew-dispatch.json`, is refused when that file has no such rule, and is accepted with or without `--dispatch-override`.
 
 The inherited-local-material contract is owned by [`secondmate-provisioning`](../.agents/skills/secondmate-provisioning/SKILL.md); its harness-relevant consequence is that a secondmate's own crewmates use the primary's dispatch profiles and static harness value.
 Those inherited values are defaults and rules only; `fm-spawn` still permits a consciously chosen explicit runtime outside the config.
@@ -2027,6 +2028,7 @@ This section is the single owner of the canonical schema and its per-field seman
   "rules": [
     {
       "when": "<natural-language condition describing a kind of task>",
+      "facts": ["<optional declared fact this rule matches, such as whole-spec>"],
       "approval": "captain",
       "min_confidence": 0.85,
       "floor": { "scope": "<quota-axi scope>", "min_percent": 20, "provider": "<quota-axi provider>" },
@@ -2078,7 +2080,7 @@ The declared value must be a boolean; anything else is an actionable configurati
 
 **Fields applied only by typed resolution**
 
-Rule `approval`, `min_confidence`, and `floor`, and profile `provider`, `quota_scope`, and `floor` are optional declarations that only [typed dispatch resolution](#typed-dispatch-resolution-env-fm_dispatch_provider-fm_dispatch_model) applies in code; without that opt-in they are inert, and firstmate's own intake reads them as ordinary hints.
+Rule `approval`, `min_confidence`, `floor`, and `facts`, and profile `provider`, `quota_scope`, and `floor` are optional declarations that only [typed dispatch resolution](#typed-dispatch-resolution-env-fm_dispatch_provider-fm_dispatch_model) applies in code; without that opt-in they are inert, and firstmate's own intake reads them as ordinary hints.
 The resolver supplies the fixed neutral Choice option `No listed rule applies to this task.` for work that matches no listed rule.
 
 - `approval` accepts only `"captain"` and means a task the rule matches is never dispatched from the tool's answer alone.
@@ -2086,6 +2088,17 @@ The resolver supplies the fixed neutral Choice option `No listed rule applies to
 `min_confidence` is a number from 0 through 1.
 The rule's own probability in the answer must reach it, replacing the resolver's global 0.6 floor on the answer's confidence.
 Set it high when a wrong pick is costly and low when the rule is a safe runner-up.
+
+`facts` is a non-empty list of the declared job facts the rule matches, so a brief that declares one settles the rule in code instead of asking Jev to guess it from prose ([Declared job facts](#declared-job-facts) owns the brief lines and what the resolver does with them).
+
+| Fact | Declared by | A rule naming it |
+| --- | --- | --- |
+| `whole-spec` | `Job: whole spec` | Builds a whole spec handed over entire; give that rule `approval: "captain"` too, so a declared spec still waits for the go. |
+| `review:<provider>` | `Review of: <task id or PR URL>`, with `Built by: <harness:model>` as the fallback | Reviews work a model of that provider family built, so the two cross-family review rules name `review:codex` and `review:claude`. |
+| `cause-unknown` | `Cause: unknown` | Rarely named directly; see `not:` below. |
+
+An entry prefixed `not:`, such as `not:cause-unknown` on the simple-bug-fix rule, takes the rule out of Jev's options when that fact is declared.
+Any other name, including a `review:` provider that does not match the provider ID pattern below, is a configuration error.
 
 **Rule quota floors**
 
@@ -2138,7 +2151,7 @@ See [`docs/examples/crew-dispatch.json`](examples/crew-dispatch.json) for a star
 
 - When the file exists, bootstrap validates it with `jq`.
 - Valid files stay silent by default; with `FM_BOOTSTRAP_VERBOSE_FACTS=1`, bootstrap emits `BOOTSTRAP_INFO: crew dispatch active config/crew-dispatch.json`, one `BOOTSTRAP_INFO:` fact per rule, and one fact for the optional default profile set.
-- Malformed JSON, malformed rules, an empty or malformed profile array, a malformed `preferred_provider`, a malformed tier table, an unverified harness, or an effort value unsupported by that harness is reported as `CREW_DISPATCH: invalid config/crew-dispatch.json - ...`.
+- Malformed JSON, malformed rules, an empty or malformed profile array, a malformed `preferred_provider`, a malformed tier table, an empty `facts` list or an unknown fact name, an unverified harness, or an effort value unsupported by that harness is reported as `CREW_DISPATCH: invalid config/crew-dispatch.json - ...`.
 - Bootstrap enables resolver-only checks for `approval`, `min_confidence`, `floor`, and present `provider` declarations when `TYPESAFE_API_KEY` is non-empty in the environment or the home's `.env`, or when the home's valid `config/dispatch-credential-sources.json` names a `typesafe` source, regardless of `FM_DISPATCH_PROVIDER`.
   Bootstrap only checks that declaration; it never reads the key or runs the source's tool.
   An OpenRouter key or OpenRouter declaration alone does not enable these bootstrap checks; the resolver validates those declarations itself before any request.
@@ -2191,7 +2204,7 @@ Firstmate invokes the resolve path directly after writing the brief, without a p
 
 **What the model receives**
 
-When on and at least one rule exists, the tool sends the project name and the brief's task-specific text as state and asks one Choice question whose options are every rule's `when` plus the fixed neutral option for no matching rule; the model never sees quota, catalogs, `why`, `use`, approvals, or confidence floors.
+When on and at least one rule exists, the tool sends the project name and the brief's task-specific text as state and asks one Choice question whose options are every rule's `when`, except a rule a declared `not:` fact excludes ([Declared job facts](#declared-job-facts)), plus the fixed neutral option for no matching rule; the model never sees quota, catalogs, `why`, `use`, `facts`, approvals, or confidence floors.
 The same request also asks one shadow Choice question, `tier`, whose fixed options `light`, `standard`, and `strong` each say what that tier covers and what belongs in another tier; Jev is never offered the top tier.
 Without a `tiers` table the tier answer is written only to the dispatch record (below) and changes nothing; with one, it picks the tier for a job that resolves to `default`, as [Worker tiers](#worker-tiers-configcrew-dispatchjson-tiers) describes, and changes nothing for a job a rule matches.
 The rule-only request passes the never-send check first, and the tier question is added only when its fixed text passes too, so a list entry that matches it withholds the question rather than the request.
@@ -2231,7 +2244,7 @@ An absent rules file, a default-only file, or `rules: []` returns the non-clear 
 
 **Checks performed after the answer**
 
-After the answer, code applies all remaining checks and ranking:
+After the answer, code applies all remaining checks and ranking; a rule a [declared fact](#declared-job-facts) settles gets the same checks, without the confidence floor:
 
 - The confidence floor and the matched rule's `approval` and `floor`.
 - Each candidate's `provider`, `quota_scope`, and `floor`.
@@ -2310,8 +2323,8 @@ Readers must ignore members and events they do not recognize.
 
 | Event | Written by | Extra members |
 | --- | --- | --- |
-| `dispatch.resolved` | `bin/fm-dispatch-resolve.sh`, for a brief at `data/<id>/brief.md`, on every outcome except exit 2 | `kind` (`ship` or `scout`), `project`, `status`, `reason`, `note`, `provider`, `requested_model`, `jev_model`, `latency_ms`, `tokens`, `rule`, `rule_when`, `picked_rule`, `confidence`, `probabilities`, `profile`, `shadow_tier`, `shadow_tier_note`, `tier`, `tier_reason`, `checkable_failure` |
-| `dispatch.spawned` | `bin/fm-spawn.sh`, for every fresh ship or scout launch, with or without `--dispatch-override` | `kind`, `project`, `profile`, `override`, `override_reason`, `resolution_status`, `resolution_profile`, `matches_resolution` |
+| `dispatch.resolved` | `bin/fm-dispatch-resolve.sh`, for a brief at `data/<id>/brief.md`, on every outcome except exit 2 | `kind` (`ship` or `scout`), `project`, `status`, `reason`, `note`, `provider`, `requested_model`, `jev_model`, `latency_ms`, `tokens`, `rule`, `rule_when`, `picked_rule`, `confidence`, `probabilities`, `profile`, `shadow_tier`, `shadow_tier_note`, `tier`, `tier_reason`, `checkable_failure`, `decided_by`, `declared_facts`, `excluded_rules`, `fact`, `facts_note`, `review_of`, `builder`, `jev_error` |
+| `dispatch.spawned` | `bin/fm-spawn.sh`, for every fresh ship or scout launch, with or without `--dispatch-override` | `kind`, `project`, `profile`, `override`, `override_reason`, `filed_rule`, `filed_rule_when`, `resolution_status`, `resolution_profile`, `matches_resolution` |
 | `dispatch.relaunched` | `bin/fm-spawn.sh --relaunch`, including through `bin/fm-control.sh relaunch` | `profile`, `via` (`control` or `spawn`) |
 | `dispatch.outcome` | `bin/fm-teardown.sh`, for a ship or scout task the record already names | `outcome`, `forced`, `pr`, `relaunched`, `relaunched_to` |
 | `dispatch.stepped_up` | `bin/fm-tier.sh step-up`, after its relaunch succeeds | `from_tier`, `to_tier`, `trigger`, `detail`, `automatic`, `from_profile`, `to_profile` |
@@ -2328,6 +2341,10 @@ Member meanings:
 - `relaunched` counts relaunches since the task's latest `dispatch.spawned`, and `relaunched_to` is the last relaunch's profile, or `null`.
 - `tier` is the tier a job that resolved to `default` took from a `tiers` table, with `tier_reason` saying why, and both are `null` for a rule match or a home without tiers; `checkable_failure` is the kind (`tests`, `check`, or `runbook`) of the brief's checkable-failure line, never its text, or `null`.
 - `automatic` is `true` for a job's one automatic step up and `false` for a step firstmate ran with `--by-firstmate`.
+- `decided_by` is `fact` when a [declared fact](#declared-job-facts) settled `rule`, `jev` when Jev's answer did, and `null` when neither did; `declared_facts` and `excluded_rules` list the declared fact names and the rules a `not:` fact left out, `fact` names the fact that settled the rule, and `facts_note` says why declared facts settled nothing.
+- `review_of` is the `Review of:` value and `builder` is `{harness, model, source, family}`, where `source` is `record` or `declared` (a `Built by:` line); both are `null` until the request passed the never-send check, like `project`.
+- `jev_error` keeps the lead of a Jev failure that a declared fact decided past, as an `error` reason does.
+- `filed_rule` is the rule firstmate filed the job under with `fm-spawn.sh --dispatch-rule` (`rule_<n>` or `default`), and `filed_rule_when` is that rule's `when` text in the rules file at spawn time; both are `null` without the flag.
 
 The record never holds the brief text, a key, or anything the resolver withholds from the provider.
 Review findings and rework are not recorded yet, because no machine-readable source for them exists.
@@ -2413,6 +2430,42 @@ FM_DISPATCH_BASE_URL=http://127.0.0.1:8080
 ```
 
 The live rule-match evidence is recorded in [`verification/dispatch-resolve.md`](verification/dispatch-resolve.md).
+
+### Declared job facts
+
+Firstmate knows some facts about a job at intake that decide its rule, so the brief declares them and code settles the rule instead of asking Jev to infer them from prose.
+Each is one line in the brief's `## Firstmate spec`, written the way `Checkable failure:` is ([Worker tiers](#worker-tiers-configcrew-dispatchjson-tiers)): optionally indented or bulleted with `- `, and read from the whole brief only when it has no such section.
+A rule names the facts it matches in its `facts` list ([Crew dispatch profiles](#crew-dispatch-profiles-configcrew-dispatchjson)).
+
+| Line | Declares |
+| --- | --- |
+| `Review of: <task id or PR URL>` | `review:<provider>`, the provider family of the model that built the reviewed work |
+| `Built by: <harness:model>` | The builder, when this home's dispatch record does not name it |
+| `Job: whole spec` | `whole-spec` |
+| `Cause: unknown` | `cause-unknown` |
+
+For `Review of:`, the resolver reads the reviewed job's latest `dispatch.spawned` or `dispatch.relaunched` profile from this home's dispatch record only.
+A PR URL names the task whose `dispatch.outcome` recorded that PR, else the task whose `state/<id>.meta` carries `pr=<url>`.
+When the record names no such job the resolver takes the `Built by:` line, and with neither no review fact is declared and resolution is as before.
+The builder's family is the `provider` a configured profile with the same harness and model declares, else that harness's single provider family; a builder with neither declares no review fact.
+
+What the resolver does with them:
+
+- A `not:` fact takes its rules out of the Choice options before the request.
+- When the declared facts name exactly one rule, that rule is settled before Jev's answer is read and no confidence floor applies; the output's `fact:` line names the fact, and a clear result's `reason:` reads `declared fact <fact> matches <rule>`.
+  The rule's `approval` and `floor`, the quota-aware choice among its profiles, and the never-send list apply after, unchanged.
+- Jev is still asked in the same request, and its answer is printed and recorded beside the settled rule so the two can be compared; a failed or malformed answer does not undo the fact, prints as a `jev:` line, and is recorded as `jev_error`.
+- Facts that name more than one rule settle nothing: Jev decides as before, and a `facts_note:` line names the rules.
+
+A forgotten line falls back to Jev; a wrong line routes the job wrongly without a second opinion, which is why Jev's answer stays in the record.
+
+### Replaying a proposed rules file
+
+`bin/fm-dispatch-replay.sh <proposed-file> --max-calls <n>` resolves this home's recorded jobs again, from their saved `data/<id>/brief.md`, against a proposed `crew-dispatch.json`, and reports where the result disagrees with how firstmate filed each job, beside a control that files every job under `default`.
+It writes nothing to this home's records: each run resolves a copy of the brief against a scratch copy of the dispatch record holding only the lines from before that job, so a `Review of:` lookup sees what it saw then.
+A job's filing is the rule firstmate recorded with `fm-spawn.sh --dispatch-rule`, else the rule of a clear resolution it spawned without override; a job with neither is listed as unfiled.
+Each run costs one Jev request, or two when a provider rejects the tier question, so `--max-calls` is required and caps the runs; `--max-calls 0` lists the jobs and sends nothing, and the printed count is of the requests actually sent.
+The script header owns the flags and output.
 
 ## Worker tiers (config/crew-dispatch.json tiers)
 

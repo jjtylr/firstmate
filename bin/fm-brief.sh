@@ -12,7 +12,13 @@
 # written runbook step, `## Firstmate spec` names it on one line,
 # "Checkable failure: <tests|check|runbook>: <what shows it>", which is what
 # lets typed resolution place a job no rule matches on the light tier
-# (docs/configuration.md "Worker tiers"). bin/fm-dod-lib.sh owns the
+# (docs/configuration.md "Worker tiers"). Facts firstmate knows at intake go
+# in `## Firstmate spec` the same way, one optional line each:
+# "Review of: <task id or PR URL>", "Built by: <harness:model>" (the builder,
+# for reviewed work this home's dispatch record does not name),
+# "Job: whole spec", and "Cause: unknown"; typed resolution settles a rule
+# that names the fact instead of asking Jev to guess it
+# (docs/configuration.md "Declared job facts"). bin/fm-dod-lib.sh owns the
 # no-mistakes `--intent` contract those subsections feed; bin/fm-spawn.sh refuses leftover placeholders and a
 # `## Captain's intent` line opening with a Captain label or address. Secondmate
 # charters still use a single `{TASK}` charter fill. Firstmate may adjust other

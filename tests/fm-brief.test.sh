@@ -177,6 +177,17 @@ test_help_includes_entire_header() {
   pass "fm-brief.sh: --help renders the complete header"
 }
 
+# The declared-fact lines typed resolution reads are named in the help, in the
+# exact form the resolver parses.
+test_help_names_declared_fact_lines() {
+  local help line
+  help=$("$ROOT/bin/fm-brief.sh" --help)
+  for line in '"Review of: <task id or PR URL>"' '"Built by: <harness:model>"' '"Job: whole spec"' '"Cause: unknown"' '"Checkable failure: <tests|check|runbook>: <what shows it>"'; do
+    assert_contains "$help" "$line" "fm-brief.sh --help does not name the $line line"
+  done
+  pass "fm-brief.sh: --help names every declared-fact line for the Firstmate spec"
+}
+
 # Registry with one project per delivery mode. fm-brief.sh no longer reads it -
 # the ship mode arrives as an explicit flag - so this fixture exists to prove the
 # scaffold ignores the registered posture (test_ship_mode_is_explicit_not_registry).
@@ -1780,6 +1791,7 @@ test_crewmate_scaffolds_forbid_pool_administration() {
 test_script_parses
 test_no_heredoc_in_command_substitution
 test_help_includes_entire_header
+test_help_names_declared_fact_lines
 test_ship_modes_generate_clean_briefs
 test_forge_selection_renders_correct_cli
 test_forge_external_renders_the_review_rail

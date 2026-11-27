@@ -63,8 +63,19 @@
 #   An eligible but wholly unrankable preferred family escalates rather than
 #   authorizing another family.
 #   The model never sees quota, catalogs, approvals, preferred_provider,
-#   confidence floors, `why`, or `use`. With no rules, it returns a non-clear
+#   confidence floors, `why`, `facts`, or `use`. With no rules, it returns a non-clear
 #   result so firstmate keeps using the existing intake.
+#   Declared job facts (bin/fm-dispatch-facts-lib.sh reads the brief lines;
+#   docs/configuration.md "Declared job facts" owns the contract): a rule a
+#   declared `not:` fact excludes is left out of the options; when the
+#   declared facts name exactly one rule through its `facts` list, that rule
+#   is taken without reading Jev's answer or applying a confidence floor, and
+#   its approval, floor, quota choice, and the never-send check apply as for
+#   any rule. Jev is still asked, and a failed or malformed answer is kept
+#   beside the settled rule instead of ending as an error. A "Review of:" job
+#   is looked up in this home's dispatch record ($FM_DATA_OVERRIDE, else
+#   $FM_HOME/data) and, for a PR URL, this home's task state
+#   ($FM_STATE_OVERRIDE, else $FM_HOME/state).
 #   The same request also asks a shadow `tier` Choice question (light,
 #   standard, strong); its answer is written only to the dispatch record and
 #   nothing here reads it. The rule-only request passes the never-send check
@@ -115,9 +126,15 @@
 #   dispatch-resolve:
 #     status: clear | ambiguous | escalate | error
 #     model/latency_ms/tokens, rule (when excerpt) and confidence, probabilities
+#     model/latency_ms/tokens, rule, and probabilities are absent when a
+#       declared fact settled the rule and Jev gave no valid answer
 #     fallback: <runner-up rule taken when the picked rule missed its own floor>
+#     facts: <declared fact names>      excluded: <rules a not: fact left out>
+#     fact: <fact> -> <rule> (<when excerpt>)   (a declared fact settled the rule)
+#     facts_note: <why declared facts settled nothing>
+#     jev: <Jev failure kept beside a settled fact>
 #     tier: <tier> (<why>)   (a job resolved through the tier table)
-#     reason: <why the status is not clear>
+#     reason: <why the status is not clear, or the fact that settled a clear one>
 #     preferred_provider: <family and preference or fallback decision, when applied>
 #     candidate: <harness>:<model> provider=.. scope=.. remaining=..% spendPriority=.. runway=.. -> eligible | eligible, unranked: <reason> | not eligible: <reason>
 #        (with the shared-quota opt-out: <harness>:<model> provider=.. -> eligible (quota ranking off: home declares a single shared quota))
@@ -185,6 +202,8 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 . "$SCRIPT_DIR/fm-dispatch-record-lib.sh"
 # shellcheck source=bin/fm-tier-lib.sh
 . "$SCRIPT_DIR/fm-tier-lib.sh"
+# shellcheck source=bin/fm-dispatch-facts-lib.sh
+. "$SCRIPT_DIR/fm-dispatch-facts-lib.sh"
 
 CONFIDENCE_FLOOR=0.6
 DEFAULT_WHEN="No listed rule applies to this task."
@@ -212,6 +231,7 @@ record_task() {
 # brief text, a key, or a provider error body; the project name is kept only
 # once the request passed the never-send check. A failed append changes nothing.
 RESP_OK=0 RESULT='' PROJECT_SENT=0 TIER_NOTE='not asked' TIER_ANSWER=null DISPATCH_LOGGED=0 CHECKABLE=''
+DECLARED_FACTS='[]' EXCLUDED_RULES='[]' FACT_RULE='' FACT_NAME='' FACTS_NOTE='' REVIEW_OF='' BUILDER=null JEV_ERROR=''
 dispatch_log() {  # <status> [<reason>]
   local status=$1 reason=${2-} kind=ship resp=null result=null rules=null record
   [ -n "$TASK_ID" ] && [ -n "$data_dir" ] && [ "$DISPATCH_LOGGED" = 0 ] || return 0
@@ -231,9 +251,13 @@ dispatch_log() {  # <status> [<reason>]
     --arg project "$PROJECT" --argjson sent "$PROJECT_SENT" \
     --arg provider "${DISPATCH_PROVIDER:-}" --arg model "${DISPATCH_MODEL:-}" \
     --argjson resp "${resp:-null}" --argjson result "$result" --argjson whens "${rules:-null}" \
-    --argjson tier "$TIER_ANSWER" --arg tier_note "$TIER_NOTE" --arg checkable "$CHECKABLE" '
+    --argjson tier "$TIER_ANSWER" --arg tier_note "$TIER_NOTE" --arg checkable "$CHECKABLE" \
+    --argjson declared "${DECLARED_FACTS:-[]}" --argjson excluded "${EXCLUDED_RULES:-[]}" \
+    --arg fact_rule "${FACT_RULE:-}" --arg fact_name "${FACT_NAME:-}" --arg facts_note "${FACTS_NOTE:-}" \
+    --arg review_of "${REVIEW_OF:-}" --argjson builder "${BUILDER:-null}" --arg jev_error "${JEV_ERROR%%:*}" '
     def opt($v): if $v == "" then null else $v end;
-    ($result.chosen_rule // $resp.rule.choice // null) as $rule |
+    (if $status != "off" and $fact_rule != "" then $fact_rule else null end) as $fact_rule |
+    ($result.chosen_rule // $fact_rule // $resp.rule.choice // null) as $rule |
     {event: "dispatch.resolved", task: $task, kind: $kind,
      project: (if $sent == 1 then opt($project) else null end),
      status: $status,
@@ -253,7 +277,14 @@ dispatch_log() {  # <status> [<reason>]
      shadow_tier: $tier,
      shadow_tier_note: opt($tier_note),
      tier: ($result.tier // null), tier_reason: ($result.tier_why // null),
-     checkable_failure: opt($checkable)}') || return 0
+     checkable_failure: opt($checkable),
+     decided_by: (if $fact_rule != null then "fact" elif $resp != null then "jev" else null end),
+     declared_facts: $declared, excluded_rules: $excluded,
+     fact: (if $fact_rule != null then opt($fact_name) else null end),
+     facts_note: opt($facts_note),
+     review_of: (if $sent == 1 then opt($review_of) else null end),
+     builder: (if $sent == 1 then $builder else null end),
+     jev_error: opt($jev_error)}') || return 0
   fm_dispatch_record_append "$data_dir" "$record" \
     || echo "dispatch-resolve: could not append to $(fm_dispatch_record_path "$data_dir")" >&2
   return 0
@@ -344,7 +375,7 @@ VERIFIED_HARNESSES=$(fm_control_harnesses | jq -Rsc 'split("\n") | map(select(le
 
 # The fields this tool consumes must be well formed; bootstrap owns the wider
 # schema diagnostic, but an intake never selects around a malformed file.
-rules_err=$(jq -r --argjson verified_harnesses "$VERIFIED_HARNESSES" --arg provider_re "$FM_QUOTA_PROVIDER_ID_RE" "$FM_TIER_JQ"'
+rules_err=$(jq -r --argjson verified_harnesses "$VERIFIED_HARNESSES" --arg provider_re "$FM_QUOTA_PROVIDER_ID_RE" "$FM_TIER_JQ$FM_FACTS_JQ"'
   def verified($h): $verified_harnesses | index($h);
   def provider_id($p): ($p | type) == "string" and ($p | test($provider_re));
   def effort_ok($h; $m; $e):
@@ -389,6 +420,7 @@ rules_err=$(jq -r --argjson verified_harnesses "$VERIFIED_HARNESSES" --arg provi
   elif any((.rules // [])[]; has("select") and .select != "quota-balanced") then
     "unknown select: " + ([.rules[] | select(has("select") and .select != "quota-balanced") | .select] | unique | join(", "))
   elif has("shared_quota") and (.shared_quota | type) != "boolean" then "shared_quota must be true or false when present"
+  elif (fm_facts_err // "") != "" then fm_facts_err
   elif any((.rules // [])[]; has("floor") and floor_bad(.floor; true)) then "rule floor needs scope, min_percent 0..100, and provider matching ^[a-z0-9]+(-[a-z0-9]+)*\\z"
   elif any((.rules // [])[] | profiles(.use)[]; type == "object" and has("quota_scope") and ((.quota_scope | type) != "string" or (.quota_scope | length) == 0)) then "each use profile quota_scope must be a non-empty string when present"
   elif any((.rules // [])[] | profiles(.use)[]; profile_bad(.)) then "each use profile needs harness; model, effort, and floor must be well formed, and provider must match ^[a-z0-9]+(-[a-z0-9]+)*\\z when present"
@@ -573,6 +605,11 @@ render_text() {
     "  probabilities: \([.probabilities | to_entries[] | "\(.key | flat)=\(.value | flat)"] | join(" "))"
    else empty end),
   (if .fallback then "  fallback: \(.fallback | flat)" else empty end),
+  (if .facts then "  facts: \(.facts | map(flat) | join(", "))" else empty end),
+  (if .excluded then "  excluded: \(.excluded | map(flat) | join(", ")) (a declared fact rules them out)" else empty end),
+  (if .fact then "  fact: \(.fact.name | flat) -> \(.fact.rule | flat) (\(.fact.rule_when | flat))" else empty end),
+  (if .facts_note then "  facts_note: \(.facts_note | flat)" else empty end),
+  (if .jev_error then "  jev: \(.jev_error | flat); the declared fact decided without it" else empty end),
   (if .tier then "  tier: \(.tier | flat) (\(.tier_why | flat))" else empty end),
   (if .reason then "  reason: \(.reason | flat)" else empty end),
   (if .note then "  note: \(.note | flat)" else empty end),
@@ -617,6 +654,72 @@ if [ "$RULE_COUNT" -eq 0 ]; then
   no_rules
 fi
 
+# ---- declared job facts (docs/configuration.md "Typed dispatch resolution") ---
+# Read from the brief's `## Firstmate spec`, or the whole brief when it has
+# none. A fact that names exactly one rule settles it before Jev's answer is
+# read; a "not:" fact drops its rules from the question. Jev is still asked.
+facts_text() {
+  if fm_brief_task_heading_present "$BRIEF" "## Firstmate spec"; then
+    fm_brief_task_heading_body "$BRIEF" "## Firstmate spec"
+  else
+    cat "$BRIEF"
+  fi
+}
+# The builder's provider family: the provider a configured profile with the
+# same harness and model declares, else the harness's single provider family.
+builder_family() {  # <harness> <model>
+  local p
+  p=$(jq -r --arg h "$1" --arg m "$2" '
+    def profiles($v): if ($v | type) == "array" then $v elif ($v | type) == "object" then [$v] else [] end;
+    [((.rules // [])[] | profiles(.use)[]), profiles(.default // null)[], ((.tiers // {})[] | profiles(.use)[])]
+    | map(select(.harness == $h and (.model // "") == $m and (.provider | type) == "string")) | first | .provider // empty' "$RULES" 2>/dev/null) || p=''
+  [ -n "$p" ] || p=$(fm_quota_single_provider_for_harness "$1" 2>/dev/null) || return 1
+  printf '%s\n' "$p"
+}
+read_declared_facts() {
+  local kind a b built_h='' built_m='' task='' bh='' bm='' src='' family='' facts=()
+  while IFS=$'\t' read -r kind a b; do
+    case "$kind" in
+      review-of) REVIEW_OF=$a ;;
+      built-by) built_h=$a built_m=$b ;;
+      whole-spec|cause-unknown) facts+=("$kind") ;;
+    esac
+  done < <(facts_text | fm_facts_read)
+  if [ -n "$REVIEW_OF" ]; then
+    # This home's dispatch record only: the reviewed job's latest spawn or restart.
+    if task=$(fm_facts_review_task "${FM_DATA_OVERRIDE:-$FM_HOME/data}" "${FM_STATE_OVERRIDE:-$FM_HOME/state}" "$REVIEW_OF") \
+      && IFS=$'\t' read -r bh bm < <(fm_facts_latest_profile "${FM_DATA_OVERRIDE:-$FM_HOME/data}" "$task"); then
+      src=record
+    elif [ -n "$built_h" ]; then
+      bh=$built_h bm=$built_m src=declared
+    fi
+    if [ -z "$src" ]; then
+      FACTS_NOTE="Review of: names no job on this home's dispatch record and no Built by: line, so the review fact is not declared"
+    else
+      family=$(builder_family "$bh" "$bm") || family=''
+      BUILDER=$(jq -cn --arg h "$bh" --arg m "$bm" --arg src "$src" --arg fam "$family" \
+        '{harness: $h, model: (if $m == "" then null else $m end), source: $src, family: (if $fam == "" then null else $fam end)}')
+      if [ -n "$family" ]; then
+        facts+=("review:$family")
+      else
+        FACTS_NOTE="the builder $bh${bm:+:$bm} has no provider family in the rules file, so the review fact is not declared"
+      fi
+    fi
+  fi
+  [ "${#facts[@]}" -eq 0 ] || DECLARED_FACTS=$(printf '%s\n' "${facts[@]}" | jq -Rsc 'split("\n") | map(select(length > 0))')
+  local state
+  state=$(jq -c --argjson declared "$DECLARED_FACTS" --arg provider_re "$FM_QUOTA_PROVIDER_ID_RE" "$FM_FACTS_JQ"'
+    {excluded: fm_facts_excluded($declared), matched: fm_facts_matched($declared)}' "$RULES" 2>/dev/null) \
+    || die "could not apply the declared facts to the rules file: $RULES_PATH"
+  EXCLUDED_RULES=$(jq -c .excluded <<<"$state")
+  case "$(jq -r '.matched | length' <<<"$state")" in
+    0) ;;
+    1) FACT_RULE=$(jq -r '.matched[0].rule' <<<"$state") FACT_NAME=$(jq -r '.matched[0].fact' <<<"$state") ;;
+    *) FACTS_NOTE="declared facts match more than one rule ($(jq -r '[.matched[] | "\(.rule) by \(.fact)"] | join(", ")' <<<"$state")), so Jev decides" ;;
+  esac
+}
+read_declared_facts
+
 
 NEVER_SEND_SOFT=0 NEVER_SEND_HIT=0
 never_send_off() {
@@ -648,17 +751,25 @@ else
   cp "$BRIEF" "$TASK_TEXT" || die "could not read brief: $BRIEF"
 fi
 LAT_MS=null
-command -v curl >/dev/null 2>&1 || emit_error "curl not installed"
+# jev_failed <reason>: an error outcome, unless a declared fact already settled
+# the rule, in which case the failure is kept beside it and resolution goes on.
+jev_failed() {
+  [ -n "$FACT_RULE" ] || emit_error "$1"
+  JEV_ERROR=$1
+}
 # build_body <0|1>: the provider-specific request, with or without the shadow
-# tier question. Without it the body is exactly the rule-only request.
+# tier question. Without it the body is exactly the rule-only request. A rule
+# a declared "not:" fact excludes is left out of the options.
 build_body() {
   local with_tier=$1
   REQUEST=$(jq -n --rawfile brief "$TASK_TEXT" --arg project "$PROJECT" --arg model "$DISPATCH_MODEL" \
     --arg none_criterion "$DEFAULT_WHEN" --slurpfile rules "$RULES" --argjson with_tier "$with_tier" \
+    --argjson excluded "$EXCLUDED_RULES" \
     --arg tier_instructions "$TIER_INSTRUCTIONS" --arg tier_light "$TIER_LIGHT" \
     --arg tier_standard "$TIER_STANDARD" --arg tier_strong "$TIER_STRONG" '
     ($rules[0]) as $cfg |
-    ($cfg.rules | to_entries | map({key: ("rule_" + ((.key + 1) | tostring)), value: .value.when}) | from_entries) as $criteria |
+    ($cfg.rules | to_entries | map({key: ("rule_" + ((.key + 1) | tostring)), value: .value.when})
+      | map(select(.key as $id | any($excluded[]; . == $id) | not)) | from_entries) as $criteria |
     {
       model: $model,
       state: {task: {project: $project, brief: $brief}},
@@ -691,25 +802,8 @@ build_body() {
     BODY=$REQUEST
   fi
 }
-  build_body 0 || emit_error "could not build the request"
-  # The rule-only request passes exactly today's never-send gate first. The
-  # shadow tier question is then added only when its fixed text passes too, so
-  # a list entry that matches it withholds the question, never the request.
-  never_send_check
-  PROJECT_SENT=1
-  RULE_ONLY_BODY=$BODY
-  if build_body 1; then
-    NEVER_SEND_SOFT=1 NEVER_SEND_HIT=0
-    never_send_check
-    NEVER_SEND_SOFT=0
-    if [ "$NEVER_SEND_HIT" = 1 ]; then
-      BODY=$RULE_ONLY_BODY TIER_NOTE='withheld by the never-send list'
-    else
-      TIER_NOTE=asked
-    fi
-  else
-    BODY=$RULE_ONLY_BODY TIER_NOTE='could not build the tier question'
-  fi
+# ask_jev: post the request and check the answer; RESP_OK=1 on a valid answer.
+ask_jev() {
   fm_jev_post
   # A provider that rejects the two-question request gets today's rule-only
   # request once, so the tier question can never cost the rule answer.
@@ -721,24 +815,30 @@ build_body() {
         fm_jev_post ;;
     esac
   fi
-  if [ "$DISPATCH_PROVIDER" = typesafe ]; then
-    [ "$HTTP" = 200 ] || emit_error "http $HTTP after ${LAT_MS} ms: $(head -c 200 "$RESP_FILE" 2>/dev/null | tr '\n' ' ')"
-  else
-    [ "$HTTP" = 200 ] || emit_error "http $HTTP after ${LAT_MS} ms"
+  if [ "$HTTP" != 200 ]; then
+    if [ "$DISPATCH_PROVIDER" = typesafe ]; then
+      jev_failed "http $HTTP after ${LAT_MS} ms: $(head -c 200 "$RESP_FILE" 2>/dev/null | tr '\n' ' ')"
+    else
+      jev_failed "http $HTTP after ${LAT_MS} ms"
+    fi
+    return 0
   fi
   # Map an OpenAI answer back to the System One shape the shared validation
   # below checks. A refusal, a missing or duplicated rule answer, or duplicated
   # option values is not a rule Choice answer. Usage is display-only, so it is
   # kept only when both token counts are numeric.
   if [ "$DISPATCH_PROVIDER" = openai ]; then
-    jq -e '
+    if ! jq -e '
       (.answers | type) == "array" and
       (([.answers[] | select(type == "object" and .name == "rule")]) as $rule |
       ($rule | length) == 1 and $rule[0].type == "choice" and
       ($rule[0].probabilities | type) == "array" and
       all($rule[0].probabilities[]; type == "object" and (.value | type) == "string") and
       ($rule[0].probabilities | map(.value) | length) == ($rule[0].probabilities | map(.value) | unique | length))' \
-      "$RESP_FILE" >/dev/null 2>&1 || emit_error "response is not a rule Choice answer"
+      "$RESP_FILE" >/dev/null 2>&1; then
+      jev_failed "response is not a rule Choice answer"
+      return 0
+    fi
     if ! jq --arg model "$DISPATCH_MODEL" '
       ([.answers[] | select(type == "object" and .name == "rule")][0]) as $a |
       ([.answers[] | select(type == "object" and .name == "tier")]) as $t |
@@ -758,11 +858,13 @@ build_body() {
          then {usage: {input_tokens: .usage.input_tokens, output_tokens: .usage.output_tokens}} else {} end)' \
       "$RESP_FILE" > "$RESP_FILE.mapped" 2>/dev/null || ! mv "$RESP_FILE.mapped" "$RESP_FILE"; then
       rm -f "$RESP_FILE.mapped"
-      emit_error "response is not a rule Choice answer"
+      jev_failed "response is not a rule Choice answer"
+      return 0
     fi
   fi
-jq -e --slurpfile rules "$RULES" '
-    (($rules[0].rules | to_entries | map("rule_" + ((.key + 1) | tostring))) + ["default"] | sort) as $choices |
+  if ! jq -e --slurpfile rules "$RULES" --argjson excluded "$EXCLUDED_RULES" '
+    (($rules[0].rules | to_entries | map("rule_" + ((.key + 1) | tostring))
+      | map(select(. as $id | any($excluded[]; . == $id) | not))) + ["default"] | sort) as $choices |
     (.answers.rule.choice | type) == "string" and
     (.answers.rule.confidence | type) == "number" and
     .answers.rule.confidence >= 0 and .answers.rule.confidence <= 1 and
@@ -774,14 +876,45 @@ jq -e --slurpfile rules "$RULES" '
       ((.usage | type) == "object" and
        (.usage.input_tokens | type) == "number" and
        (.usage.output_tokens | type) == "number"))' \
-  "$RESP_FILE" >/dev/null 2>&1 || emit_error "response is not a rule Choice answer"
-RESP_OK=1
+    "$RESP_FILE" >/dev/null 2>&1; then
+    jev_failed "response is not a rule Choice answer"
+    return 0
+  fi
+  RESP_OK=1
+}
+build_body 0 || emit_error "could not build the request"
+# The rule-only request passes exactly today's never-send gate first. The
+# shadow tier question is then added only when its fixed text passes too, so
+# a list entry that matches it withholds the question, never the request.
+never_send_check
+PROJECT_SENT=1
+RULE_ONLY_BODY=$BODY
+if ! command -v curl >/dev/null 2>&1; then
+  jev_failed "curl not installed"
+else
+  if build_body 1; then
+    NEVER_SEND_SOFT=1 NEVER_SEND_HIT=0
+    never_send_check
+    NEVER_SEND_SOFT=0
+    if [ "$NEVER_SEND_HIT" = 1 ]; then
+      BODY=$RULE_ONLY_BODY TIER_NOTE='withheld by the never-send list'
+    else
+      TIER_NOTE=asked
+    fi
+  else
+    BODY=$RULE_ONLY_BODY TIER_NOTE='could not build the tier question'
+  fi
+  ask_jev
+fi
+# Without a valid answer only a declared fact reached here; the resolution
+# below reads no answer then.
+[ "$RESP_OK" = 1 ] || printf '{}\n' > "$RESP_FILE"
 
 # ---- tier answer: recorded, and read only for a job that resolves to default
 # ---- when the file declares tiers (tier_pick below) ----------------------------
 # The same shape checks as the rule answer. Absent or malformed leaves the
 # record's shadow_tier null with a note; tier_pick then takes standard.
-if [ "$TIER_NOTE" = asked ]; then
+if [ "$TIER_NOTE" = asked ] && [ "$RESP_OK" = 1 ]; then
   tier_state=$(jq -c '
     (.answers.tier) as $t |
     if (.answers | type) != "object" or (.answers | has("tier") | not) then {note: "absent"}
@@ -809,8 +942,10 @@ take_quota_snapshot
 # ---- resolution: declared gates + quota evidence + argmax, all in jq ------------
 RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg none_criterion "$DEFAULT_WHEN" --argjson pmap "$PMAP" --argjson sq "$SQ" \
   --argjson tier_answer "$TIER_ANSWER" --arg tier_note "$TIER_NOTE" --arg checkable "$CHECKABLE" \
+  --argjson resp_ok "$RESP_OK" --arg fact_rule "$FACT_RULE" --arg fact_name "$FACT_NAME" --arg facts_note "$FACTS_NOTE" \
+  --argjson declared "$DECLARED_FACTS" --argjson excluded "$EXCLUDED_RULES" --arg jev_error "$JEV_ERROR" \
   --slurpfile resp "$RESP_FILE" --slurpfile rules "$RULES" --slurpfile quota "$QUOTA" "$FM_QUOTA_ROW_JQ$RESOLVE_DEFS_JQ"'
-  ($resp[0]) as $r | ($r.answers.rule) as $a |
+  ($resp[0]) as $r | (if $resp_ok == 1 then $r.answers.rule else null end) as $a |
   # The tier for a job that resolves to default, when the file declares tiers
   # (docs/configuration.md "Worker tiers"): light needs both the 0.8 light
   # probability and a checkable failure, strong needs Jev'"'"'s pick at the
@@ -842,24 +977,31 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
     else null end;
   def declared_confidence($c): rule_at($c) as $x | $x != null and ($x | has("min_confidence"));
   def confidence_floor($c): if declared_confidence($c) then rule_at($c).min_confidence else ($floor | tonumber) end;
-  ($a.choice) as $picked |
-  (confidence_floor($picked)) as $picked_floor |
-  # A declared floor is checked against the probability of that option whether
-  # it is the pick or a runner-up, so a runner-up never needs weaker support
-  # than it would as the pick. Only a rule that declares its own floor falls
-  # through to a runner-up, so a file with no declared floors keeps the single
-  # global floor on the answer confidence exactly.
-  (if declared_confidence($picked) | not then
-     (if $a.confidence >= $picked_floor then {below: false} else {below: true, global: true} end)
-   elif $a.probabilities[$picked] >= $picked_floor then {below: false}
+  (if $a == null then null else $a.choice end) as $picked |
+  # A declared fact that names exactly one rule settles it, so no confidence
+  # floor applies and Jev'"'"'s answer, when there is one, is only recorded.
+  # Otherwise a declared floor is checked against the probability of that
+  # option whether it is the pick or a runner-up, so a runner-up never needs
+  # weaker support than it would as the pick. Only a rule that declares its own
+  # floor falls through to a runner-up, so a file with no declared floors keeps
+  # the single global floor on the answer confidence exactly.
+  (if $fact_rule != "" or $a == null then {below: false}
    else
-     ([$a.probabilities | to_entries[] | select(.key != $picked and .value >= confidence_floor(.key))]
-       | sort_by(-.value)) as $ok |
-     if ($ok | length) == 0 then {below: true, why: "no other option clears its own floor"}
-     elif ($ok | length) > 1 and $ok[1].value == $ok[0].value then {below: true, why: "runner-up tie"}
-     else {below: true, to: $ok[0].key, p: $ok[0].value, to_floor: confidence_floor($ok[0].key)} end
+     (confidence_floor($picked)) as $picked_floor |
+     {picked_floor: $picked_floor} +
+     (if declared_confidence($picked) | not then
+        (if $a.confidence >= $picked_floor then {below: false} else {below: true, global: true} end)
+      elif $a.probabilities[$picked] >= $picked_floor then {below: false}
+      else
+        ([$a.probabilities | to_entries[] | select(.key != $picked and .value >= confidence_floor(.key))]
+          | sort_by(-.value)) as $ok |
+        if ($ok | length) == 0 then {below: true, why: "no other option clears its own floor"}
+        elif ($ok | length) > 1 and $ok[1].value == $ok[0].value then {below: true, why: "runner-up tie"}
+        else {below: true, to: $ok[0].key, p: $ok[0].value, to_floor: confidence_floor($ok[0].key)} end
+      end)
    end) as $fb |
-  (if $fb.to then $fb.to else $picked end) as $choice |
+  ($fb.picked_floor) as $picked_floor |
+  (if $fact_rule != "" then $fact_rule elif $fb.to then $fb.to else $picked end) as $choice |
   (rule_at($choice)) as $rule |
   (if $sq or $rule == null then "none" else floor_state($rule.floor; $rule.floor.provider; "") end) as $rule_floor_state |
   (if $choice != "default" and $rule == null then []
@@ -874,12 +1016,18 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
      then {source: "default", use: $default_use, note: ("rule \($choice) floor \($rule.floor.scope) below \($rule.floor.min_percent)%: fall through to default" + $tier_suffix)}
    else {source: $choice, use: profiles($rule.use), note: "rule matched"} end) as $sel |
   def when_of($c): (if rule_at($c) == null then $none_criterion else rule_at($c).when end | .[0:60]);
-  {
-    model: $r.model, latency_ms: $lat, tokens: ($r.usage // null),
-    rule: $picked, chosen_rule: $choice,
-    rule_when: when_of($picked),
+  {latency_ms: $lat, chosen_rule: $choice, decided_by: (if $fact_rule != "" then "fact" else "jev" end)}
+  + (if $a == null then {} else {
+    model: $r.model, tokens: ($r.usage // null),
+    rule: $picked, rule_when: when_of($picked),
     confidence: $a.confidence, probabilities: $a.probabilities
-  }
+  } end)
+  + (if ($declared | length) > 0 then {facts: $declared} else {} end)
+  + (if ($excluded | length) > 0 then {excluded: $excluded} else {} end)
+  + (if $facts_note != "" then {facts_note: $facts_note} else {} end)
+  + (if $fact_rule != "" then {fact: {name: $fact_name, rule: $fact_rule, rule_when: when_of($fact_rule)},
+      reason: "declared fact \($fact_name) matches \($fact_rule)"} else {} end)
+  + (if $jev_error != "" then {jev_error: $jev_error} else {} end)
   + (if $tp != null and $sel.source == "default" then {tier: $tp.tier, tier_why: $tp.why} else {} end)
   + (if $fb.to then {fallback: "\($choice) (\(when_of($choice))) probability \($fb.p) clears its floor \($fb.to_floor); \($picked) probability \($a.probabilities[$picked]) is below its floor \($picked_floor)"} else {} end)
   as $ev |
