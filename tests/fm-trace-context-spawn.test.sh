@@ -56,29 +56,6 @@ case "${1:-}" in
   has-session|new-session) exit 0 ;;
   send-keys)
     case " $* " in *' -l '*) : > "$window_file.launch-pending" ;; esac
-    if [ "${FM_FAKE_TRACEPARENT_SEND_FAIL:-0}" = 1 ]; then
-      for a in "$@"; do
-        case "$a" in
-          "export TRACEPARENT="*) exit 1 ;;
-        esac
-      done
-    fi
-    if [ "${FM_FAKE_TRACEPARENT_SEND_UNSAFE:-0}" = 1 ]; then
-      for a in "$@"; do
-        case "$a" in
-          "export TRACEPARENT="*) exit 2 ;;
-        esac
-      done
-    fi
-    if [ "${FM_FAKE_TRACE_METADATA_APPEND_FAIL:-0}" = 1 ]; then
-      for a in "$@"; do
-        case "$a" in
-          "export TRACEPARENT="*)
-            chmod a-w "$FM_FAKE_META_PATH"
-            ;;
-        esac
-      done
-    fi
     # Capture the text payload of both send forms: the literal launch
     # (`send-keys -t <target> -l <text>`) and a text line
     # (`send-keys -t <target> <text> Enter`). Skip the flags, the target, and
@@ -154,10 +131,6 @@ run_spawn() {
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
     FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
     FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$wt" TMUX="fake,1,0" \
-    FM_FAKE_TRACEPARENT_SEND_FAIL="${FM_FAKE_TRACEPARENT_SEND_FAIL:-0}" \
-    FM_FAKE_TRACEPARENT_SEND_UNSAFE="${FM_FAKE_TRACEPARENT_SEND_UNSAFE:-0}" \
-    FM_FAKE_TRACE_METADATA_APPEND_FAIL="${FM_FAKE_TRACE_METADATA_APPEND_FAIL:-0}" \
-    FM_FAKE_META_PATH="$home/state/$1.meta" \
     FM_FAKE_LAUNCH_LOG="$launchlog" PATH="$fakebin:$PATH" \
     "$SPAWN" "$@" --mode no-mistakes --yolo off 2>&1
 }
@@ -314,8 +287,8 @@ test_enabled_records_and_injects_identical_carrier_before_launch() {
   tl=$(grep -n '^export TRACEPARENT=' "$LAUNCH_LOG" | tail -1 | cut -d: -f1)
   ll=$(grep -n 'claude' "$LAUNCH_LOG" | tail -1 | cut -d: -f1)
   [ -n "$gl" ] && [ -n "$tl" ] && [ -n "$ll" ] || fail "launch log missing GOTMPDIR/TRACEPARENT/launch lines"
-  [ "$tl" -gt "$gl" ] || fail "TRACEPARENT export must ride the GOTMPDIR pre-launch site (gotmp=$gl tp=$tl)"
-  [ "$tl" -lt "$ll" ] || fail "TRACEPARENT export must be sent before the launch literal (tp=$tl launch=$ll)"
+  [ "$tl" -gt "$gl" ] || fail "TRACEPARENT export must follow the GOTMPDIR export (gotmp=$gl tp=$tl)"
+  [ "$tl" -lt "$ll" ] || fail "TRACEPARENT export must precede the launch command (tp=$tl launch=$ll)"
   pass "enabled: one resolved carrier is recorded in meta and the identical TRACEPARENT is exported before launch"
 }
 
@@ -338,46 +311,6 @@ test_disabled_writes_and_injects_neither() {
   pass "disabled: neither traceparent= in meta nor a TRACEPARENT export is produced"
 }
 
-test_failed_delivery_omits_metadata_and_still_launches() {
-  local rec out status meta
-  rec=$(make_spawn_case tc-send-failure)
-  read_case_record "$rec"
-  : > "$HOME_DIR/config/trace-context"
-  start_trace_session "$HOME_DIR"
-
-  out=$(FM_FAKE_TRACEPARENT_SEND_FAIL=1 \
-    run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$CASE_ID" "$PROJ_DIR")
-  status=$?
-  expect_code 0 "$status" "failed traceparent delivery must not abort spawn"
-  assert_contains "$out" "spawned $CASE_ID" "spawn should report success after failed traceparent delivery"
-  meta="$HOME_DIR/state/$CASE_ID.meta"
-
-  ! grep -q '^traceparent=' "$meta" \
-    || fail "failed traceparent delivery must not leave a traceparent= claim in meta"
-  ! grep -q '^export TRACEPARENT=' "$LAUNCH_LOG" \
-    || fail "the failed TRACEPARENT export must not be recorded as delivered"
-  grep -q 'claude' "$LAUNCH_LOG" || fail "the source task must still launch"
-  pass "failed TRACEPARENT delivery omits metadata while the source task still launches"
-}
-
-test_unsafe_delivery_refuses_to_append_launch() {
-  local rec out status
-  rec=$(make_spawn_case tc-send-unsafe)
-  read_case_record "$rec"
-  : > "$HOME_DIR/config/trace-context"
-  start_trace_session "$HOME_DIR"
-
-  out=$(FM_FAKE_TRACEPARENT_SEND_UNSAFE=1 \
-    run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$CASE_ID" "$PROJ_DIR")
-  status=$?
-  [ "$status" -ne 0 ] || fail "uncleared traceparent input must stop spawn"
-  assert_contains "$out" "refusing to append the launch command" \
-    "unsafe traceparent delivery should report why spawn stopped"
-  ! grep -q 'claude' "$LAUNCH_LOG" \
-    || fail "unsafe traceparent delivery must not append the launch command"
-  pass "uncleared TRACEPARENT input stops before the launch command is appended"
-}
-
 test_failed_metadata_append_unsets_carrier_and_still_launches() {
   local rec out status meta
   rec=$(make_spawn_case tc-metadata-failure)
@@ -385,8 +318,14 @@ test_failed_metadata_append_unsets_carrier_and_still_launches() {
   : > "$HOME_DIR/config/trace-context"
   start_trace_session "$HOME_DIR"
 
-  out=$(FM_FAKE_TRACE_METADATA_APPEND_FAIL=1 \
-    run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$CASE_ID" "$PROJ_DIR")
+  cat > "$FAKEBIN_DIR/mv" <<SH
+#!/bin/sh
+for arg do case "\$arg" in *.meta.trace.*) exit 1 ;; esac; done
+exec '$(command -v mv)' "\$@"
+SH
+  chmod +x "$FAKEBIN_DIR/mv"
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$CASE_ID" "$PROJ_DIR")
   status=$?
   expect_code 0 "$status" "failed traceparent metadata append must not abort spawn"
   assert_contains "$out" "spawned $CASE_ID" "spawn should report success after failed metadata append"
@@ -396,6 +335,8 @@ test_failed_metadata_append_unsets_carrier_and_still_launches() {
     || fail "failed metadata append must not leave a traceparent= claim in meta"
   grep -q '^unset TRACEPARENT; .*claude' "$LAUNCH_LOG" \
     || fail "failed metadata append must unset TRACEPARENT in the launch command"
+  ! grep -q '^export TRACEPARENT=' "$LAUNCH_LOG" \
+    || fail "failed metadata append must not export the unrecorded carrier"
   pass "failed traceparent metadata append removes the carrier from the launched task"
 }
 
@@ -624,8 +565,6 @@ test_secondmate_carrier_and_snapshot_share_one_decision() {
 
 test_enabled_records_and_injects_identical_carrier_before_launch
 test_disabled_writes_and_injects_neither
-test_failed_delivery_omits_metadata_and_still_launches
-test_unsafe_delivery_refuses_to_append_launch
 test_failed_metadata_append_unsets_carrier_and_still_launches
 test_duplicate_secondmate_spawn_does_not_converge_trace_context
 test_relaunch_reuses_recorded_carrier

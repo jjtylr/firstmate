@@ -70,35 +70,29 @@ SH
 # Run the emitted launch command in a synthetic pane shell. The pane carries the
 # CONTRARY value, so a launch that merely forwarded the ambient environment
 # would be caught here rather than reported as a pass.
-#   emitted_launch_env <fakebin> <launch-log> <pane-log>
+#   emitted_launch_env <fakebin> <launch-log>
 emitted_launch_env() {
-  local fakebin=$1 launchlog=$2 panelog=$3 launch preamble
+  local fakebin=$1 launchlog=$2 launch
   launch=$(cat "$launchlog")
-  # The pane exports run before the launch command in the real pane shell, so
-  # replay them here in the same order: the filtered launch environment retains
-  # what the pane holds, and dropping them would test a pane that never existed.
-  preamble=$(grep '^export ' "$panelog")
   env -i HOME="$TMP_ROOT/pane-home" PATH="$fakebin:$PATH" TERM=xterm \
     TMUX=synthetic-pane COMPACT_ADVISER_DISABLE="$CONTRARY" \
-    /bin/sh -c "$preamble
-$launch"
+    /bin/sh -c "$launch"
 }
 
-pane_export_lines() { grep -c '^export COMPACT_ADVISER_DISABLE=1$' "$1" || true; }
-
-assert_pane_export_precedes_launch() {  # <pane-log> <label>
-  local panelog=$1 label=$2
-  [ "$(pane_export_lines "$panelog")" = 1 ] \
-    || fail "$label: the pane shell should receive exactly one compact-adviser export, got $(pane_export_lines "$panelog")"
-  # Ordering: the export must ride the same pre-launch site as GOTMPDIR, which
-  # is what makes it set before the agent process starts.
-  local gotmp switch
-  gotmp=$(grep -n '^export GOTMPDIR=' "$panelog" | tail -1 | cut -d: -f1)
-  switch=$(grep -n '^export COMPACT_ADVISER_DISABLE=1$' "$panelog" | tail -1 | cut -d: -f1)
-  [ -n "$gotmp" ] && [ -n "$switch" ] \
-    || fail "$label: the pane log is missing the pre-launch exports"
-  [ "$switch" -gt "$gotmp" ] \
-    || fail "$label: the compact-adviser export must ride the GOTMPDIR pre-launch site (gotmp=$gotmp switch=$switch)"
+# Source the staged launch command the way the pane shell does, then report the
+# switch that shell is left holding. The pane receives no separate export lines:
+# the sourced file is what sets its environment.
+#   assert_pane_shell_keeps_switch <launch-log> <pane-log> <fakebin> <label>
+assert_pane_shell_keeps_switch() {
+  local launchlog=$1 panelog=$2 fakebin=$3 label=$4 kept
+  ! grep -q '^export ' "$panelog" \
+    || fail "$label: the pane shell must receive no separately typed export line"
+  # shellcheck disable=SC2016 # Expands in the synthetic pane shell.
+  kept=$(env -i HOME="$TMP_ROOT/pane-home" PATH="$fakebin:$PATH" TERM=xterm \
+    TMUX=synthetic-pane COMPACT_ADVISER_DISABLE="$CONTRARY" \
+    /bin/sh -c '. "$1" >/dev/null; printf %s "$COMPACT_ADVISER_DISABLE"' sh "$launchlog") \
+    || fail "$label: sourcing the staged launch command failed"
+  assert_equals 1 "$kept" "$label: the pane shell must keep the compact-adviser switch after sourcing"
 }
 
 test_ship_allowlist_absent() {
@@ -108,9 +102,9 @@ test_ship_allowlist_absent() {
   out=$(run_case_spawn ship-open-a1 "$PROJ_DIR" --mode no-mistakes --yolo off)
   status=$?
   expect_code 0 "$status" "ship spawn without an allowlist should succeed: $out"
-  assert_pane_export_precedes_launch "$PANE_LOG" "ship, allowlist absent"
   install_env_probe "$FAKEBIN_DIR" codex
-  seen=$(emitted_launch_env "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") \
+  assert_pane_shell_keeps_switch "$LAUNCH_LOG" "$PANE_LOG" "$FAKEBIN_DIR" "ship, allowlist absent"
+  seen=$(emitted_launch_env "$FAKEBIN_DIR" "$LAUNCH_LOG") \
     || fail "ship, allowlist absent: the emitted launch failed to run"
   assert_equals 1 "$seen" \
     "a ship worker launched with the ambient environment must start with the compact adviser disabled"
@@ -128,21 +122,21 @@ test_ship_allowlist_enabled() {
   out=$(run_case_spawn ship-filtered-a1 "$PROJ_DIR" --mode no-mistakes --yolo off)
   status=$?
   expect_code 0 "$status" "ship spawn under an allowlist should succeed: $out"
-  assert_pane_export_precedes_launch "$PANE_LOG" "ship, allowlist enabled"
   launch=$(cat "$LAUNCH_LOG")
   assert_contains "$launch" '/usr/bin/env -i' \
     "an enabled allowlist should launch under a cleared environment"
   install_env_probe "$FAKEBIN_DIR" codex
-  seen=$(emitted_launch_env "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") \
+  assert_pane_shell_keeps_switch "$LAUNCH_LOG" "$PANE_LOG" "$FAKEBIN_DIR" "ship, allowlist enabled"
+  seen=$(emitted_launch_env "$FAKEBIN_DIR" "$LAUNCH_LOG") \
     || fail "ship, allowlist enabled: the emitted launch failed to run"
   assert_equals 1 "$seen" \
     "a ship worker launched under the cleared allowlisted environment must still start with the compact adviser disabled"
   pass "ship launch under an enabled allowlist keeps the compact-adviser switch through the cleared environment"
 }
 
-# The floor must not depend on the pane export having landed: a pane whose
-# export was lost still has to launch its agent with the switch on. Replaying
-# the launch alone, with a contrary ambient value, is that case.
+# The launch command establishes the switch for the agent on its own, apart from
+# the pane shell export heading the staged file: with that line removed and a
+# contrary ambient value, the agent still starts with it on.
 test_launch_command_carries_the_switch_without_the_pane_export() {
   local setting rec out status seen launch
   for setting in absent enabled; do
@@ -153,7 +147,7 @@ test_launch_command_carries_the_switch_without_the_pane_export() {
     status=$?
     expect_code 0 "$status" "allowlist=$setting spawn should succeed: $out"
     install_env_probe "$FAKEBIN_DIR" codex
-    launch=$(cat "$LAUNCH_LOG")
+    launch=$(grep -vx 'export COMPACT_ADVISER_DISABLE=1' "$LAUNCH_LOG")
     seen=$(env -i HOME="$TMP_ROOT/pane-home" PATH="$FAKEBIN_DIR:$PATH" TERM=xterm \
       TMUX=synthetic-pane COMPACT_ADVISER_DISABLE="$CONTRARY" \
       /bin/sh -c "$launch") \
@@ -180,9 +174,9 @@ test_secondmate_launch() {
     out=$(run_case_spawn "sm-$setting" "$sm" --secondmate)
     status=$?
     expect_code 0 "$status" "secondmate spawn with allowlist=$setting should succeed: $out"
-    assert_pane_export_precedes_launch "$PANE_LOG" "secondmate, allowlist $setting"
     install_env_probe "$FAKEBIN_DIR" codex
-    seen=$(emitted_launch_env "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") \
+    assert_pane_shell_keeps_switch "$LAUNCH_LOG" "$PANE_LOG" "$FAKEBIN_DIR" "secondmate, allowlist $setting"
+    seen=$(emitted_launch_env "$FAKEBIN_DIR" "$LAUNCH_LOG") \
       || fail "secondmate, allowlist $setting: the emitted launch failed to run"
     assert_equals 1 "$seen" \
       "a secondmate launched with allowlist=$setting must start with the compact adviser disabled"
@@ -216,7 +210,7 @@ test_launch_exports_task_inbox() {
     status=$?
     expect_code 0 "$status" "$kind spawn should succeed: $out"
     install_env_probe "$FAKEBIN_DIR" codex FM_TASK_INBOX
-    seen=$(emitted_launch_env "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") \
+    seen=$(emitted_launch_env "$FAKEBIN_DIR" "$LAUNCH_LOG") \
       || fail "$kind: the emitted launch failed to run"
     want="$(cd "$HOME_DIR/state" && pwd -P)/$id.inbox"
     assert_equals "$want" "$seen" \
@@ -255,7 +249,7 @@ test_launch_exports_active_home() {
     status=$?
     expect_code 0 "$status" "$kind spawn should succeed: $out"
     install_env_probe "$FAKEBIN_DIR" codex FM_HOME
-    seen=$(emitted_launch_env "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") \
+    seen=$(emitted_launch_env "$FAKEBIN_DIR" "$LAUNCH_LOG") \
       || fail "$kind: the emitted launch failed to run"
     [ "$seen" != "$ROOT" ] || fail "$kind: FM_HOME must not be the code root"
     assert_equals "$want" "$seen" "a $kind agent must start with FM_HOME set to its home"
@@ -329,7 +323,7 @@ SH
 }
 
 test_relaunch_rebuilds_the_switch() {
-  local setting dir home proj wt id out status seen launch preamble
+  local setting dir home proj wt id out status seen
   for setting in absent enabled; do
     id="relaunch-$setting-a1"
     dir="$TMP_ROOT/relaunch-$setting"
@@ -369,16 +363,10 @@ test_relaunch_rebuilds_the_switch() {
     status=$?
     expect_code 0 "$status" "relaunch with allowlist=$setting should succeed: $out"
 
-    grep -qx 'export COMPACT_ADVISER_DISABLE=1' "$dir/fake/keys" \
-      || fail "relaunch with allowlist=$setting did not re-export the compact-adviser switch into the pane"
-    launch=$(cat "$dir/fake/launch" 2>/dev/null)
-    [ -n "$launch" ] || fail "relaunch with allowlist=$setting sent no replacement launch command"
+    [ -s "$dir/fake/launch" ] || fail "relaunch with allowlist=$setting sent no replacement launch command"
     install_env_probe "$dir/fakebin" codex
-    preamble=$(grep '^export ' "$dir/fake/keys")
-    seen=$(env -i HOME="$dir/user-home" PATH="$dir/fakebin:$PATH" TERM=xterm \
-      TMUX=synthetic-pane COMPACT_ADVISER_DISABLE="$CONTRARY" \
-      /bin/sh -c "$preamble
-$launch") \
+    assert_pane_shell_keeps_switch "$dir/fake/launch" "$dir/fake/keys" "$dir/fakebin" "relaunch, allowlist $setting"
+    seen=$(emitted_launch_env "$dir/fakebin" "$dir/fake/launch") \
       || fail "relaunch with allowlist=$setting: the replacement launch failed to run"
     assert_equals 1 "$seen" \
       "a relaunched agent with allowlist=$setting must start with the compact adviser disabled, exactly as a fresh spawn does"
@@ -423,6 +411,79 @@ $HOME_DIR" "$seen" \
   pass "a compound raw launch carries COMPACT_ADVISER_DISABLE=1 and active FM_HOME"
 }
 
+# The staged launch file is the pane shell's only source of its pre-launch
+# environment, so source it from a real shell and read back both what the agent
+# started with and what the shell holds afterwards. The empty allowlist makes the
+# shell's own variables the only route into the agent for GOTMPDIR, FM_TASK_ID,
+# LAVISH_AXI_HOST, and TRACEPARENT.
+test_sourced_launch_file_sets_each_pane_variable_under_its_condition() {
+  local kind rec id sm out status seen values tasktmp want_task want_trace real_mv
+  real_mv=$(command -v mv)
+  for kind in ship scout secondmate unrecorded-trace; do
+    id="env-$kind-a1"
+    rec=$(make_case "env-$kind" codex "$id")
+    read_case "$rec"
+    : > "$HOME_DIR/config/launch-env-allowlist"
+    : > "$HOME_DIR/config/trace-context"
+    printf '100.99.161.42\n' > "$HOME_DIR/config/lavish-axi-host"
+    printf '%s\n' "$$" > "$HOME_DIR/state/.lock"
+    printf '%s on\n' "$$" > "$HOME_DIR/state/.trace-context-effective"
+    if [ "$kind" = unrecorded-trace ]; then
+      cat > "$FAKEBIN_DIR/mv" <<SH
+#!/bin/sh
+for arg do case "\$arg" in *.meta.trace.*) exit 1 ;; esac; done
+exec '$real_mv' "\$@"
+SH
+      chmod +x "$FAKEBIN_DIR/mv"
+    fi
+    case "$kind" in
+    scout) out=$(run_case_spawn "$id" "$PROJ_DIR" --scout) ;;
+    secondmate)
+      sm="$CASE_DIR/secondmate-home"
+      mkdir -p "$sm/bin" "$sm/data"
+      printf '# Firstmate\n' > "$sm/AGENTS.md"
+      printf '%s\n' "$id" > "$sm/.fm-secondmate-home"
+      printf 'charter for %s\n' "$id" > "$sm/data/charter.md"
+      printf '%s\n' 'projects/' 'state/' 'data/' 'config/' '.no-mistakes/' > "$sm/.gitignore"
+      git -C "$sm" init -q -b main
+      out=$(run_case_spawn "$id" "$sm" --secondmate)
+      ;;
+    *) out=$(run_case_spawn "$id" "$PROJ_DIR" --mode no-mistakes --yolo off) ;;
+    esac
+    status=$?
+    expect_code 0 "$status" "$kind spawn should succeed: $out"
+    ! grep -q '^export ' "$PANE_LOG" || fail "$kind: the pane must receive no separately typed export line"
+
+    tasktmp=$(sed -n 's/^tasktmp=//p' "$HOME_DIR/state/$id.meta")
+    [ -n "$tasktmp" ] || fail "$kind: the task record names no temp root"
+    want_task=$id
+    [ "$kind" != secondmate ] || want_task=unset
+    want_trace=$(sed -n 's/^traceparent=//p' "$HOME_DIR/state/$id.meta")
+    if [ "$kind" = unrecorded-trace ]; then
+      [ -z "$want_trace" ] || fail "$kind: the carrier record was meant to fail"
+      want_trace=unset
+    else
+      [ -n "$want_trace" ] || fail "$kind: the spawn recorded no trace carrier"
+    fi
+    values="$tasktmp/gotmp|1|100.99.161.42|$want_task|$want_trace"
+    cat > "$FAKEBIN_DIR/codex" <<'SH'
+#!/bin/sh
+printf 'agent=%s|%s|%s|%s|%s\n' "${GOTMPDIR-unset}" "${COMPACT_ADVISER_DISABLE-unset}" \
+  "${LAVISH_AXI_HOST-unset}" "${FM_TASK_ID-unset}" "${TRACEPARENT-unset}"
+SH
+    chmod +x "$FAKEBIN_DIR/codex"
+    # shellcheck disable=SC2016 # Expands in the synthetic pane shell.
+    seen=$(env -i HOME="$TMP_ROOT/pane-home" PATH="$FAKEBIN_DIR:$PATH" TERM=xterm TMUX=synthetic-pane \
+      /bin/sh -c '. "$1"
+printf "shell=%s|%s|%s|%s|%s\n" "${GOTMPDIR-unset}" "${COMPACT_ADVISER_DISABLE-unset}" \
+  "${LAVISH_AXI_HOST-unset}" "${FM_TASK_ID-unset}" "${TRACEPARENT-unset}"' sh "$LAUNCH_LOG") \
+      || fail "$kind: sourcing the staged launch command failed"
+    assert_equals "agent=$values
+shell=$values" "$seen" "$kind: the agent and the pane shell must both hold the pre-launch environment"
+  done
+  pass "the sourced launch file gives the agent and the pane shell each variable under its condition"
+}
+
 test_launch_preserves_literal_home_and_brief_paths() {
   local name rec id out status seen want brief
   for name in normal literal; do
@@ -444,7 +505,7 @@ for arg do :; done
 printf '%s\n' "$arg"
 SH
     chmod +x "$FAKEBIN_DIR/codex"
-    seen=$(emitted_launch_env "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") \
+    seen=$(emitted_launch_env "$FAKEBIN_DIR" "$LAUNCH_LOG") \
       || fail "$name path: the emitted launch failed to run"
     brief=$("$ROOT/bin/fm-operational-input.sh" encode launch-brief < "$HOME_DIR/data/$id/launch-brief.md")
     want="$(cd "$HOME_DIR/state" && pwd -P)/$id.inbox
@@ -462,4 +523,5 @@ test_secondmate_launch
 test_launch_exports_task_inbox
 test_launch_exports_active_home
 test_relaunch_rebuilds_the_switch
+test_sourced_launch_file_sets_each_pane_variable_under_its_condition
 test_raw_compound_launch_command_carries_the_switch

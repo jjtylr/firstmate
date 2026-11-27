@@ -73,9 +73,20 @@ case "${1:-}" in
       esac
     done
     payload=${1:-}
+    # The ordered record of what reaches the pane, for replay into a real shell.
+    if [ "$literal" = 1 ]; then printf 'literal\t%s\n' "$payload"
+    elif [ "${2:-}" = Enter ]; then printf 'line\t%s\n' "$payload"
+    else printf 'key\t%s\n' "$payload"
+    fi >> "$D/writes"
     if [ "$literal" = 1 ]; then
       case "$payload" in
-        ". '"*"'") staged=${payload#". '"}; staged=${staged%"'"}; [ ! -f "$staged" ] || payload=$(cat "$staged") ;;
+        ". '"*"'")
+          staged=${payload#". '"}; staged=${staged%"'"}; [ ! -f "$staged" ] || payload=$(cat "$staged")
+          if [ -n "${FM_FAKE_TRACE_PREPARE:-}" ]; then
+            : > "$FM_FAKE_TRACE_PREPARE"
+            while [ ! -e "$FM_FAKE_TRACE_RELEASE" ]; do /bin/sleep 0.01; done
+          fi
+          ;;
       esac
       printf '%s\n' "$payload" >> "$D/literal"
       case "$payload" in
@@ -90,17 +101,6 @@ case "${1:-}" in
       esac
     else
       printf '%s\n' "$payload" >> "$D/keys"
-      case "$payload" in
-        'export GOTMPDIR='*)
-          if [ -n "${FM_FAKE_TRACE_PREPARE:-}" ]; then
-            : > "$FM_FAKE_TRACE_PREPARE"
-            while [ ! -e "$FM_FAKE_TRACE_RELEASE" ]; do /bin/sleep 0.01; done
-          fi
-          ;;
-        'export TRACEPARENT='*)
-          [ -z "${FM_FAKE_TRACE_EXPORTED:-}" ] || : > "$FM_FAKE_TRACE_EXPORTED"
-          ;;
-      esac
     fi
     exit 0 ;;
   display-message)
@@ -249,7 +249,6 @@ run_control() {  # <case-dir> <args...>
     FM_FAKE_TRACE_PREPARE="${FM_FAKE_TRACE_PREPARE:-}" \
     FM_FAKE_TRACE_RELEASE="${FM_FAKE_TRACE_RELEASE:-}" \
     FM_FAKE_META_WRITER_READY="${FM_FAKE_META_WRITER_READY:-}" \
-    FM_FAKE_TRACE_EXPORTED="${FM_FAKE_TRACE_EXPORTED:-}" \
     "$CONTROL" "$@" 2>&1
 }
 
@@ -1819,6 +1818,74 @@ test_spawn_relaunch_without_a_harness_reuses_the_recorded_one() {
   pass "fm-spawn --relaunch: with no explicit harness it reuses the task's recorded one, never the crew default"
 }
 
+# A pane shell may still be busy when the next line arrives, and its Return can
+# then arrive as Ctrl-J. Where Ctrl-J is bound to something other than submit, a
+# second line typed with no gap leaves the first one unsubmitted. So replay what a
+# relaunch writes into a real interactive zsh with that binding and a slow prompt,
+# with no gap between writes, and require the agent to start. Only the `cd` is
+# waited on, as spawn itself waits for the directory to change before continuing.
+test_spawn_relaunch_pane_writes_start_the_agent_despite_a_ctrl_j_binding() {
+  local dir out rc
+  command -v zsh >/dev/null 2>&1 || { echo "skip: zsh not found (typed-ahead launch replay)"; return 0; }
+  command -v python3 >/dev/null 2>&1 || { echo "skip: python3 not found (typed-ahead launch replay)"; return 0; }
+  dir=$(new_case typeahead rl60)
+  add_ship_task "$dir" rl60 claude
+  printf 'zsh' > "$dir/fake/command"
+  : > "$dir/fake/writes"
+  out=$(run_spawn "$dir" rl60 --relaunch); rc=$?
+  expect_code 0 "$rc" "relaunch into the idle pane should succeed"$'\n'"$out"
+
+  mkdir -p "$dir/standin" "$dir/zdot" "$dir/replay-home"
+  printf '#!/bin/sh\n: > "%s"\n' "$dir/agent-started" > "$dir/standin/claude"
+  chmod +x "$dir/standin/claude"
+  cat > "$dir/zdot/.zshrc" <<EOF
+PATH='$dir/standin':\$PATH
+precmd() { sleep 0.4 }
+bindkey '^j' down-line-or-search
+EOF
+  cat > "$dir/replay.py" <<'PY'
+import os, pty, select, signal, sys, time
+
+writes, zdot, home, marker = sys.argv[1:]
+shown = b''
+
+def drain(fd, seconds, until=None):
+    global shown
+    end = time.time() + seconds
+    while time.time() < end and not (until and os.path.exists(until)):
+        if select.select([fd], [], [], 0.01)[0]:
+            try:
+                shown += os.read(fd, 4096)
+            except OSError:
+                return
+
+records = open(writes).read().splitlines()
+pid, fd = pty.fork()
+if pid == 0:
+    os.execvpe('zsh', ['zsh', '-d', '-i'], {
+        'ZDOTDIR': zdot, 'HOME': home, 'PATH': os.environ['PATH'], 'TERM': 'xterm-256color'})
+drain(fd, 2.0)
+for record in records:
+    kind, text = record.split('\t', 1)
+    if kind == 'key':
+        assert text == 'Enter', 'unexpected key: ' + text
+        text = ''
+    os.write(fd, (text + ('' if kind == 'literal' else '\r')).encode())
+    if text.startswith('cd '):
+        drain(fd, 2.0)
+drain(fd, 20.0, until=marker)
+os.kill(pid, signal.SIGKILL)
+os.waitpid(pid, 0)
+if not os.path.exists(marker):
+    sys.stdout.write(shown.decode(errors='replace')[-2000:])
+    sys.exit(1)
+PY
+  out=$(python3 -I "$dir/replay.py" "$dir/fake/writes" "$dir/zdot" "$dir/replay-home" \
+    "$dir/agent-started" 2>&1); rc=$?
+  expect_code 0 "$rc" "the relaunch's pane writes must start the agent in a shell that binds Ctrl-J away from submit"$'\n'"$(cat "$dir/fake/writes")"$'\n'"$out"
+  pass "fm-spawn --relaunch: its pane writes start the agent with no gap, even where Ctrl-J does not submit"
+}
+
 # A promoted scout records kind=ship and a custom ship branch in its meta, but
 # its brief is the scout scaffold: it never gained a Ship branch line, and a
 # relaunch cannot regenerate the brief (--branch-prefix is refused there). The
@@ -3330,6 +3397,7 @@ test_secondmate_checkpoint_ignores_a_vanished_scratch_find_walk
 test_concurrent_relaunch_is_refused
 test_direct_spawn_relaunch_participates_in_the_lifecycle_lock
 test_promotion_participates_in_the_lifecycle_lock_before_metadata_resolution
+test_spawn_relaunch_pane_writes_start_the_agent_despite_a_ctrl_j_binding
 test_spawn_relaunch_refuses_a_live_agent
 test_spawn_relaunch_refuses_a_symlinked_task_record_before_inspection
 test_spawn_relaunch_keeps_its_early_meta_lock_continuous

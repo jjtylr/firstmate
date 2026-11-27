@@ -114,8 +114,8 @@ remote_env() {
 # What the remote pane received, read back from the fixture's verbatim log. The
 # fixture logs one line per invocation as the joined argv, so each payload sits
 # between the pane id and the trailing session selector. The Herdr adapter sends
-# a pre-launch export as a `pane run` line and the launch command itself as the
-# unsubmitted literal `pane send-text`.
+# the line sourcing the staged launch file as the unsubmitted literal
+# `pane send-text`.
 remote_pane_payload() {  # <verb>
   sed -n "s/^pane $1 [^ ]* \\(.*\\) --session [^ ]*\$/\\1/p" "$HERDR_LOG"
 }
@@ -127,10 +127,6 @@ remote_launch_command() {
   [ -n "$staged" ] && [ -f "$staged" ] || return 1
   cat "$staged"
 }
-remote_pane_exports() {
-  remote_pane_payload run | grep '^export '
-}
-
 # Provision and register the remote route from the captain-facing primary.
 FM_SECONDMATE_CHARTER='Own iOS delivery on the build Mac.' \
   FM_SECONDMATE_SCOPE='iOS implementation and Xcode validation' \
@@ -145,32 +141,34 @@ run_remote_launch() {  # <label>
     || fail "$label: the remote second-mate launch failed"
 }
 
-# Replay what the remote pane received, in the order it received it, under a
-# synthetic pane environment carrying the contrary value.
-replay_remote_launch() {  # <preamble|bare>
-  local shape=$1 preamble='' launch
+# Run the staged launch command the remote pane sourced, in a synthetic pane
+# shell carrying the contrary value, then report what that shell still holds.
+# `bare` drops the pane shell export heading the file.
+replay_remote_launch() {  # <full|bare>
+  local shape=$1 launch
   launch=$(remote_launch_command)
   [ -n "$launch" ] || fail "the remote pane received no launch command"
-  [ "$shape" = bare ] || preamble=$(remote_pane_exports)
+  [ "$shape" = full ] || launch=$(printf '%s\n' "$launch" | grep -vx 'export COMPACT_ADVISER_DISABLE=1')
   env -i HOME="$TMP_ROOT/pane-home" PATH="$PROBEBIN:$PATH" TERM=xterm \
     COMPACT_ADVISER_DISABLE="$CONTRARY" \
-    /bin/sh -c "$preamble
-$launch"
+    /bin/sh -c "$launch
+printf 'pane-shell=%s\\n' \"\$COMPACT_ADVISER_DISABLE\""
 }
 
 # --- the remote route delivers the switch, allowlist absent -----------------
 run_remote_launch 'allowlist absent'
-remote_pane_exports | grep -qx 'export COMPACT_ADVISER_DISABLE=1' \
-  || fail "the remote pane shell never received the compact-adviser export"
-SEEN=$(replay_remote_launch preamble) \
+! remote_pane_payload run | grep -q '^export ' \
+  || fail "the remote pane shell must receive no separately typed export line"
+SEEN=$(replay_remote_launch full) \
   || fail "the command the remote pane received failed to run"
-assert_equals 1 "$SEEN" \
-  "a second mate launched on a remote host must start with the compact adviser disabled"
+assert_equals "1
+pane-shell=1" "$SEEN" \
+  "a second mate launched on a remote host, and its pane shell, must hold the compact adviser disabled"
 SEEN=$(replay_remote_launch bare) \
   || fail "the remote launch command failed to run on its own"
-assert_equals 1 "$SEEN" \
+assert_equals 1 "$(printf '%s\n' "$SEEN" | head -1)" \
   "the remote launch command must set the compact-adviser switch on its own, overriding a contrary remote pane value"
-pass "a remote-routed second mate starts with the compact adviser disabled, from the pane export and from the launch command alike"
+pass "a remote-routed second mate starts with the compact adviser disabled, and its pane shell keeps the switch"
 
 # --- the same holds through the cleared allowlisted environment -------------
 # The allowlist is inherited local material, so the parent's opt-in is what puts
@@ -185,7 +183,7 @@ assert_contains "$LAUNCH" '/usr/bin/env -i' \
   "an inherited allowlist should launch the remote second mate under a cleared environment"
 SEEN=$(replay_remote_launch bare) \
   || fail "the cleared-environment remote launch failed to run"
-assert_equals 1 "$SEEN" \
+assert_equals 1 "$(printf '%s\n' "$SEEN" | head -1)" \
   "a remote second mate launched under the cleared allowlisted environment must still start with the compact adviser disabled"
 pass "the remote route keeps the compact-adviser switch through the cleared allowlisted environment"
 

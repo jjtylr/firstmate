@@ -12,7 +12,7 @@
 # Target string shape: the T3 thread id T3 assigned at launch.
 #
 # T3 sets environment variables per provider instance, never per thread, so
-# every fact firstmate would type into a pane before launch (GOTMPDIR,
+# every fact firstmate would export in a pane shell before launch (GOTMPDIR,
 # COMPACT_ADVISER_DISABLE, FM_TASK_INBOX, the Git hook override, optional
 # LAVISH_AXI_HOST, FM_TASK_ID, TRACEPARENT,
 # and a secondmate's FM_* launch prefix) travels
