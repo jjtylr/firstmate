@@ -246,7 +246,9 @@ The wrapper reads `source` from the hook payload.
 Native stdout context injection is supported.
 Claude caps one hook output string at 10,000 characters.
 Above the cap the model receives a preview of the first 2,000 characters plus the path of a saved file, and is not asked to read that file.
-A context re-emit therefore prints a short `RE-EMIT CUE` first, which tells the model to read the saved file.
+So on a Claude primary the wrapper runs the digest with `--pointer`: the whole digest goes to a state file, and the hook prints a short pointer that shows the lock verdict and requires the whole file to be read.
+The file carries read-check words that the session confirms with `--confirm-read`, and until then `bin/fm-turnend-guard.sh` holds that session's first turn end once with a reminder.
+The [`bin/fm-session-start.sh` header](../bin/fm-session-start.sh) owns the pointer and read-check mechanics.
 
 ### Codex exec
 

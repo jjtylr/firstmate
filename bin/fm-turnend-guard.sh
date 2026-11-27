@@ -202,6 +202,26 @@ fi
 # so this exempts them while guarding every real secondmate home.
 fm_primary_scope_matches "$FM_ROOT" "$STATE" || allow_exit
 
+# --- start-up report read check (Claude only) --------------------------------
+# A Claude primary's start-up report arrives as a pointer to a file plus a
+# read-check record (bin/fm-session-start.sh --pointer). While this session's
+# record is unconfirmed, hold its first turn end ONCE with a reminder; the
+# record is then marked reminded, so the check can never hold a turn twice.
+if [ "$CLAUDE_MODE" -eq 1 ]; then
+  READ_SESSION=$(printf '%s' "$PAYLOAD" | jq -r '.session_id // empty' 2>/dev/null || true)
+  READ_KEY=$(printf '%s' "$READ_SESSION" | tr -cd 'A-Za-z0-9-' | cut -c1-64)
+  READ_RECORD="$STATE/.session-start-read-check.$READ_KEY"
+  if [ -n "$READ_KEY" ] && [ -f "$READ_RECORD" ] && [ ! -L "$READ_RECORD" ] \
+    && [ "$(sed -n 's/^session=//p' "$READ_RECORD" 2>/dev/null)" = "$READ_SESSION" ] \
+    && ! grep -q '^reminded=1$' "$READ_RECORD" 2>/dev/null \
+    && printf 'reminded=1\n' >> "$READ_RECORD" 2>/dev/null; then
+    READ_REPORT=$(sed -n 's/^report=//p' "$READ_RECORD" 2>/dev/null)
+    printf 'START-UP REPORT NOT CONFIRMED READ: read %s from line 1 to the end, then run %s/bin/fm-session-start.sh --confirm-read with its read-check words in order. This reminder holds the turn only once.\n' \
+      "$READ_REPORT" "$FM_ROOT" >&2
+    exit 2
+  fi
+fi
+
 # --- the actual predicate ----------------------------------------------------
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"

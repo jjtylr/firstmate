@@ -69,7 +69,7 @@ That future-name behavior is the reason the tracked matcher must match all tools
 
 ## Recommended Local Claude Deny List
 
-Claude primaries should add this deny list in untracked per-home local settings, never in tracked `.claude/settings.json`:
+Claude primaries should apply this deny list to the primary session alone, passed on the command that starts it (`--disallowedTools`, or a settings file given with `--settings`), never in tracked `.claude/settings.json` or the checkout's `.claude/settings.local.json`:
 
 ```json
 {
@@ -101,11 +101,12 @@ The model is never offered the tool, so there is no call to intercept, no matche
 This is removal, not interception, and it is strictly stronger than any hook.
 
 This list is recommended local hardening because it closes the known Claude surface before the hook is needed.
-It is not tracked for two reasons.
+It is not tracked, and not kept in the checkout's local settings file, for three reasons.
 
 - It is Claude-only, so it can never be the harness-agnostic shipped fix.
 - A tracked `.claude/settings.json` propagates into linked worktrees and disarms legitimate crewmates.
   This was verified when a Claude session in a task worktree of this repo lost its `Agent` tool.
+- The untracked `.claude/settings.local.json` reaches those worktrees too: Claude Code's [settings documentation](https://code.claude.com/docs/en/settings.md) says a linked worktree uses the main checkout's local settings file, and a denied tool cannot be re-allowed, so a deny list there would also take `Agent` and `Workflow` from every worker copy of that checkout.
 
 The width of the list remains a captain-owned decision, because denying some of these changes how the captain works with the primary session.
 Keep it as one flat local array that is reviewable at a glance and narrowable in one line.

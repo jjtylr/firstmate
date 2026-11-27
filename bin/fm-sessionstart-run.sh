@@ -42,6 +42,13 @@
 # preflight. A lock another live session holds and a truncated digest are
 # reported inside the digest, while broken GitHub auth arrives through the
 # deferred network result inline or as a wake, for exactly that reason.
+# Claude pointer: on a Claude primary every digest call adds
+# `--pointer --session-id <payload session_id>`, because Claude cuts a hook
+# output over 10,000 characters to a 2,000-character preview. The digest then
+# lands in a state file and the hook prints a short pointer that requires the
+# whole file to be read and confirmed (bin/fm-session-start.sh --pointer owns
+# the mechanics). FM_SESSIONSTART_POINTER=1 or 0 forces the choice; any other
+# value, or none, asks bin/fm-harness.sh whether this primary is claude.
 # A fresh clone has no gitignored state dir yet; a root that otherwise
 # qualifies as primary gets one created here before the scope check runs, so
 # the first session takes the helm without a manual `mkdir state`.
@@ -63,6 +70,7 @@ COMPLETION_FILE="$STATE/.session-start-complete"
 . "$SCRIPT_DIR/fm-hook-host-lib.sh"
 
 SOURCE=
+SESSION_ID=
 PI_PREREQUISITE=0
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -110,6 +118,17 @@ session_start_completed() {
   [ "$completion_pid" = "$lock_pid" ]
 }
 
+# payload_string_field <payload> <key>: the first string value of <key>.
+payload_string_field() {
+  printf '%s' "$1" | awk -v key="$2" '
+    BEGIN { RS = "\"" }
+    seen == 2 { print; exit }
+    seen == 1 && $0 ~ /^[[:space:]]*:[[:space:]]*$/ { seen = 2; next }
+    seen == 1 { seen = 0 }
+    $0 == key { seen = 1 }
+  '
+}
+
 if [ -z "$SOURCE" ] && [ ! -t 0 ]; then
   # Claude and Codex both deliver a JSON SessionStart payload on stdin whose
   # `source` field carries startup|resume|clear|compact. Parsed without jq so a
@@ -128,14 +147,20 @@ if [ -z "$SOURCE" ] && [ ! -t 0 ]; then
   if fm_hook_payload_is_foreign_host "$PAYLOAD"; then
     exit 0
   fi
-  SOURCE=$(printf '%s' "$PAYLOAD" | awk '
-    BEGIN { RS = "\"" }
-    seen == 2 { print; exit }
-    seen == 1 && $0 ~ /^[[:space:]]*:[[:space:]]*$/ { seen = 2; next }
-    seen == 1 { seen = 0 }
-    $0 == "source" { seen = 1 }
-  ')
+  SOURCE=$(payload_string_field "$PAYLOAD" source)
+  SESSION_ID=$(payload_string_field "$PAYLOAD" session_id)
 fi
+
+POINTER_ARGS=()
+case "${FM_SESSIONSTART_POINTER:-}" in
+  1) POINTER_ARGS=(--pointer --session-id "$SESSION_ID") ;;
+  0) ;;
+  *)
+    if [ "$("$SCRIPT_DIR/fm-harness.sh" 2>/dev/null)" = claude ]; then
+      POINTER_ARGS=(--pointer --session-id "$SESSION_ID")
+    fi
+    ;;
+esac
 
 case "$SOURCE" in
   resume|reload|fork)
@@ -143,13 +168,13 @@ case "$SOURCE" in
     ;;
   clear|compact)
     if session_start_completed; then
-      "$SCRIPT_DIR/fm-session-start.sh" --reemit --source "$SOURCE" || true
+      "$SCRIPT_DIR/fm-session-start.sh" --reemit --source "$SOURCE" ${POINTER_ARGS[@]+"${POINTER_ARGS[@]}"} || true
     else
-      "$SCRIPT_DIR/fm-session-start.sh" --source "$SOURCE" || true
+      "$SCRIPT_DIR/fm-session-start.sh" --source "$SOURCE" ${POINTER_ARGS[@]+"${POINTER_ARGS[@]}"} || true
     fi
     ;;
   *)
-    "$SCRIPT_DIR/fm-session-start.sh" --source "$SOURCE" || true
+    "$SCRIPT_DIR/fm-session-start.sh" --source "$SOURCE" ${POINTER_ARGS[@]+"${POINTER_ARGS[@]}"} || true
     ;;
 esac
 exit 0

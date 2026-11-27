@@ -215,6 +215,52 @@ test_over_long_decision_note_is_capped_with_a_marker() {
   pass "an over-long open decision is cut to its per-item budget with the shared truncation marker"
 }
 
+# The session-start drain keeps a copy of the listing it printed; the next drain
+# prints one line instead of an unchanged repeat, and only that one drain does.
+test_unchanged_repeat_after_start_prints_one_line() {
+  local dir state out
+  dir=$(make_case start-repeat)
+  state="$dir/state"
+  out="$dir/drain.out"
+  printf 'needs-decision [key=api-shape]: pick REST or RPC\n' > "$state/task1.status"
+
+  FM_WAKE_DRAIN_SESSION_START=1 FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "start drain failed"
+  grep -F 'task1 [key=api-shape] needs-decision: pick REST or RPC' "$out" >/dev/null \
+    || fail "the start drain did not print the open decision in full: $(cat "$out")"
+
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "first drain after start failed"
+  grep -F 'OPEN DECISIONS: the 1 decision(s) listed in the start-up report are still open and unchanged' "$out" >/dev/null \
+    || fail "the first drain after start did not replace the unchanged listing with one line: $(cat "$out")"
+  if grep -F 'pick REST or RPC' "$out" >/dev/null; then
+    fail "the first drain after start repeated the unchanged listing: $(cat "$out")"
+  fi
+
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "second drain after start failed"
+  grep -F 'task1 [key=api-shape] needs-decision: pick REST or RPC' "$out" >/dev/null \
+    || fail "a later drain did not print the listing in full again: $(cat "$out")"
+  pass "only the first drain after start replaces an unchanged open-decisions listing with one line"
+}
+
+test_changed_listing_after_start_prints_in_full() {
+  local dir state out
+  dir=$(make_case start-changed)
+  state="$dir/state"
+  out="$dir/drain.out"
+  printf 'needs-decision [key=api-shape]: pick REST or RPC\n' > "$state/task1.status"
+  FM_WAKE_DRAIN_SESSION_START=1 FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "start drain failed"
+
+  printf 'blocked [key=creds]: need the deploy token\n' > "$state/task2.status"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "drain after a new decision failed"
+  grep -F 'task1 [key=api-shape] needs-decision: pick REST or RPC' "$out" >/dev/null \
+    || fail "a changed listing after start was not printed in full: $(cat "$out")"
+  grep -F 'task2 [key=creds] blocked: need the deploy token' "$out" >/dev/null \
+    || fail "a decision opened after start was not shown: $(cat "$out")"
+  if grep -F 'still open and unchanged' "$out" >/dev/null; then
+    fail "a changed listing was reported as unchanged: $(cat "$out")"
+  fi
+  pass "a listing that changed since the start-up report is printed in full"
+}
+
 test_buried_decision_still_surfaces
 test_over_long_decision_note_is_capped_with_a_marker
 test_explicit_resolution_closes_it
@@ -224,3 +270,5 @@ test_no_open_decisions_prints_nothing
 test_open_decision_surfaces_even_with_an_unrelated_queued_wake
 test_buried_decision_surfaces_on_the_empty_queue_fast_path
 test_status_symlink_is_not_followed
+test_unchanged_repeat_after_start_prints_one_line
+test_changed_listing_after_start_prints_in_full
