@@ -377,10 +377,10 @@ test_kimi_launch_then_send_is_verified() {
     || fail "kimi spawn staged its launch command without mode 0600: $(path_mode "$launch_file")"
   grep -qF -- "-l . '$launch_file'" "$CASE_DIR/tmux-calls.log" \
     || fail "kimi spawn did not type a short line sourcing its staged launch command"
-  assert_grep "export GOTMPDIR=$task_tmp/gotmp" "$CASE_DIR/tmux-calls.log" \
-    "kimi spawn did not export its Go temp directory into the pane"
-  assert_grep "export FM_TASK_ID=$id" "$CASE_DIR/tmux-calls.log" \
-    "kimi spawn did not mark the pane with its task id"
+  assert_grep "export GOTMPDIR=$task_tmp/gotmp" "$launch_file" \
+    "kimi spawn did not export its Go temp directory into the pane shell"
+  assert_grep "export FM_TASK_ID=$id" "$launch_file" \
+    "kimi spawn did not mark the pane shell with its task id"
   assert_grep 'BEGIN FIRSTMATE KIMI TURN-END HOOK' "$HOME_DIR/.kimi-code/config.toml" \
     "kimi spawn did not install its guarded global hook region"
   assert_grep 'token=' "$WT_DIR/.fm-kimi-turnend" "kimi spawn did not write its token pointer"

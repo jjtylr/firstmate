@@ -101,9 +101,7 @@ This is a deliberate, source-owned choice:
   There is no configured provider command, no network, and no watchdog.
   The normal cost is small, but `od`/`tr` are external processes, so there is no hard latency guarantee - this is not a guaranteed-negligible bound.
   Any entropy or self-validation failure that returns omits the carrier for that spawn without aborting source work; a corrupt recorded carrier is re-minted as a fresh root rather than propagated (it is not an omission).
-  On pane backends, if the pre-launch carrier export fails, Firstmate omits the `traceparent=` metadata claim and still launches the task.
-  If a pane backend reports that failed trace input could not be cleared, Firstmate refuses to append the launch command rather than risk launching with an unknown partial carrier.
-  If recording the carrier fails after a pane export, Firstmate unsets `TRACEPARENT` in the launch command and still launches the task, so the child never receives an identity absent from its metadata.
+  On pane backends, Firstmate records the carrier before writing its export into the staged launch file the pane shell sources; if recording fails, it omits the export, unsets `TRACEPARENT` in the launch command, and still launches the task, so the child never receives an identity absent from its metadata.
   T3 Code records the carrier before including it in the [per-directory harness environment](t3code-backend.md#per-directory-harness-environment); a recording failure omits the carrier, while an environment installation failure refuses the launch.
 - **Metadata-only.**
   The value lives in the task's launch environment and in `state/<id>.meta`.
