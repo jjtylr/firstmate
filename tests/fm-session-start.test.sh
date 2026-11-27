@@ -184,8 +184,14 @@ case "${1:-}" in
         printf '%s\n' '  compact-startup,in_flight,ship,firstmate,Compact startup digest,none,captain,captain choice pending'
         ;;
       *'--state held'*)
-        task_header 1
-        printf '%s\n' '  held-queued,queued,ship,firstmate,Held queued work,none,captain,captain choice pending'
+        if [ "${FM_FAKE_TASKS_AXI_LONG_HELD:-0}" = 1 ]; then
+          task_header 2
+          printf '%s\n' '  held-queued,queued,ship,firstmate,Held queued work,none,captain,captain choice pending'
+          printf '%s\n' '  held-long,queued,scout,firstmate,"Decide: a long held title that tasks-axi already cut at eighty characters fo\n... (truncated, 140 chars total - use show held-long --full to see complete text)",none,captain,"HOLD-REASON-START the captain should read the whole board card before answering, because the reason runs well past any row budget HOLD-REASON-END"'
+        else
+          task_header 1
+          printf '%s\n' '  held-queued,queued,ship,firstmate,Held queued work,none,captain,captain choice pending'
+        fi
         ;;
       *'--state queued'*'--blocked'*)
         task_header 1
@@ -1173,14 +1179,14 @@ EOF
 
   out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
   assert_contains "$out" "working: step 7" "default status tail missing the most recent line"
-  assert_contains "$out" "working: step 3" "default status tail (5 lines) missing an expected recent line"
-  assert_not_contains "$out" "working: step 1" "default status tail (5 lines) leaked an older line"
+  assert_contains "$out" "working: step 6" "default status tail (2 lines) missing an expected recent line"
+  assert_not_contains "$out" "working: step 5" "default status tail (2 lines) leaked an older line"
   assert_contains "$out" "$home/state/task-a.status" "digest did not print the full status log path for a deeper read"
   assert_contains "$out" "a bounded tail of every state/*.status" "read-once contract does not distinguish bounded status tails"
 
-  out=$(FM_SESSION_START_STATUS_TAIL=2 run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
-  assert_contains "$out" "working: step 7" "FM_SESSION_START_STATUS_TAIL=2 tail missing the most recent line"
-  assert_not_contains "$out" "working: step 5" "FM_SESSION_START_STATUS_TAIL=2 did not bound the tail to 2 lines"
+  out=$(FM_SESSION_START_STATUS_TAIL=5 run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_contains "$out" "working: step 3" "FM_SESSION_START_STATUS_TAIL=5 tail missing an expected line"
+  assert_not_contains "$out" "working: step 2" "FM_SESSION_START_STATUS_TAIL=5 did not bound the tail to 5 lines"
 
   pass "status tail is bounded to the configured line count, with the full log path always printed"
 }
@@ -1225,6 +1231,159 @@ EOF
   [ "$capped" -eq 1 ] || fail "expected exactly one truncated tail line, got $capped: $tail_section"
 
   pass "status tail lines are capped with a truncation marker while the full log stays reachable"
+}
+
+# Work under way prints each record without the spawn-time bookkeeping no
+# startup decision reads, keeps every field recovery names, keeps an unknown
+# field, and points at the full record.
+test_meta_digest_drops_bookkeeping_fields() {
+  local rec root home fakebin out section
+  rec=$(new_world meta-digest-fields)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  {
+    printf 'window=fm-sess:fields\nendpoint_task_id=task-f\nworktree=/w/task-f\nproject=/p\n'
+    printf 'harness=claude\napproval_mode=bypass\nkind=ship\nmode=direct-PR\nyolo=on\nbranch=fm/task-f\n'
+    printf 'tasktmp=/tmp/fm-task-f\nmodel=claude-opus-5-5\neffort=medium\n'
+    printf 'dispatch_override=DISPATCH-OVERRIDE-PROSE\nbusy_gen=g1\nspawn_gen=s1\nbackend=herdr\n'
+    printf 'herdr_session=default\nherdr_workspace_id=w1\nherdr_tab_id=w1:t2\nherdr_pane_id=w1:p2\n'
+    printf 'control_relaunch_tx=tx1\nhome=/h\nremote_host=far\npr=https://example.invalid/pull/1\nfuture_field=kept\n'
+  } > "$home/state/task-f.meta"
+
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  section=$(printf '%s\n' "$out" | awk '/^--- task-f ---$/ { flag = 1 } flag && /^endpoint: / { exit } flag')
+
+  for field in window worktree project harness kind mode yolo branch model effort backend home remote_host pr future_field; do
+    printf '%s\n' "$section" | grep -q "^$field=" || fail "work under way dropped the $field field: $section"
+  done
+  for field in endpoint_task_id approval_mode tasktmp dispatch_override busy_gen spawn_gen herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id control_relaunch_tx; do
+    if printf '%s\n' "$section" | grep -q "^$field="; then
+      fail "work under way still printed the bookkeeping field $field: $section"
+    fi
+  done
+  assert_contains "$section" "full record: state/task-f.meta" "work under way did not point at the full record"
+  pass "work under way drops bookkeeping fields, keeps every recovery field and any unknown field, and points at the record"
+}
+
+# Held rows are shortened by replacing tasks-axi's title-truncation notice and
+# then cutting the hold reason, never the fields a startup turn acts on.
+test_backlog_held_rows_are_shortened() {
+  local rec root home fakebin out row
+  rec=$(new_world backlog-held-short)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_tasks_axi_compact "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  write_long_body_backlog "$home/data/backlog.md"
+
+  out=$(FM_FAKE_TASKS_AXI_LONG_HELD=1 run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  row=$(printf '%s\n' "$out" | grep '^  held-long,')
+  [ -n "$row" ] || fail "the long held row was not listed: $out"
+  [ "${#row}" -le 200 ] || fail "the long held row ran ${#row} characters past its 200-character budget: $row"
+  assert_contains "$row" 'held-long,queued,scout,firstmate,"Decide: a long held title' "the shortened held row lost its identity fields"
+  assert_contains "$row" ',none,captain,"HOLD-REASON-START' "the shortened held row lost its blocked_by, hold_kind, or reason start"
+  assert_contains "$row" '..."' "the shortened hold reason was not marked as cut"
+  assert_not_contains "$row" "use show held-long --full" "the title-truncation notice was not shortened"
+  assert_not_contains "$row" "HOLD-REASON-END" "the over-long hold reason was not cut"
+  assert_contains "$out" "held-queued,queued,ship,firstmate,Held queued work,none,captain,captain choice pending" \
+    "a held row already under the budget was altered"
+  assert_contains "$out" "read bin/fm-tasks-axi.sh show <id> --full before answering one" \
+    "the held group did not say where the full reason is"
+  pass "held backlog rows are cut to about 200 characters without losing their identity or hold kind"
+}
+
+run_pointer_session_start() {  # <home> <root> <path> [fm-session-start args...]
+  local home=$1 root=$2 path=$3
+  shift 3
+  env -u CLAUDECODE -u PI_CODING_AGENT -u FM_PI_HARNESS -u GROK_AGENT \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$root" PATH="$path" \
+    "$SESSION_START" --pointer --session-id sess-pointer "$@"
+}
+
+# A large digest becomes a short pointer that carries the lock verdict, and the
+# whole digest lands in a file whose read-check words confirm a whole read.
+test_pointer_mode_writes_report_and_checks_the_read() {
+  local rec root home fakebin out report record codes status
+  rec=$(new_world pointer-mode)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  awk 'BEGIN { while (i++ < 300) printf "- CAPTAIN-PREFERENCE line %d keeps the report well past the pointer size\n", i }' \
+    > "$home/data/captain.md"
+  printf 'LEARNINGS-TAIL-MARKER\n' > "$home/data/learnings.md"
+
+  out=$(run_pointer_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  report="$home/state/.session-start-report.sess-pointer"
+  record="$home/state/.session-start-read-check.sess-pointer"
+
+  [ "${#out}" -lt 10000 ] || fail "the pointer ran ${#out} characters, over Claude's 10,000-character hook limit"
+  assert_contains "$out" "LOCK: lock acquired" "the pointer did not show that the session lock was acquired"
+  assert_contains "$out" "$report" "the pointer did not name the report file"
+  assert_contains "$out" "Read the WHOLE file now" "the pointer did not require a whole-file read"
+  assert_contains "$out" "holds 5 read-check words" "the pointer did not say how many read-check words to confirm"
+  assert_not_contains "$out" "CAPTAIN-PREFERENCE" "the pointer printed digest content instead of pointing at it"
+  [ -f "$report" ] || fail "pointer mode wrote no report file"
+  assert_grep "CAPTAIN-PREFERENCE line 300" "$report" "the report file is missing the preference content"
+  assert_grep "LEARNINGS-TAIL-MARKER" "$report" "the report file is missing the learnings"
+  assert_grep "SUPERVISION OPERATING INSTRUCTIONS" "$report" "the report file is missing the supervision block"
+  [ "$(grep -c '^read-check word: ' "$report")" -eq 5 ] || fail "the report does not carry five read-check words"
+  [ "$(sed -n '$p' "$report" | cut -c1-17)" = "read-check word: " ] || fail "the report does not end with a read-check word"
+  assert_grep "session=sess-pointer" "$record" "the read-check record does not name the session"
+
+  status=0
+  FM_HOME="$home" "$SESSION_START" --confirm-read 000000 >/dev/null 2>&1 || status=$?
+  expect_code 1 "$status" "wrong read-check words were accepted"
+  [ -f "$record" ] || fail "wrong read-check words cleared the record"
+  codes=$(sed -n 's/^read-check word: //p' "$report" | tr '\n' ' ')
+  # shellcheck disable=SC2086  # One argument per word, as the pointer asks.
+  FM_HOME="$home" "$SESSION_START" --confirm-read $codes >/dev/null || fail "the report's own words were refused"
+  [ ! -e "$record" ] || fail "confirming the read did not clear the record"
+  pass "pointer mode prints a short pointer with the lock verdict and checks a whole read of the report"
+}
+
+test_pointer_mode_shows_a_refused_lock() {
+  local rec root home fakebin holder_pid out
+  rec=$(new_world pointer-read-only)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  awk 'BEGIN { while (i++ < 300) printf "- preference line %d\n", i }' > "$home/data/captain.md"
+  sleep 300 &
+  holder_pid=$!
+  printf '%s\n' "$holder_pid" > "$home/state/.lock"
+  out=$(run_pointer_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  kill "$holder_pid" 2>/dev/null || true
+  wait "$holder_pid" 2>/dev/null || true
+
+  [ "${#out}" -lt 10000 ] || fail "the read-only pointer ran ${#out} characters"
+  assert_contains "$out" "READ-ONLY SESSION - FLEET LOCK OWNERSHIP WAS NOT VERIFIED" "the pointer hid a refused lock"
+  assert_contains "$out" "do not spawn, steer, merge" "the pointer dropped the read-only instruction"
+  assert_contains "$out" "Read the WHOLE file now" "the read-only pointer did not require the whole read"
+  pass "pointer mode shows the read-only banner when the lock was refused"
+}
+
+test_pointer_mode_prints_a_small_digest_whole() {
+  local rec root home fakebin out
+  rec=$(new_world pointer-small)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  out=$(FM_SESSION_START_POINTER_MIN=1000000 run_pointer_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_contains "$out" "READ-ONCE CONTRACT" "a digest under the pointer size was not printed whole"
+  assert_not_contains "$out" "Read the WHOLE file now" "a digest under the pointer size still printed a pointer"
+  [ ! -e "$home/state/.session-start-read-check.sess-pointer" ] || fail "a whole-printed digest left a read-check record"
+  pass "pointer mode prints a digest that fits whole, with nothing to confirm"
 }
 
 test_orphan_status_logs_are_printed() {
@@ -2044,7 +2203,7 @@ EOF
   out=$(FM_FAKE_TASKS_AXI_LOG="$log" FM_FAKE_TASKS_AXI_READY=3 \
     run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
 
-  assert_contains "$out" "compact backlog listing (tasks-axi; done rows omitted; every in-flight, held, and blocked row shown in full; ready queued bounded to 20; task bodies omitted)" \
+  assert_contains "$out" "compact backlog listing (tasks-axi; done rows omitted; every in-flight, held, and blocked row shown, held rows shortened; ready queued bounded to 20; task bodies omitted)" \
     "compatible tasks-axi backend did not render the compact backlog listing"
   assert_contains "$out" "tasks[1]{id,state,kind,repo,title,blocked_by,hold_kind,hold_reason}:" \
     "tasks-axi compact listing omitted the expected structured field header"
@@ -3096,6 +3255,11 @@ EOF
 
 test_context_digest_absent_empty_present
 test_lock_refusal_read_only_path
+test_meta_digest_drops_bookkeeping_fields
+test_backlog_held_rows_are_shortened
+test_pointer_mode_writes_report_and_checks_the_read
+test_pointer_mode_shows_a_refused_lock
+test_pointer_mode_prints_a_small_digest_whole
 test_lock_write_failure_read_only_path
 test_trace_context_effective_state_is_frozen_after_lock
 test_session_lock_concurrent_single_winner

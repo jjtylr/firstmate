@@ -143,7 +143,7 @@
 #   - `done` rows are never listed. Retained completion history belongs to the
 #     reporting surfaces (bin/fm-bearings-snapshot.sh, /ahoy), and at startup it
 #     is pure weight - 10 done rows cost 3.3KB in an observed main-home digest.
-#   - Every in-flight, held, and blocked row is listed IN FULL, with its
+#   - Every in-flight, held, and blocked row is listed, with its
 #     hold_kind/hold_reason and blocked_by. Those are the rows AGENTS.md
 #     sections 7 and 10 make actionable at startup, so they are never bounded
 #     away.
@@ -169,6 +169,17 @@
 # Full bodies are targeted follow-up only: `bin/fm-tasks-axi.sh show <id> --full` when
 # compatible tasks-axi is available, or `data/backlog.md` when the file body is
 # truly needed.
+#   - Held rows are shortened to about FM_SESSION_START_HELD_ROW_CHARS (default
+#     200) characters: tasks-axi's own title-truncation notice becomes "...",
+#     then the hold reason is cut, never the id, state, kind, or hold_kind
+#     fields. The full reason is one `show <id> --full` away, which the held
+#     group's heading says to run before answering a held item.
+#
+# WORK UNDER WAY: each state/<id>.meta prints every field except the ones no
+# startup decision reads - spawn-time bookkeeping that only scripts consume,
+# each of which reads the file itself (META_DIGEST_DROP below names them). An
+# unknown field is printed, so a new field is never silently hidden, and the
+# full record path is printed with every task.
 #
 # STATUS TAILS: FM_SESSION_START_STATUS_TAIL bounds how many lines each task's
 # tail prints, and bin/fm-line-cap-lib.sh bounds how long each of those lines
@@ -225,6 +236,30 @@
 #             first, so a harness that spills a large output and shows only its
 #             head still tells the model to read the saved full output.
 #
+#   --pointer [--session-id <id>]
+#             Supplied by fm-sessionstart-run.sh on a Claude primary, whose hook
+#             transport cuts any output over 10,000 characters to a 2,000-character
+#             preview. The full digest is written to
+#             state/.session-start-report.<id> instead, and stdout carries only a
+#             short pointer: the lock verdict (and the read-only banner when the
+#             lock was refused), any truncation notice, the file's path and size,
+#             and the instruction to read the whole file before acting. A digest
+#             that fits in FM_SESSION_START_POINTER_MIN characters (default 9000)
+#             is printed whole as before. Read check: the digest carries
+#             read-check words spread through it - after the fleet state, after
+#             each of data/captain.md, data/captain-shared.md, and
+#             data/learnings.md, and at the end - and the words actually written
+#             are recorded with the session id in
+#             state/.session-start-read-check.<id>. --confirm-read clears that
+#             record; until then bin/fm-turnend-guard.sh holds that session's
+#             first turn end once with a reminder. Records older than a week are
+#             pruned.
+#
+#   --confirm-read <word>...
+#             Confirm the whole report was read by giving its read-check words in
+#             order. Clears the matching record and exits 0; words that match no
+#             record exit 1 naming the report to read; no record at all exits 0.
+#
 #   --source  The native session-open source, supplied only by
 #             fm-sessionstart-run.sh. A genuine `startup` that owns the active
 #             session lock records AGENTS.md's SHA-256 baseline only after the
@@ -249,8 +284,24 @@ AGENTS_BASELINE_FILE="$STATE/.session-start-agents-baseline"
 
 REEMIT=0
 SESSION_SOURCE=
+POINTER=0
+POINTER_SESSION_ID=
+CONFIRM_READ=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    --pointer)
+      POINTER=1
+      shift
+      ;;
+    --session-id)
+      POINTER_SESSION_ID=${2:-}
+      if [ "$#" -ge 2 ]; then shift 2; else shift; fi
+      ;;
+    --confirm-read)
+      CONFIRM_READ=1
+      shift
+      break
+      ;;
     --reemit)
       REEMIT=1
       shift
@@ -269,11 +320,59 @@ while [ "$#" -gt 0 ]; do
       ;;
     *)
       printf 'fm-session-start: unknown argument: %s\n' "$1" >&2
-      printf 'usage: fm-session-start.sh [--reemit] [--source <source>]\n' >&2
+      printf 'usage: fm-session-start.sh [--reemit] [--source <source>] [--pointer [--session-id <id>]] | --confirm-read <word>...\n' >&2
       exit 2
       ;;
   esac
 done
+
+# --- read check (see --pointer and --confirm-read above) ----------------------
+READ_CHECK_PREFIX="$STATE/.session-start-read-check."
+REPORT_PREFIX="$STATE/.session-start-report."
+
+if [ "$CONFIRM_READ" -eq 1 ]; then
+  given=$(printf '%s ' "$@")
+  given=${given% }
+  matched=
+  pending=
+  for record in "$READ_CHECK_PREFIX"*; do
+    [ -f "$record" ] && [ ! -L "$record" ] || continue
+    if [ -n "$given" ] && [ "$(sed -n 's/^codes=//p' "$record" 2>/dev/null)" = "$given" ]; then
+      matched=$record
+      break
+    fi
+    pending="$pending $(sed -n 's/^report=//p' "$record" 2>/dev/null)"
+  done
+  if [ -n "$matched" ]; then
+    rm -f -- "$matched" 2>/dev/null || true
+    printf 'start-up report read: confirmed.\n'
+    exit 0
+  fi
+  if [ -z "$pending" ]; then
+    printf 'start-up report read: nothing to confirm.\n'
+    exit 0
+  fi
+  printf 'start-up report read: those words do not match. Read the whole report from line 1 to the end and give every read-check word in order:%s\n' "$pending" >&2
+  exit 1
+fi
+
+# read_check_word: six random hex digits, never empty.
+read_check_word() {
+  local word
+  word=$(od -An -N3 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')
+  [ -n "$word" ] || word=$(printf '%06x' "$(( (RANDOM << 9 ^ RANDOM ^ $$) & 16777215 ))")
+  printf '%s\n' "$word"
+}
+
+# print_read_check <n>: the nth read-check line inside the child digest, when
+# the parent handed it words (FM_SESSION_START_READ_CODES, space-separated).
+print_read_check() {
+  local n=$1 words
+  [ -n "${FM_SESSION_START_READ_CODES:-}" ] || return 0
+  read -r -a words <<< "$FM_SESSION_START_READ_CODES"
+  [ "$n" -ge 1 ] && [ "$n" -le "${#words[@]}" ] || return 0
+  printf '\nread-check word: %s\n' "${words[$((n - 1))]}"
+}
 
 # --- 0. runtime bound ---------------------------------------------------------
 # The ordered stage list is the contract behind the truncation banner: the child
@@ -304,6 +403,30 @@ if [ -z "${FM_SESSION_START_STAGE_FILE:-}" ]; then
     # is lost, so the child still runs bounded.
     SESSION_START_STAGE_FILE=/dev/null
   fi
+  # Pointer mode: the child writes the digest to the report file and its lock
+  # verdict to a side file; without a writable report the digest prints whole.
+  REPORT_FILE=
+  LOCK_NOTE_FILE=
+  if [ "$POINTER" -eq 1 ] && [ -d "$STATE" ]; then
+    POINTER_KEY=$(printf '%s' "$POINTER_SESSION_ID" | tr -cd 'A-Za-z0-9-' | cut -c1-64)
+    [ -n "$POINTER_KEY" ] || POINTER_KEY="pid$$"
+    find "$STATE" -maxdepth 1 \( -name '.session-start-report.*' -o -name '.session-start-read-check.*' \) \
+      -mtime +7 -exec rm -f {} + 2>/dev/null || true
+    REPORT_FILE="$REPORT_PREFIX$POINTER_KEY"
+    LOCK_NOTE_FILE=$(mktemp "${TMPDIR:-/tmp}/fm-session-start-lock.XXXXXX" 2>/dev/null) || LOCK_NOTE_FILE=
+    if [ -z "$LOCK_NOTE_FILE" ] || ! : > "$REPORT_FILE" 2>/dev/null; then
+      [ -z "$LOCK_NOTE_FILE" ] || rm -f "$LOCK_NOTE_FILE"
+      REPORT_FILE=
+      LOCK_NOTE_FILE=
+    fi
+  fi
+  READ_CODES=
+  if [ -n "$REPORT_FILE" ]; then
+    READ_CODES="$(read_check_word) $(read_check_word) $(read_check_word) $(read_check_word)"
+    exec 3>&1 1>"$REPORT_FILE"
+  fi
+  export FM_SESSION_START_READ_CODES="$READ_CODES"
+  export FM_SESSION_START_LOCK_NOTE="$LOCK_NOTE_FILE"
   if [ "$REEMIT" -eq 1 ]; then
     if [ -n "$SESSION_SOURCE" ]; then
       fm_run_timed "$SESSION_START_BUDGET" \
@@ -324,6 +447,7 @@ if [ -z "${FM_SESSION_START_STAGE_FILE:-}" ]; then
       "$SCRIPT_DIR/fm-session-start.sh"
   fi
   SESSION_START_RC=$?
+  SESSION_START_LAST_STAGE=
   # ANY nonzero child exit is a truncation: the banner contract promises that
   # a stage that cannot print is named. Exit 124 is the bound firing; any
   # other status means the child died or was killed mid-stage, which truncates
@@ -358,6 +482,56 @@ if [ -z "${FM_SESSION_START_STAGE_FILE:-}" ]; then
     printf '%s\n' "$BAR"
   fi
   rm -f "$SESSION_START_STAGE_FILE" 2>/dev/null || true
+  [ -n "$REPORT_FILE" ] || exit 0
+
+  printf '\nread-check word: %s\n' "$(read_check_word)"
+  exec 1>&3 3>&-
+  # Record exactly the words the report holds, in order, so a truncated digest
+  # is still confirmable from what it did print.
+  WRITTEN_CODES=$(sed -n 's/^read-check word: //p' "$REPORT_FILE" | tr '\n' ' ')
+  WRITTEN_CODES=${WRITTEN_CODES% }
+  WORD_COUNT=$(printf '%s\n' "$WRITTEN_CODES" | wc -w | tr -d ' ')
+  REPORT_CHARS=$(wc -m < "$REPORT_FILE" | tr -d ' ')
+  REPORT_LINES=$(wc -l < "$REPORT_FILE" | tr -d ' ')
+  POINTER_MIN=${FM_SESSION_START_POINTER_MIN:-9000}
+  case "$POINTER_MIN" in ''|*[!0-9]*) POINTER_MIN=9000 ;; esac
+  READ_CHECK_FILE="$READ_CHECK_PREFIX$POINTER_KEY"
+  LOCK_NOTE=$(cat "$LOCK_NOTE_FILE" 2>/dev/null || true)
+  rm -f "$LOCK_NOTE_FILE" 2>/dev/null || true
+  if [ "$REPORT_CHARS" -le "$POINTER_MIN" ]; then
+    rm -f "$READ_CHECK_FILE" 2>/dev/null || true
+    cat "$REPORT_FILE"
+    exit 0
+  fi
+  if ! printf 'session=%s\nreport=%s\ncodes=%s\n' "$POINTER_SESSION_ID" "$REPORT_FILE" "$WRITTEN_CODES" \
+    > "$READ_CHECK_FILE" 2>/dev/null; then
+    # No record means no reminder; the pointer itself still says what to do.
+    rm -f "$READ_CHECK_FILE" 2>/dev/null || true
+  fi
+  printf 'SESSION START - %s\n' "$FM_HOME"
+  if [ -n "$LOCK_NOTE" ]; then
+    printf '%s\n' "$LOCK_NOTE"
+  else
+    printf 'LOCK: unknown - the start-up report stopped before the lock step. Stay read-only and rerun bin/fm-session-start.sh.\n'
+  fi
+  if [ "$SESSION_START_RC" -ne 0 ]; then
+    printf 'STARTUP TRUNCATED: the start-up report stopped during the "%s" stage; the banner at the end of the file names what to reconcile.\n' \
+      "$SESSION_START_LAST_STAGE"
+  fi
+  cat <<EOF
+
+The full start-up report ($REPORT_LINES lines, $REPORT_CHARS characters) is in:
+  $REPORT_FILE
+Read the WHOLE file now, before any other action: open it with the Read tool from
+line 1 to the end, in consecutive parts if it is long. Do not search it or read
+slices of it with grep, sed, head, tail, or awk: it carries this turn's queued
+wakes and open decisions, the fleet state, and the captain's preferences and
+learnings, and all of it applies to this session.
+It holds $WORD_COUNT read-check words spread through it. Once you have read it all,
+confirm with every word in order:
+  $FM_ROOT/bin/fm-session-start.sh --confirm-read <word> ...
+Until that is confirmed, this session's first turn end is held once to remind you.
+EOF
   exit 0
 fi
 
@@ -390,8 +564,8 @@ PRIMARY_HARNESS=$("$SCRIPT_DIR/fm-harness.sh" 2>/dev/null || printf unknown)
 if fm_tasks_axi_compatible; then TASKS_AXI_COMPATIBLE=1; else TASKS_AXI_COMPATIBLE=0; fi
 TASKS_AXI_CHECK_REASON=$(fm_tasks_axi_check_reason)
 
-STATUS_TAIL=${FM_SESSION_START_STATUS_TAIL:-5}
-case "$STATUS_TAIL" in ''|*[!0-9]*) STATUS_TAIL=5 ;; esac
+STATUS_TAIL=${FM_SESSION_START_STATUS_TAIL:-2}
+case "$STATUS_TAIL" in ''|*[!0-9]*) STATUS_TAIL=2 ;; esac
 QUEUED_LIMIT=${FM_SESSION_START_QUEUED_LIMIT:-20}
 case "$QUEUED_LIMIT" in ''|*[!0-9]*|0) QUEUED_LIMIT=20 ;; esac
 # One per-task endpoint read may never outlive this bound: a hung backend CLI
@@ -401,6 +575,17 @@ ENDPOINT_TIMEOUT=${FM_SESSION_START_ENDPOINT_TIMEOUT:-10}
 case "$ENDPOINT_TIMEOUT" in ''|*[!0-9]*) ENDPOINT_TIMEOUT=10 ;; esac
 [ "$ENDPOINT_TIMEOUT" -gt 0 ] 2>/dev/null || ENDPOINT_TIMEOUT=10
 BACKLOG_FIELDS=blocked_by,hold_kind,hold_reason
+HELD_ROW_CHARS=${FM_SESSION_START_HELD_ROW_CHARS:-200}
+case "$HELD_ROW_CHARS" in ''|*[!0-9]*|0) HELD_ROW_CHARS=200 ;; esac
+# Meta fields the startup digest omits. Each is spawn-time bookkeeping that the
+# owning script reads from the record itself (busy and spawn generations,
+# control transaction ids, the herdr pane coordinates that `window` already
+# carries, the approval mode and scratch directory the spawn applied, the
+# endpoint id that equals the task id, and the dispatch-override prose kept for
+# the dispatch audit). Every field recovery, relaunch, landing, or
+# reconciliation names - window, backend, worktree, project, harness, model,
+# effort, kind, mode, yolo, branch, home, pr, and every remote_* field - stays.
+META_DIGEST_DROP_RE='^(busy_gen|spawn_gen|control_[a-z_]*_tx|herdr_session|herdr_workspace_id|herdr_tab_id|herdr_pane_id|approval_mode|tasktmp|endpoint_task_id|dispatch_override)='
 
 RULE='================================================================================'
 SUBRULE='--------------------------------------------------------------------------------'
@@ -517,6 +702,32 @@ print_ready_queued_bounded() {
   '
 }
 
+# Shorten each held row to about HELD_ROW_CHARS characters without losing the
+# fields a startup turn acts on. tasks-axi's title-truncation notice (a literal
+# "\n... (truncated, N chars total - use show <id> --full ...)") becomes "...";
+# then an over-long row's final quoted field, the hold reason, is cut to fit.
+# The id, state, kind, repo, blocked_by, and hold_kind fields are never cut, so
+# a row that is still long after both steps is printed as it is.
+shorten_held_rows() {
+  awk -v max="$HELD_ROW_CHARS" '
+    /^[[:space:]]/ && /,/ {
+      row = $0
+      gsub(/\\n\.\.\. \(truncated, [0-9]+ chars total - use show [^ ]+ --full to see complete text\)/, "...", row)
+      if (length(row) > max && row ~ /"$/) {
+        p = 0
+        for (i = length(row) - 1; i > 1; i--) {
+          if (substr(row, i - 1, 2) == ",\"") { p = i; break }
+        }
+        keep = max - p - 4
+        if (p > 0 && keep >= 20) row = substr(row, 1, p) substr(row, p + 1, keep) "...\""
+      }
+      print row
+      next
+    }
+    { print }
+  '
+}
+
 print_backlog_tasks_axi_compact() {
   local path=$1 in_flight held blocked ready err
   if ! in_flight=$(tasks-axi list --file "$path" --state in_flight --fields "$BACKLOG_FIELDS" 2>&1); then
@@ -528,12 +739,13 @@ print_backlog_tasks_axi_compact() {
   elif ! ready=$(tasks-axi ready --file "$path" 2>&1); then
     err=$ready
   else
-    printf 'compact backlog listing (tasks-axi; done rows omitted; every in-flight, held, and blocked row shown in full; ready queued bounded to %s; task bodies omitted)\n' \
+    printf 'compact backlog listing (tasks-axi; done rows omitted; every in-flight, held, and blocked row shown, held rows shortened; ready queued bounded to %s; task bodies omitted)\n' \
       "$QUEUED_LIMIT"
     printf '\nin flight:\n'
     printf '%s\n' "$in_flight" | fm_hold_reason_decode_stream | strip_axi_help
-    printf '\nheld (captain- or time-gated; an in-flight item that is also held appears in both groups):\n'
-    printf '%s\n' "$held" | fm_hold_reason_decode_stream | strip_axi_help
+    printf '\nheld (captain- or time-gated; an in-flight item that is also held appears in both groups; rows cut to about %s characters, so read bin/fm-tasks-axi.sh show <id> --full before answering one):\n' \
+      "$HELD_ROW_CHARS"
+    printf '%s\n' "$held" | fm_hold_reason_decode_stream | strip_axi_help | shorten_held_rows
     printf '\nblocked queued:\n'
     printf '%s\n' "$blocked" | fm_hold_reason_decode_stream | strip_axi_help
     printf '\nready queued (dispatchable now):\n'
@@ -697,6 +909,12 @@ LOCK_OUT=$("$SCRIPT_DIR/fm-lock.sh" 2>&1)
 LOCK_RC=$?
 printf '%s\n' "$LOCK_OUT"
 READ_ONLY=0
+# Pointer mode's lock verdict for the parent (see --pointer above).
+LOCK_NOTE_OUT=/dev/null
+[ -z "${FM_SESSION_START_LOCK_NOTE:-}" ] || LOCK_NOTE_OUT=$FM_SESSION_START_LOCK_NOTE
+if [ "$LOCK_RC" -eq 0 ]; then
+  printf 'LOCK: %s\n' "$LOCK_OUT" > "$LOCK_NOTE_OUT" 2>/dev/null || true
+fi
 if [ "$LOCK_RC" -ne 0 ]; then
   READ_ONLY=1
   BAR='●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
@@ -711,7 +929,7 @@ if [ "$LOCK_RC" -ne 0 ]; then
     printf '●  Operate read-only until this resolves - do not spawn, steer, merge, or\n'
     printf '●  otherwise mutate fleet state from this session.\n'
     printf '%s\n' "$BAR"
-  }
+  } | tee "$LOCK_NOTE_OUT"
 fi
 REBUILDING_SESSION_PID=$(fm_harness_ancestry_pid 2>/dev/null || true)
 print_agents_refresh_if_required "$REBUILDING_SESSION_PID"
@@ -816,7 +1034,9 @@ else
       printf '%s\n' "$BRANCH_REPLAY_OUT"
     fi
   fi
-  DRAIN_OUT=$("$SCRIPT_DIR/fm-wake-drain.sh" 2>&1)
+  # The flag lets the supervisor's next drain print one line instead of an
+  # unchanged repeat of this OPEN DECISIONS listing (bin/fm-wake-drain.sh).
+  DRAIN_OUT=$(FM_WAKE_DRAIN_SESSION_START=1 "$SCRIPT_DIR/fm-wake-drain.sh" 2>&1)
   if [ -n "$DRAIN_OUT" ]; then
     printf '%s\n' "$DRAIN_OUT"
   else
@@ -894,8 +1114,8 @@ fi
 stage read-once
 section "READ-ONCE CONTRACT"
 cat <<'EOF'
-Everything below is printed in full for this session start: every state/*.meta,
-a compact data/backlog.md listing, a bounded tail of every state/*.status,
+Everything below is printed for this session start: every state/*.meta (minus
+spawn bookkeeping fields), a compact data/backlog.md listing, a bounded tail of every state/*.status,
 data/projects.md, data/secondmates.md, data/captain.md, data/captain-shared.md,
 and data/learnings.md.
 Do NOT re-read any of them after reading this digest, and do NOT bulk-read
@@ -932,7 +1152,8 @@ for meta in "$STATE"/*.meta; do
   META_FOUND=1
   id=$(basename "$meta" .meta)
   printf '\n--- %s ---\n' "$id"
-  cat "$meta"
+  grep -Ev "$META_DIGEST_DROP_RE" "$meta" || true
+  printf 'full record: %s\n' "${meta#"$FM_HOME"/}"
 
   window=$(fm_meta_get "$meta" window)
   target=$(fm_backend_target_of_meta "$meta")
@@ -975,6 +1196,7 @@ for status in "$STATE"/*.status; do
   print_status_tail "$status"
 done
 [ "$ORPHAN_STATUS_FOUND" -eq 1 ] || printf '(none)\n'
+print_read_check 1
 
 subsection "AFK"
 # The away posture is the record (bin/fm-afk-contract.sh); the legacy flag
@@ -1055,8 +1277,11 @@ section "CONTEXT"
 print_file_or_absent "$DATA/projects.md" "data/projects.md"
 print_file_or_absent "$DATA/secondmates.md" "data/secondmates.md"
 print_file_or_absent "$DATA/captain.md" "data/captain.md"
+print_read_check 2
 print_file_or_absent "$DATA/captain-shared.md" "data/captain-shared.md (shared, main-authoritative, read-only in secondmate homes)"
+print_read_check 3
 print_file_or_absent "$DATA/learnings.md" "data/learnings.md"
+print_read_check 4
 
 # --- 9. closing reminder -----------------------------------------------
 stage next-step

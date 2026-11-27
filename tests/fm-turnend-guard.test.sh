@@ -2718,6 +2718,30 @@ test_pi_extension_injects_once_per_logical_agent_run
 test_pi_extension_retries_after_followup_delivery_failure
 test_pi_extension_keeps_marker_of_live_ancestor_session
 test_pi_extension_reads_a_windows_tagged_session_lock
+# A Claude primary's unconfirmed start-up report read check holds that
+# session's first turn end once, never twice, and never another session's.
+test_hook_claude_mode_start_report_read_check_reminds_once() {
+  local dir out status record
+  dir=$(make_primary_dir "$TMP_ROOT/hook-claude-read-check")
+  record="$dir/state/.session-start-read-check.sess-claude-mode"
+  printf 'session=sess-claude-mode\nreport=%s/state/.session-start-report.sess-claude-mode\ncodes=aaaaaa bbbbbb\n' "$dir" > "$record"
+
+  out=$(run_hook_claude "$dir" false); status=$?
+  expect_code 2 "$status" "an unconfirmed start-up report read did not hold the first turn end"
+  assert_contains "$out" "START-UP REPORT NOT CONFIRMED READ" "the read-check reminder did not explain itself"
+  assert_contains "$out" "--confirm-read" "the read-check reminder did not name the confirm command"
+
+  out=$(run_hook_claude "$dir" true); status=$?
+  expect_code 0 "$status" "the read-check reminder held a turn end a second time"
+  [ -z "$out" ] || fail "the second turn end after the reminder produced output: $out"
+
+  printf 'session=another-session\nreport=x\ncodes=cccccc\n' > "$dir/state/.session-start-read-check.another-session"
+  rm -f "$record"
+  out=$(run_hook_claude "$dir" false); status=$?
+  expect_code 0 "$status" "another session's read-check record held this session's turn end"
+  pass "fm-turnend-guard --claude: an unconfirmed start-up report read holds the first turn end exactly once"
+}
+
 test_hook_claude_mode_reblocks_stop_hook_active_when_unhealthy
 test_hook_claude_mode_reblocks_x_mode_without_tasks
 test_hook_claude_mode_allows_when_autoarm_owner_alive
@@ -2758,3 +2782,4 @@ test_hook_away_daemon_allows_beacon_within_poll_derived_grace
 test_hook_away_daemon_blocks_dead_daemon_despite_poll_derived_grace
 test_hook_away_daemon_blocks_beacon_older_than_poll_derived_grace
 test_hook_no_afk_ignores_poll_derived_grace
+test_hook_claude_mode_start_report_read_check_reminds_once

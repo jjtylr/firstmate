@@ -473,6 +473,16 @@ EOF
 # fm-classify-lib.sh's "incremental (cursor-backed) open-decisions fold").
 # Bounded and silent: prints nothing when no decision is open, which is the
 # common case.
+#
+# Start-up repeat: the session-start digest runs this drain with
+# FM_WAKE_DRAIN_SESSION_START=1, and the supervisor's own first drain usually
+# follows within the same turn. The start drain keeps a copy of the listing it
+# printed (OPEN_DECISIONS_START_COPY); the next main-actor drain compares its own
+# listing with that copy and deletes it. Identical means nothing changed since
+# the start-up report, so it prints one line saying so instead of the same
+# listing again; any difference, a missing copy, or any later drain prints the
+# listing in full. Only that single unchanged repeat is ever dropped.
+OPEN_DECISIONS_START_COPY="$STATE/.open-decisions-start-copy"
 print_open_decisions_section() {
   local snapshot=${1:-} open task key verb note line item_bytes=220 global_bytes=4000
   local output='' used=0 shown=0 omitted=0 bytes
@@ -513,7 +523,29 @@ print_open_decisions_section() {
 $open
 EOF
 
-  [ "$shown" -gt 0 ] || [ "$omitted" -gt 0 ] || return 0
+  local start_copy=0 repeat=0 listing
+  if [ "$ACTOR" = main ]; then
+    if [ "${FM_WAKE_DRAIN_SESSION_START:-0}" = 1 ]; then
+      start_copy=1
+    elif [ -f "$OPEN_DECISIONS_START_COPY" ] && [ ! -L "$OPEN_DECISIONS_START_COPY" ]; then
+      listing="$output|omitted=$omitted"
+      [ "$listing" = "$(cat "$OPEN_DECISIONS_START_COPY" 2>/dev/null)" ] && repeat=1
+    fi
+    [ "$start_copy" -eq 1 ] || rm -f -- "$OPEN_DECISIONS_START_COPY" 2>/dev/null || true
+  fi
+  if [ "$shown" -eq 0 ] && [ "$omitted" -eq 0 ]; then
+    [ "$start_copy" -eq 0 ] || rm -f -- "$OPEN_DECISIONS_START_COPY" 2>/dev/null || true
+    return 0
+  fi
+  if [ "$start_copy" -eq 1 ]; then
+    printf '%s|omitted=%s' "$output" "$omitted" > "$OPEN_DECISIONS_START_COPY" 2>/dev/null \
+      || rm -f -- "$OPEN_DECISIONS_START_COPY" 2>/dev/null || true
+  fi
+  if [ "$repeat" -eq 1 ]; then
+    printf 'OPEN DECISIONS: the %d decision(s) listed in the start-up report are still open and unchanged; not repeated here, and still to be handled.\n' \
+      "$((shown + omitted))" || return 1
+    return 0
+  fi
   printf 'OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):\n' || return 1
   printf '%s' "$output" || return 1
   if [ "$omitted" -gt 0 ]; then
