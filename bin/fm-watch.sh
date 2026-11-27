@@ -368,6 +368,10 @@ HOME_SUMMARY_INTERVAL=${FM_HOME_SUMMARY_INTERVAL:-300}
 case "$HOME_SUMMARY_INTERVAL" in
   ''|*[!0-9]*|0) HOME_SUMMARY_INTERVAL=300 ;;
 esac
+SUPERVISOR_CLEAR_INTERVAL=${FM_SUPERVISOR_CLEAR_INTERVAL:-120}  # seconds between clear-policy passes
+case "$SUPERVISOR_CLEAR_INTERVAL" in
+  ''|*[!0-9]*) SUPERVISOR_CLEAR_INTERVAL=120 ;;
+esac
 SIGNAL_GRACE=${FM_SIGNAL_GRACE:-30}   # seconds to linger after a signal so trailing
                                       # signals (a status write, then the same turn's
                                       # turn-end hook) coalesce into one wake
@@ -4199,6 +4203,25 @@ while :; do
     fi
   else
     triage_log "inactive-outcome reconciliation unavailable"
+  fi
+
+  # Supervisor clear policy: main and each second mate get a fresh conversation
+  # once theirs grows past the set size (bin/fm-supervisor-clear.sh owns it). A
+  # pass is due every SUPERVISOR_CLEAR_INTERVAL; the pass starts restarts and
+  # the /clear helper detached, so it returns at once with at most one line for
+  # main, which wakes main like any other check.
+  if [ "$(age_of "$STATE/supervisor-clear/.last-tick")" -ge "$SUPERVISOR_CLEAR_INTERVAL" ]; then
+    clear_out=
+    if clear_out=$(fm_run_timed 120 env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
+      FM_CONFIG_OVERRIDE="$CONFIG" "$SCRIPT_DIR/fm-supervisor-clear.sh" tick </dev/null 2>/dev/null); then
+      if [ -n "$clear_out" ]; then
+        fm_wake_append check supervisor-clear "$clear_out" || exit 1
+        wake "$clear_out"
+      fi
+    else
+      triage_log "supervisor clear pass unavailable"
+      mkdir -p "$STATE/supervisor-clear" 2>/dev/null && touch "$STATE/supervisor-clear/.last-tick" 2>/dev/null || true
+    fi
   fi
 
   # Slow per-task checks (firstmate writes these, e.g. a merged-PR poll).

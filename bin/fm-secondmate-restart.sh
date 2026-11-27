@@ -2,7 +2,8 @@
 # Restart second mates onto the current instruction surface and launch-time
 # wiring, persisting their open records first.
 #
-# Usage: fm-secondmate-restart.sh <secondmate-id>... [--help]
+# Usage: fm-secondmate-restart.sh [--keep-profile] [--reason update|context]
+#                                 <secondmate-id>... [--help]
 #
 # This is the executable half of /updatefirstmate's reload step. A running agent
 # holds AGENTS.md and every skill it has loaded frozen from launch, and no
@@ -55,6 +56,13 @@
 # restart transaction, its checkpoint, its journal, and its rollback; a refusal
 # before the agent is stopped leaves the mate running exactly as it was.
 #
+# --keep-profile restarts each mate on the harness, model, and effort its own
+# record already names instead of re-resolving config/secondmate-harness, and
+# --reason context words the persist request for a size-driven restart (and asks
+# a mate mid-turn to finish that step first). Both are what
+# bin/fm-supervisor-clear.sh passes; /updatefirstmate passes neither, because
+# re-resolving the launch-time wiring is the point of its reload.
+#
 # Restart candidacy itself belongs to bin/fm-update.sh, which knows which homes
 # the update pass actually left on the target commit; this command re-checks
 # capability on its own argv rather than trusting a caller's list.
@@ -72,7 +80,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 
 usage() {
-  sed -n '2,65{s/^# \{0,1\}//;p;}' "$0"
+  sed -n '2,/^set -u$/{/^#/{s/^# \{0,1\}//;p;};}' "$0"
 }
 
 case "${1:-}" in
@@ -101,8 +109,22 @@ case "$PERSIST_WAIT" in ''|*[!0-9]*) echo "error: FM_SECONDMATE_PERSIST_WAIT mus
 case "$PERSIST_POLL" in ''|*[!0-9]*|0) echo "error: FM_SECONDMATE_PERSIST_POLL must be a positive integer: $PERSIST_POLL" >&2; exit 2 ;; esac
 
 IDS=()
+KEEP_PROFILE=0
+REQUEST=$FM_SECONDMATE_PERSIST_REQUEST
+want_reason=0
 for arg in "$@"; do
+  if [ "$want_reason" = 1 ]; then
+    want_reason=0
+    case "$arg" in
+      update) REQUEST=$FM_SECONDMATE_PERSIST_REQUEST ;;
+      context) REQUEST=$FM_SECONDMATE_PERSIST_REQUEST_CONTEXT ;;
+      *) echo "error: --reason must be update or context: $arg" >&2; exit 2 ;;
+    esac
+    continue
+  fi
   case "$arg" in
+    --keep-profile) KEEP_PROFILE=1; continue ;;
+    --reason) want_reason=1; continue ;;
     -*) echo "error: unexpected argument '$arg'" >&2; usage >&2; exit 2 ;;
   esac
   # /updatefirstmate's action line names each mate by its fm-<id> selector; the
@@ -114,6 +136,7 @@ for arg in "$@"; do
   esac
   IDS+=("$id")
 done
+[ "$want_reason" = 0 ] || { echo "error: --reason needs a value" >&2; exit 2; }
 [ "${#IDS[@]}" -gt 0 ] || { usage >&2; exit 2; }
 
 # Per-mate pass state, kept as parallel indexed arrays so this stays bash-3.2
@@ -171,8 +194,12 @@ restart_mate() {  # <array-index>
       "$id" "${HARNESS[i]}" "${MODEL[i]:-default}" "${EFFORT[i]:-default}" < /dev/null 2>&1)
     restart_rc=$?
   else
+    local relaunch_args=("$id" relaunch)
+    if [ "$KEEP_PROFILE" = 1 ]; then
+      relaunch_args+=(--harness "${HARNESS[i]}" --model "${MODEL[i]:-default}" --effort "${EFFORT[i]:-default}")
+    fi
     restart_out=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
-      "$SCRIPT_DIR/fm-control.sh" "$id" relaunch 2>&1)
+      "$SCRIPT_DIR/fm-control.sh" "${relaunch_args[@]}" 2>&1)
     restart_rc=$?
   fi
   if [ "$restart_rc" -eq 0 ]; then
@@ -267,7 +294,20 @@ while [ "$i" -lt "${#IDS[@]}" ]; do
   PLACEMENT[i]=$FM_SECONDMATE_RESTART_PLACEMENT
   HOST[i]=$FM_SECONDMATE_RESTART_HOST
   HARNESS[i]=$FM_SECONDMATE_RESTART_HARNESS
-  if [ "${PLACEMENT[i]}" = remote ]; then
+  if [ "$KEEP_PROFILE" = 1 ]; then
+    # The record already names the profile this mate runs on; keeping it is the
+    # whole request, so neither placement re-resolves the pin.
+    MODEL[i]=$(fm_meta_get "$STATE/$id.meta" model)
+    EFFORT[i]=$(fm_meta_get "$STATE/$id.meta" effort)
+    case "${EFFORT[i]}" in
+      ''|default|low|medium|high|xhigh|max|ultra) ;;
+      *)
+        REASON[i]="its recorded effort '${EFFORT[i]}' is not one a restart can keep"
+        i=$((i + 1))
+        continue
+        ;;
+    esac
+  elif [ "${PLACEMENT[i]}" = remote ]; then
     # A local relaunch re-resolves this home's durable secondmate pin on its own,
     # which is the one owner of that resolution. A remote one cannot: it runs in
     # a home whose config/secondmate-harness is deliberately NOT inherited, so
@@ -306,14 +346,14 @@ while [ "$i" -lt "${#IDS[@]}" ]; do
   fi
 
   if ! corr=$(fm_pending_reply_create "$FM_HOME" "$STATE" "$id" \
-    "$FM_SECONDMATE_PERSIST_REQUEST"); then
+    "$REQUEST"); then
     REASON[i]="its answer about the open work cannot be tracked, so a clean reload could not be proven"
     i=$((i + 1))
     continue
   fi
   if ! send_out=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
     FM_PENDING_REPLY_EXISTING_CORR="$corr" \
-    "$SCRIPT_DIR/fm-send.sh" "$id" "$FM_SECONDMATE_PERSIST_REQUEST" 2>&1); then
+    "$SCRIPT_DIR/fm-send.sh" "$id" "$REQUEST" 2>&1); then
     fm_pending_reply_discard_undelivered "$STATE" "$corr" >/dev/null 2>&1 || true
     REASON[i]="the request to write down its open work could not be delivered: $(first_reported_line "$send_out")"
     i=$((i + 1))
