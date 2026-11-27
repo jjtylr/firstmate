@@ -92,8 +92,10 @@ Then launch one of the co-primary harnesses; AGENTS.md takes over from there:
 **Claude Code**
 
 ```sh
-claude
+bin/fm-claude-main.sh
 ```
+
+It runs `claude` with the [supervisor start cuts](docs/configuration.md#supervisor-start-cuts-configsupervisor-claude-keep), so main starts without tools and skills no supervisor uses; arguments pass through to `claude`, and plain `claude` still works with the full set.
 
 **Grok**
 

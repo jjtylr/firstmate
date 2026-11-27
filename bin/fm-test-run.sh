@@ -461,7 +461,7 @@ family_for_basename() {
     fm-branch-supervision.test.sh|fm-busy-adapter-wiring.test.sh|\
     fm-busy-state.test.sh|fm-capacity.test.sh|fm-capacity-auto.test.sh|fm-lane-vitals.test.sh|\
     fm-classify-corr-token.test.sh|\
-    fm-claude-account-quota.test.sh|\
+    fm-claude-account-quota.test.sh|fm-claude-main.test.sh|\
     fm-claude-stop-autoarm.test.sh|fm-cursor-harness.test.sh|\
     fm-dispatch-record.test.sh|fm-dispatch-replay.test.sh|fm-dispatch-resolve.test.sh|fm-tier.test.sh|\
     fm-extension-binding.test.sh|fm-gitignore-config.test.sh|\
