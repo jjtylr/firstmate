@@ -216,6 +216,33 @@ test_mate_attempts_are_spaced_and_old_readings_ignored() {
   pass "mate restarts are spaced, and a reading from before a restart is ignored"
 }
 
+# A restart that did not complete but left the mate running is a failure: it is
+# logged with its reason, and never recorded as a restart.
+test_failed_restart_with_the_mate_running_is_logged_as_a_failure() {
+  local dir line
+  dir=$(make_case mate-failed)
+  line='failed: sm1: the restart did not complete: the replacement agent for sm1 did not come up within 90s; a fresh agent was started in its place and is running'
+  cat > "$dir/restart" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$dir/fake/restarts"
+echo "$line"
+echo "summary: 0 of 1 restarted, 0 nudged, 0 unreached, 1 failed"
+exit 3
+SH
+  chmod +x "$dir/restart"
+  add_mate "$dir" sm1 idle
+  write_log "$dir" "$dir/sm1-home" 160000
+  run_clear "$dir" tick >/dev/null
+  wait_for_file "$dir/fake/restarts" || fail "the restart was not requested"
+  local n=0
+  while ! log_of "$dir" | grep -q restart-failed && [ "$n" -lt 100 ]; do sleep 0.05; n=$((n + 1)); done
+  assert_contains "$(log_of "$dir")" "$(printf 'sm1\t160000\trestart-failed\t%s' "$line")" \
+    "the failure must be logged with the mate's own outcome line"
+  assert_not_contains "$(log_of "$dir")" $'\trestarted\t' "a failed restart must not be logged as a restart"
+  assert_absent "$dir/home/state/supervisor-clear/sm1.restarted" "a failed restart must not be recorded as one"
+  pass "a restart that failed with the mate still running is logged as a failure"
+}
+
 # --- main: asks and thresholds -------------------------------------------------
 
 test_main_is_asked_once_per_level() {
@@ -397,6 +424,7 @@ fm_test_run \
   test_idle_mate_over_soft_is_restarted_on_its_profile \
   test_busy_mate_waits_until_hard \
   test_mate_attempts_are_spaced_and_old_readings_ignored \
+  test_failed_restart_with_the_mate_running_is_logged_as_a_failure \
   test_main_is_asked_once_per_level \
   test_thresholds_come_from_config \
   test_secondmate_home_never_clears_itself \

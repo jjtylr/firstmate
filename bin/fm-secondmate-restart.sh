@@ -39,8 +39,16 @@
 #
 # A mate whose persist answer did not arrive or whose runtime cannot prove a
 # restart gets the ordinary re-read nudge and is reported as a nudge, never as a
-# clean reload. Once a relaunch is attempted, any failed or ambiguous result is
-# reported as unknown rather than attributing it to either incarnation.
+# clean reload. Once a relaunch is attempted, a failed or ambiguous result never
+# ends the pass with the mate left without an agent: under the mate's liveness
+# lock its endpoint is probed, and a dead or missing one gets the same guarded
+# recovery launch the watcher would give it (on the recorded profile under
+# --keep-profile), confirmed running within FM_SECONDMATE_RECOVER_WAIT. A mate
+# confirmed running afterwards is reported as failed with which of the two it
+# was - still running, or a fresh agent started in its place - and never as
+# restarted; only one no running agent could be confirmed for is unreached.
+# The reported reason is the relaunch's first error line, so a warning printed
+# on the way (such as a skipped pre-launch home sync) never stands in for it.
 #
 # Placement changes the transport and nothing else. A local mate is restarted
 # with bin/fm-control.sh <id> relaunch, which republishes this home's own
@@ -70,10 +78,11 @@
 # Environment knobs:
 #   FM_SECONDMATE_PERSIST_WAIT  seconds to wait for one mate's persist answer (900)
 #   FM_SECONDMATE_PERSIST_POLL  seconds between checks of that answer (5)
+#   FM_SECONDMATE_RECOVER_WAIT  seconds to confirm a recovery launch's agent (90)
 #
-# Exit status: 0 every named mate restarted; 3 at least one was nudged or left
-# unreached and every mate was still accounted for; 1 the input itself is
-# unusable; 2 invalid use.
+# Exit status: 0 every named mate restarted; 3 at least one was nudged, failed,
+# or left unreached and every mate was still accounted for; 1 the input itself
+# is unusable; 2 invalid use.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -102,11 +111,20 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 . "$SCRIPT_DIR/fm-secondmate-nudge-lib.sh"
 # shellcheck source=bin/fm-pending-reply-lib.sh
 . "$SCRIPT_DIR/fm-pending-reply-lib.sh"
+# shellcheck source=bin/fm-wake-lib.sh
+. "$SCRIPT_DIR/fm-wake-lib.sh"
+# shellcheck source=bin/fm-secondmate-liveness-lib.sh
+. "$SCRIPT_DIR/fm-secondmate-liveness-lib.sh"
 
 PERSIST_WAIT=${FM_SECONDMATE_PERSIST_WAIT:-900}
 PERSIST_POLL=${FM_SECONDMATE_PERSIST_POLL:-5}
 case "$PERSIST_WAIT" in ''|*[!0-9]*) echo "error: FM_SECONDMATE_PERSIST_WAIT must be a non-negative integer: $PERSIST_WAIT" >&2; exit 2 ;; esac
 case "$PERSIST_POLL" in ''|*[!0-9]*|0) echo "error: FM_SECONDMATE_PERSIST_POLL must be a positive integer: $PERSIST_POLL" >&2; exit 2 ;; esac
+RECOVER_WAIT=${FM_SECONDMATE_RECOVER_WAIT:-90}
+case "$RECOVER_WAIT" in ''|*[!0-9]*) echo "error: FM_SECONDMATE_RECOVER_WAIT must be a non-negative integer: $RECOVER_WAIT" >&2; exit 2 ;; esac
+# How long a recovery waits for another liveness episode on the same mate, and
+# bounds its own launch; it matches the restart transaction's own lock wait.
+RECOVER_LOCK_WAIT=${FM_CONTROL_LIVENESS_WAIT:-180}
 
 IDS=()
 KEEP_PROFILE=0
@@ -156,6 +174,7 @@ RESTART_RESULT=()
 
 restarted_count=0
 nudged_count=0
+failed_count=0
 unreached_count=0
 
 # The first line of a command's output that carries anything, flattened to one
@@ -185,14 +204,108 @@ report_unreached() {  # <id> <reason>
   printf 'unreached: %s: %s\n' "$1" "$2"
 }
 
+# The line that says why a relaunch failed: its first error line, else its first
+# line that is not a warning, else its first line. A launch can print warnings it
+# carried on past (a skipped pre-launch home sync is the usual one), and those
+# are never the reason it failed.
+failure_reported_line() {  # <text>
+  local line
+  line=$(printf '%s\n' "$1" | sed -n '/^error: /{p;q;}')
+  [ -n "$line" ] || line=$(printf '%s\n' "$1" | sed -n '/^warning: /d;/./{p;q;}')
+  [ -n "$line" ] || line=$1
+  first_reported_line "$line"
+}
+
+# Probe the mate until it reads alive, for up to RECOVER_WAIT seconds.
+wait_mate_alive() {  # <meta> <id>
+  local deadline
+  deadline=$(($(date +%s) + RECOVER_WAIT))
+  while :; do
+    fm_secondmate_liveness_probe "$1" "$2" poll
+    [ "$FM_SM_LIVE_STATUS" != alive ] || return 0
+    [ "$(date +%s)" -lt "$deadline" ] || return 1
+    sleep 1
+  done
+}
+
+# After a relaunch that did not complete, make sure the mate still has an
+# agent, and say which. The caller holds (or this takes) the mate's liveness
+# lock, so the watcher's own recovery cannot act on the same endpoint at once.
+# A dead or missing endpoint gets the liveness library's guarded recovery
+# launch - the exact path the watcher uses - pinned to the recorded profile
+# under --keep-profile, and is reported running only once a probe reads it
+# alive.
+recover_failed_restart() {  # <array-index> <failure-reason> <lock-held 0|1>
+  local i=$1 why=$2 held=$3 id meta lock status
+  local -a spawn_extra=()
+  id=${IDS[$i]}
+  meta="$STATE/$id.meta"
+  lock="$STATE/.secondmate-liveness-$id.lock"
+  if [ "$held" != 1 ]; then
+    if ! fm_lock_acquire_wait_bounded "$lock" "$RECOVER_LOCK_WAIT"; then
+      report_unreached "$id" "the restart outcome is unknown: $why; another liveness recovery still held the mate after ${RECOVER_LOCK_WAIT}s, so whether it is running was not confirmed"
+      return
+    fi
+  fi
+  fm_secondmate_liveness_probe "$meta" "$id" poll
+  status=$FM_SM_LIVE_STATUS
+  case "$status" in
+    alive)
+      fm_lock_release "$lock" || true
+      failed_count=$((failed_count + 1))
+      printf 'failed: %s: the restart did not complete: %s; the mate is still running\n' "$id" "$why"
+      return
+      ;;
+    relaunchable) ;;
+    *)
+      fm_lock_release "$lock" || true
+      report_unreached "$id" "the restart outcome is unknown: $why; its endpoint afterwards: ${FM_SM_LIVE_REASON:-$FM_SM_LIVE_STATE}"
+      return
+      ;;
+  esac
+  if [ "$KEEP_PROFILE" = 1 ]; then
+    spawn_extra=(--harness "${HARNESS[i]}")
+    case "${MODEL[i]:-default}" in default) ;; *) spawn_extra+=(--model "${MODEL[i]}") ;; esac
+    case "${EFFORT[i]:-default}" in default) ;; *) spawn_extra+=(--effort "${EFFORT[i]}") ;; esac
+  fi
+  if ! fm_secondmate_liveness_relaunch "$meta" "$id" "$RECOVER_LOCK_WAIT" ${spawn_extra[@]+"${spawn_extra[@]}"}; then
+    fm_lock_release "$lock" || true
+    if [ "$FM_SM_LIVE_STATUS" = skipped ]; then
+      report_unreached "$id" "the restart outcome is unknown: $why; no recovery launch was made: $FM_SM_LIVE_REASON"
+    else
+      report_unreached "$id" "the restart outcome is unknown: $why; the recovery launch failed too: $(failure_reported_line "$FM_SM_LIVE_OUT")"
+    fi
+    return
+  fi
+  if wait_mate_alive "$meta" "$id"; then
+    fm_lock_release "$lock" || true
+    failed_count=$((failed_count + 1))
+    printf 'failed: %s: the restart did not complete: %s; a fresh agent was started in its place and is running\n' "$id" "$why"
+    return
+  fi
+  fm_lock_release "$lock" || true
+  report_unreached "$id" "the restart outcome is unknown: $why; a recovery launch was made but no running agent was confirmed within ${RECOVER_WAIT}s"
+}
+
 restart_mate() {  # <array-index>
-  local i=$1 id restart_out restart_rc restart_reason ran_on
+  local i=$1 id restart_out restart_rc restart_reason ran_on lock_held=0
   id=${IDS[$i]}
   if [ "${PLACEMENT[i]}" = remote ]; then
+    # The host-local transaction holds only the host's lock, while this home's
+    # watcher probes the route from here; hold this home's lock across it.
+    if ! fm_lock_acquire_wait_bounded "$STATE/.secondmate-liveness-$id.lock" "$RECOVER_LOCK_WAIT"; then
+      report_unreached "$id" "a liveness recovery still held the mate after ${RECOVER_LOCK_WAIT}s, so it was not restarted; its agent was not touched"
+      return
+    fi
+    lock_held=1
     restart_out=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
       "$SCRIPT_DIR/fm-remote-secondmate-relaunch.sh" \
       "$id" "${HARNESS[i]}" "${MODEL[i]:-default}" "${EFFORT[i]:-default}" < /dev/null 2>&1)
     restart_rc=$?
+    if [ "$restart_rc" -eq 0 ]; then
+      fm_lock_release "$STATE/.secondmate-liveness-$id.lock" || true
+      lock_held=0
+    fi
   else
     local relaunch_args=("$id" relaunch)
     if [ "$KEEP_PROFILE" = 1 ]; then
@@ -213,9 +326,9 @@ restart_mate() {  # <array-index>
     return
   fi
 
-  restart_reason=$(first_reported_line "$restart_out")
+  restart_reason=$(failure_reported_line "$restart_out")
   [ -n "$restart_reason" ] || restart_reason="the restart failed without a reported reason"
-  report_unreached "$id" "the restart outcome is unknown: $restart_reason"
+  recover_failed_restart "$i" "$restart_reason" "$lock_held"
 }
 
 launch_restart() {  # <array-index>
@@ -262,6 +375,7 @@ harvest_restarts() {
     case "$out" in
       restarted:*) restarted_count=$((restarted_count + 1)) ;;
       nudged:*) nudged_count=$((nudged_count + 1)) ;;
+      failed:*) failed_count=$((failed_count + 1)) ;;
       *) unreached_count=$((unreached_count + 1)) ;;
     esac
     PLAN[i]="done"
@@ -430,7 +544,7 @@ done
 
 # --- summary ---------------------------------------------------------------
 
-printf 'summary: %d of %d restarted, %d nudged, %d unreached\n' \
-  "$restarted_count" "${#IDS[@]}" "$nudged_count" "$unreached_count"
-[ "$((nudged_count + unreached_count))" -eq 0 ] || exit 3
+printf 'summary: %d of %d restarted, %d nudged, %d unreached, %d failed\n' \
+  "$restarted_count" "${#IDS[@]}" "$nudged_count" "$unreached_count" "$failed_count"
+[ "$((nudged_count + unreached_count + failed_count))" -eq 0 ] || exit 3
 exit 0

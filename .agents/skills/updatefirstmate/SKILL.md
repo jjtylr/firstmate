@@ -77,7 +77,9 @@ This touches only the firstmate repo and its own worktrees, never anything under
    - `restarted: <id>` - that mate is now genuinely running the current instructions and launch-time settings.
    - `nudged: <id>: <reason>` - the restart was not safe, so the mate got the older re-read message instead and is still running the conversation and launch-time settings it started with.
      Never report one of these as a clean reload.
-   - `unreached: <id>: <reason>` - no safe running outcome could be confirmed, including an ambiguous relaunch result.
+   - `failed: <id>: <reason>` - the restart did not complete, but the mate was confirmed running afterwards: on its previous agent, or on a fresh one started in its place, as the reason says.
+     Never report one of these as a clean reload.
+   - `unreached: <id>: <reason>` - no running mate could be confirmed, including after an ambiguous relaunch result.
 
 4. **Send the re-read message to the rest.**
    For every target on the `nudge-secondmates:` line (do nothing when it says `none`), send the one-line re-read steer:
@@ -106,4 +108,4 @@ This touches only the firstmate repo and its own worktrees, never anything under
   A local or remote second mate gets a tracked-files fast-forward only when its own checkout is safe to advance, and a mate whose home was skipped is not restarted either.
   A restart replaces that mate's agent in the same home and endpoint after its open work is written down; it is never a teardown and never forced.
   Its crewmates keep running in their own endpoints, and every durable record - backlog, held captain calls, unread status, unhandled instructions - is re-presented to the replacement at startup.
-  A restart refused before it is attempted leaves that mate on the re-read path; once a relaunch is attempted, any failed or ambiguous result is reported as unknown rather than attributed to either incarnation.
+  A restart refused before it is attempted leaves that mate on the re-read path; once a relaunch is attempted, a failed or ambiguous result never leaves the mate without an agent: it is reported failed with the mate confirmed running (a dead endpoint first gets a recovery launch), or unreached only when no running agent can be confirmed.

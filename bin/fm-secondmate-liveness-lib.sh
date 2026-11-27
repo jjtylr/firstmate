@@ -281,7 +281,7 @@ fm_secondmate_liveness_probe() {  # <meta> <id> <full|poll>
   return 0
 }
 
-# fm_secondmate_liveness_relaunch <meta> <id> [timeout-secs]
+# fm_secondmate_liveness_relaunch <meta> <id> [timeout-secs] [spawn-arg...]
 #
 # Acts on a `relaunchable` probe verdict for <id>: takes the per-home relaunch
 # lock, records the attempt, kills a confirmed-dead local endpoint if required
@@ -292,6 +292,9 @@ fm_secondmate_liveness_probe() {  # <meta> <id> <full|poll>
 # supervisor recovery must never create. Other backends keep their existing
 # best-effort kill. FM_SM_LIVE_RESUME instead sends the endpoint's backend
 # resume turn and spawns nothing.
+# Any spawn-arg is passed on to that spawn, which is how a caller that must
+# keep the mate's recorded harness, model, and effort pins them instead of
+# letting the spawn re-resolve config/secondmate-harness.
 # The header owns the lock-wait bounds. A positive timeout separately
 # wraps the spawn in fm_run_timed so a watcher poll stays bounded; 124/137 mean
 # the bound fired. Returns the spawn exit status; combined spawn output is in
@@ -300,8 +303,10 @@ fm_secondmate_liveness_probe() {  # <meta> <id> <full|poll>
 # killed or spawned and no attempt is recorded: the verdict becomes
 # FM_SM_LIVE_STATUS=skipped with FM_SM_LIVE_REASON set and this returns 1.
 # Caller holds the liveness lock and owns reporting.
-fm_secondmate_liveness_relaunch() {  # <meta> <id> [timeout-secs]
+fm_secondmate_liveness_relaunch() {  # <meta> <id> [timeout-secs] [spawn-arg...]
   local meta=$1 id=$2 timeout=${3:-} relaunch_lock wait_seconds rc=0
+  shift 2
+  [ "$#" -eq 0 ] || shift
   FM_SM_LIVE_OUT='' FM_SM_LIVE_RC=0
   if ! fm_secondmate_liveness_recent_attempts "$id" 0 >/dev/null; then
     FM_SM_LIVE_STATUS=skipped
@@ -372,6 +377,7 @@ fm_secondmate_liveness_relaunch() {  # <meta> <id> [timeout-secs]
   # A remote mate's backend is its host's, so it is never pinned from here.
   local -a respawn_args=("$id" --secondmate)
   [ -n "$(fm_meta_get "$meta" remote_host)" ] || respawn_args+=(--backend "$(fm_backend_of_meta "$meta")")
+  [ "$#" -eq 0 ] || respawn_args+=("$@")
   if [ -n "$timeout" ]; then
     FM_SM_LIVE_OUT=$(FM_SPAWN_NO_GUARD=1 fm_run_timed "$timeout" "$FM_ROOT/bin/fm-spawn.sh" "${respawn_args[@]}" 2>&1) || rc=$?
   else

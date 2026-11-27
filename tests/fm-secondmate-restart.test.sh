@@ -13,8 +13,12 @@
 #      and task status, and explicitly not for the memory, learnings, or
 #      captain-preference sweeps.
 #   4. Every unsafe case says what is known: pre-restart capability and persist
-#      failures use the nudge path, while a failed relaunch is reported as an
-#      unknown outcome; none is reported as a clean reload.
+#      failures use the nudge path, while a failed relaunch never leaves the
+#      mate without an agent - it is reported failed with the mate still
+#      running (its old agent, or a fresh one the recovery launch started on
+#      the recorded profile), or unreached only when no running agent can be
+#      confirmed; none is reported as a clean reload, and a warning the launch
+#      printed on the way is never given as the reason.
 #   5. A remote mate restarts by running the SAME local control-plane relaunch on
 #      its host, over the fm-on transport, with the profile resolved from the
 #      PARENT's own pin rather than the remote home's copy of it.
@@ -25,6 +29,8 @@
 #   7. A T3 mate, whose thread keeps its conversation so no replacement can be
 #      launched into it, is routed by both passes to the re-read message on its
 #      thread and never asked to persist for a restart that cannot come.
+#   8. A restart holds the mate's liveness lock, so the watcher's liveness
+#      recovery defers to it instead of killing the endpoint mid-launch.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -82,7 +88,12 @@ case "${1:-}" in
           fi
           printf 'zsh' > "$D/command.$target"
           ;;
-        *'encode launch-brief'* | *'Firstmate operational input waiting: read'*) cat "$D/becomes" > "$D/command.$target" ;;
+        *'encode launch-brief'* | *'Firstmate operational input waiting: read'*)
+          cat "$D/becomes" > "$D/command.$target"
+          if [ -x "$D/on-launch" ]; then
+            "$D/on-launch" "$target"
+          fi
+          ;;
         ': Firstmate instruction waiting: list '*)
           printf 'doorbell\n' >> "$D/rings"
           if [ -x "$D/on-doorbell" ]; then
@@ -123,6 +134,25 @@ case "${1:-}" in
     printf 'fakepane\n'; exit 0 ;;
   capture-pane) printf '╭────╮\n│    │\n╰────╯\n'; exit 0 ;;
   list-windows) [ -f "$D/windows" ] && cat "$D/windows"; exit 0 ;;
+  kill-window)
+    # Model the close: the named window leaves the inventory.
+    shift
+    [ "${1:-}" = -t ] || exit 1
+    name=${2##*:}
+    name=${name#=}
+    if [ -f "$D/windows" ]; then
+      grep -vxF -- "$name" "$D/windows" > "$D/windows.tmp" || true
+      /bin/mv -f "$D/windows.tmp" "$D/windows"
+    fi
+    exit 0 ;;
+  new-window)
+    # Model the launch owner's fresh window: record its name.
+    prev=
+    for a in "$@"; do
+      if [ "$prev" = -n ]; then printf '%s\n' "$a" >> "$D/windows"; fi
+      prev=$a
+    done
+    exit 0 ;;
 esac
 exit 0
 SH
@@ -252,6 +282,7 @@ run_restart() {  # <case-dir> <args...>
     FM_SPAWN_NO_GUARD=1 FM_SECONDMATE_PERSIST_POLL=1 \
     FM_SECONDMATE_PERSIST_WAIT="${FM_TEST_PERSIST_WAIT:-30}" \
     FM_CONTROL_POLL=0.01 FM_CONTROL_EXIT_WAIT=0.05 FM_CONTROL_LAUNCH_WAIT=0.05 \
+    FM_SECONDMATE_RECOVER_WAIT="${FM_TEST_RECOVER_WAIT:-0}" \
     FM_SSH_BIN="${FM_TEST_SSH_BIN:-ssh}" \
     "$RESTART" "$@" 2>&1
 }
@@ -419,14 +450,16 @@ test_refused_restart_falls_back_without_claiming_a_reload() {
   out=$(run_restart "$dir" sm1); rc=$?
 
   expect_code 3 "$rc" "a refused restart must not be reported as a reload"$'\n'"$out"
-  assert_contains "$out" "unreached: sm1:" "a failed restart must be reported as unknown"
-  assert_contains "$out" "restart outcome is unknown" "the report must not attribute an ambiguous failure"
+  assert_contains "$out" "failed: sm1: the restart did not complete:" "a refused restart must be reported as failed"
+  assert_contains "$out" "is not verified to run a secondmate task" "the report must carry the refusal's own words"
+  assert_contains "$out" "the mate is still running" "the report must say the mate kept an agent"
+  assert_contains "$out" "summary: 0 of 1 restarted, 0 nudged, 0 unreached, 1 failed" "the summary must count the failure"
   assert_not_contains "$out" "nudged: sm1" "a failed restart must not claim the old agent was nudged"
   assert_not_contains "$out" "restarted: sm1" "a refused restart must not be reported as restarted"
   [ "$(cat "$dir/fake/command")" = "$before" ] \
     || fail "a refusal before the stop should leave the running agent exactly as it was"
   assert_no_regex '^/exit$' "$dir/fake/literal" "a pre-stop refusal must not have stopped the agent"
-  pass "T5 a refused restart leaves the mate running and reports an unknown outcome"
+  pass "T5 a refused restart leaves the mate running and reports the failure"
 }
 
 # --- T6: a remote mate restarts over the fm-on hop, on the parent's pin -------
@@ -783,6 +816,8 @@ test_post_stop_failure_is_reported_unreached() {
   assert_not_contains "$out" "nudged: sm1" "a durable enqueue must not masquerade as a running mate's nudge"
   assert_contains "$out" "summary: 0 of 1 restarted, 0 nudged, 1 unreached" \
     "the summary must not claim that a stopped mate remains on older instructions with a message"
+  assert_contains "$out" "a recovery launch was made but no running agent was confirmed" \
+    "a stopped mate must get a recovery launch, and its unconfirmed outcome must be said"
   pass "T11 post-stop restart failure is never misreported as a nudge"
 }
 
@@ -1025,6 +1060,83 @@ w = { tokens: [],
   pass "T17 a T3 mate is routed to the re-read message by both passes, never restarted"
 }
 
+# --- T18: a relaunch that ends with no agent is recovered on its profile -----
+# The 27 Nov shape: the replacement the restart launched was gone seconds later,
+# so the transaction could not confirm it. The pass must not end there with the
+# mate down: it relaunches it on the recorded harness, model, and effort, and
+# reports the failure with the real error, never a warning printed on the way.
+test_failed_relaunch_is_recovered_on_the_recorded_profile() {
+  local dir out rc meta launches
+  dir=$(new_case recover)
+  add_local_mate "$dir" sm1
+  sed -i.bak 's/^model=default$/model=claude-opus-5-5/; s/^effort=default$/effort=medium/' "$dir/home/state/sm1.meta"
+  arm_answer "$dir" sm1
+  # A moved pin must not decide what the recovery runs on under --keep-profile.
+  printf 'codex\n' > "$dir/home/config/secondmate-harness"
+  # The restart's own launch comes up empty; the recovery launch comes up live.
+  cat > "$dir/fake/on-launch" <<'SH'
+#!/usr/bin/env bash
+n=$(( $(cat "$FM_FAKE_DIR/launches" 2>/dev/null || echo 0) + 1 ))
+printf '%s' "$n" > "$FM_FAKE_DIR/launches"
+if [ "$n" = 1 ]; then printf 'zsh' > "$FM_FAKE_DIR/command.$1"; else printf 'claude' > "$FM_FAKE_DIR/command.$1"; fi
+SH
+  chmod +x "$dir/fake/on-launch"
+
+  out=$(FM_TEST_RECOVER_WAIT=5 run_restart "$dir" --keep-profile --reason context sm1); rc=$?
+
+  expect_code 3 "$rc" "a recovered restart is still a failed restart"$'\n'"$out"
+  launches=$(cat "$dir/fake/launches" 2>/dev/null || echo 0)
+  [ "$launches" = 2 ] || fail "expected the restart's launch and one recovery launch, got $launches: $out"
+  assert_contains "$out" "failed: sm1: the restart did not complete: " "the failure must be reported"
+  assert_contains "$out" "a fresh agent was started in its place and is running" \
+    "the report must say the mate was recovered and is running"
+  assert_contains "$out" "did not come up" "the reason must be the relaunch's own error"
+  assert_not_contains "$out" "the restart did not complete: warning:" "a warning must never stand in for the reason"
+  assert_not_contains "$out" "restarted: sm1" "a recovered restart must not be reported as a clean one"
+  assert_contains "$out" "summary: 0 of 1 restarted, 0 nudged, 0 unreached, 1 failed" "the summary must count the failure"
+  meta=$(cat "$dir/home/state/sm1.meta")
+  [ "$(grep '^harness=' "$dir/home/state/sm1.meta" | tail -1)" = "harness=claude" ] \
+    || fail "the recovery moved the mate off its recorded runtime: $meta"
+  [ "$(grep '^model=' "$dir/home/state/sm1.meta" | tail -1)" = "model=claude-opus-5-5" ] \
+    || fail "the recovery dropped the recorded model: $meta"
+  [ "$(grep '^effort=' "$dir/home/state/sm1.meta" | tail -1)" = "effort=medium" ] \
+    || fail "the recovery dropped the recorded effort: $meta"
+  pass "T18 a relaunch that ends with no agent is recovered on the recorded profile and reported failed"
+}
+
+# --- T19: the watcher's liveness recovery defers to a restart in progress ----
+# Mid-relaunch the endpoint reads exactly like a dead mate. The watcher tick
+# takes the mate's liveness lock before it probes or kills anything; while the
+# restart's launch is under way that lock must be held, so the tick skips.
+test_liveness_recovery_defers_to_a_restart_in_progress() {
+  local dir out rc
+  dir=$(new_case defer)
+  add_local_mate "$dir" sm1
+  arm_answer "$dir" sm1
+  printf '%s' "$dir/home/state" > "$dir/fake/state-dir"
+  cat > "$dir/fake/on-launch" <<SH
+#!/usr/bin/env bash
+FM_STATE_OVERRIDE=\$(cat "\$FM_FAKE_DIR/state-dir") bash -c '
+  . "\$1/bin/fm-secondmate-liveness-lib.sh"
+  if fm_secondmate_liveness_lock sm1; then
+    echo raced
+    fm_secondmate_liveness_unlock sm1
+  else
+    echo deferred
+  fi' _ "$ROOT" >> "\$FM_FAKE_DIR/liveness"
+SH
+  chmod +x "$dir/fake/on-launch"
+
+  out=$(run_restart "$dir" sm1); rc=$?
+
+  expect_code 0 "$rc" "the restart should complete"$'\n'"$out"
+  assert_contains "$out" "restarted: sm1 (claude)" "the restart should complete"
+  [ "$(cat "$dir/fake/liveness" 2>/dev/null)" = deferred ] \
+    || fail "the liveness recovery could act on the mate mid-launch: $(cat "$dir/fake/liveness" 2>/dev/null)"
+  assert_absent "$dir/home/state/.secondmate-liveness-sm1.lock" "the restart left the liveness lock held"
+  pass "T19 the watcher's liveness recovery defers to a restart in progress"
+}
+
 test_persist_gates_and_asks_only_for_open_records
 test_persist_precedes_restart
 test_arrived_answer_precedes_deadline_check
@@ -1050,5 +1162,7 @@ test_result_published_while_reaping_is_honored
 test_already_current_mate_restarts_end_to_end
 test_already_current_unprovable_mate_stays_on_the_nudge_path
 test_t3_mate_stays_on_the_nudge_path
+test_failed_relaunch_is_recovered_on_the_recorded_profile
+test_liveness_recovery_defers_to_a_restart_in_progress
 
 echo "# all fm-secondmate-restart tests passed"
