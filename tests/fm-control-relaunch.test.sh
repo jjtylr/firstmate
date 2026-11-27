@@ -1523,6 +1523,52 @@ test_secondmate_claude_relaunch_keeps_local_settings() {
   pass "fm-control relaunch: a claude secondmate keeps settings.local.json and retires the state settings file and the Stop pointer"
 }
 
+# A relaunched Claude secondmate keeps the supervisor start cuts, and a cut named
+# in the mate home's own config/supervisor-claude-keep is back at the next relaunch.
+test_secondmate_claude_relaunch_keeps_supervisor_cuts() {
+  local dir home out rc
+  dir=$(new_case smcuts smc)
+  home="$dir/home"
+  mkdir -p "$home/config" "$home/data/smc"
+  printf 'claude\n' > "$home/config/secondmate-harness"
+  printf '# secondmate brief\n' > "$home/data/smc/brief.md"
+  fm_git_worktree "$dir/proj" "$dir/smhome" sm-cuts-branch
+  mkdir -p "$dir/smhome/state" "$dir/smhome/data" "$dir/smhome/bin" "$dir/smhome/config"
+  printf 'smc\n' > "$dir/smhome/.fm-secondmate-home"
+  printf '# agents\n' > "$dir/smhome/AGENTS.md"
+  {
+    echo "window=fmses:fm-smc"
+    echo "endpoint_task_id=smc"
+    echo "worktree=$dir/smhome"
+    echo "project=$dir/smhome"
+    echo "harness=claude"
+    echo "kind=secondmate"
+    echo "mode=secondmate"
+    echo "yolo=off"
+    echo "model=default"
+    echo "effort=default"
+    echo "home=$dir/smhome"
+  } > "$home/state/smc.meta"
+  printf '%s\n' "fm-smc" > "$dir/fake/windows"
+  printf '%s' "$dir/smhome" > "$dir/fake/cwd"
+  out=$(run_control "$dir" smc relaunch); rc=$?
+  expect_code 0 "$rc" "a claude secondmate relaunch should succeed"$'\n'"$out"
+  assert_grep "--disallowedTools 'Agent,Workflow,ScheduleWakeup,ListAgents,ReportFindings,mcp__claude-artifacts,Artifact,ArtifactComments,ArtifactData,ArtifactCheck' --no-chrome --settings " \
+    "$dir/fake/literal" "the relaunched Claude secondmate must keep the supervisor start cuts"
+  jq -e '.disableClaudeAiConnectors == true' "$home/state/smc.claude-settings.json" >/dev/null \
+    || fail "the relaunched Claude secondmate's settings file lost the connector cut"
+  printf 'chrome\n' > "$dir/smhome/config/supervisor-claude-keep"
+  : > "$dir/fake/literal"
+  printf claude > "$dir/fake/command"
+  out=$(run_control "$dir" smc relaunch); rc=$?
+  expect_code 0 "$rc" "a claude secondmate relaunch with a kept cut should succeed"$'\n'"$out"
+  assert_grep "ArtifactCheck' --settings " "$dir/fake/literal" \
+    "the relaunch should keep the other cuts"
+  assert_no_grep "--no-chrome" "$dir/fake/literal" \
+    "a cut named in the mate home's keep file must be back at the next relaunch"
+  pass "fm-control relaunch: a Claude secondmate keeps the supervisor start cuts and picks up its keep file"
+}
+
 # The captain's per-mate override line must win at the relaunch decision, so a
 # later change to the default pin cannot migrate a mate that has its own runtime
 # ruling onto the default. Synthetic mate ids only - no real home's pin values.
@@ -3362,6 +3408,7 @@ test_wiring_removal_failure_refuses_before_replacement_arm
 test_turnend_auth_paths_are_owned_by_the_control_adapter
 test_secondmate_relaunch_picks_up_the_configured_harness_pin
 test_secondmate_claude_relaunch_keeps_local_settings
+test_secondmate_claude_relaunch_keeps_supervisor_cuts
 test_secondmate_relaunch_lands_on_the_per_mate_pin
 test_secondmate_relaunch_uses_the_default_for_an_unpinned_mate
 test_secondmate_relaunch_with_a_legacy_pin_file_uses_the_first_line

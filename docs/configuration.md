@@ -9,7 +9,7 @@ Start with the directory layout, then use the setting reference for the behavior
 | --- | --- |
 | Firstmate's code, private files, or project location | [FM_HOME](#fm_home) and [operational home layout](#operational-home-layout-and-state) |
 | Task windows and worker tools | [Runtime backend](#runtime-backend-configbackend--fm_backend) and [harness support](#harness-support) |
-| Worker permissions, accounts, or environment | [Codex approval review](#codex-automatic-approval-review), [Claude permission mode](#claude-permission-mode-configclaude-permission-mode), [Codex permission mode](#codex-permission-mode-configcodex-permission-mode), [persistent managed-policy failover](#persistent-managed-policy-failover), [worker account pin](#worker-account-pin-configclaude-account-configpi-account), [several Claude accounts](#several-claude-accounts-configclaude-accounts), [worker tool exclusions](#worker-tool-exclusions-configcrew-exclude-tools), [worker launch environment](#worker-launch-environment-configlaunch-env-allowlist), and its [Orca environment source](#orca-environment-source-configlaunch-env-tmux-session) |
+| Worker permissions, accounts, or environment | [Codex approval review](#codex-automatic-approval-review), [Claude permission mode](#claude-permission-mode-configclaude-permission-mode), [Codex permission mode](#codex-permission-mode-configcodex-permission-mode), [persistent managed-policy failover](#persistent-managed-policy-failover), [worker account pin](#worker-account-pin-configclaude-account-configpi-account), [several Claude accounts](#several-claude-accounts-configclaude-accounts), [worker tool exclusions](#worker-tool-exclusions-configcrew-exclude-tools), [supervisor start cuts](#supervisor-start-cuts-configsupervisor-claude-keep), [worker launch environment](#worker-launch-environment-configlaunch-env-allowlist), and its [Orca environment source](#orca-environment-source-configlaunch-env-tmux-session) |
 | Backlog, preferences, and memory | [Backlog backend](#backlog-backend-taskstoml--configbacklog-backend), [captain preferences](#captain-preferences-datacaptainmd--datacaptain-sharedmd), [external memory tiers](#external-memory-tiers-memory-layering-section), [record export](#record-export-configrecord-export-root), [startup memory budget](#startup-memory-budget-configstartup-memory-budget), and [stow guard](#stow-guard-configstow-guard) |
 | Supervision and presentation | [Pi supervision branch](#pi-supervision-branch), [supervision host](#supervision-host-configsupervision-host), [Codex native Stop park](#codex-native-stop-park-configcodex-stop-park), [warm-cache compaction](#warm-cache-compaction-configwarm-compact), and [Calm preference](#calm-preference-configcalm) |
 | Persistent secondmates | [Secondmate routes](#secondmate-routes-datasecondmatesmd) |
@@ -1544,6 +1544,7 @@ For omp secondmate launches, `fm-spawn.sh` names only the parent home's `state/<
 
 For a Claude secondmate, `fm-spawn.sh` writes the busy hooks into the parent home's `state/<id>.claude-settings.json` and passes that file as Claude Code's one `--settings` value.
 The same file carries `feedbackDrafts` and, unless `config/keep-ai-trailers` is present, the attribution policy every other Claude launch puts in its inline `--settings` JSON.
+It also carries the settings half of the [supervisor start cuts](#supervisor-start-cuts-configsupervisor-claude-keep), whose command-line half rides the same launch.
 Claude Code applies `--settings` for that session and does not write the file into the mate home.
 A key the file sets overrides the same key in user, project, and local settings.
 A key it omits keeps the file-based value, so a `.claude/settings.local.json` already in the home is left untouched.
@@ -1682,6 +1683,46 @@ Names present in the registry produce no report; unknown or unverified names do 
 Each relaunch installs a fresh worker extension with the home's current list, so the replacement performs the same check.
 
 [`bin/fm-exclude-tools-lib.sh`](../bin/fm-exclude-tools-lib.sh) implements parsing and pre-launch validation for this contract; [`bin/fm-spawn.sh`](../bin/fm-spawn.sh)'s header owns the launch-flag mechanics.
+
+## Supervisor start cuts (config/supervisor-claude-keep)
+
+A supervisor - the main firstmate and each Claude secondmate - is a long conversation that resends its whole start with every request until the next clear.
+On Claude Code it starts without the tools, skills, and connectors no supervisor uses, so that fixed cost is smaller and the conversation has more room before a clear.
+[`bin/fm-supervisor-cuts-lib.sh`](../bin/fm-supervisor-cuts-lib.sh) is the one declared list, shared by the main start command and every Claude secondmate spawn and relaunch, local or remote.
+
+| Cut | What the session loses | How |
+| --- | --- | --- |
+| `delegation` | `Agent`, `Workflow`, `ScheduleWakeup`, `ListAgents`, and the agent-type list; the [delegation guard](subagent-guard.md) already refuses all four | `--disallowedTools` |
+| `report-findings` | `ReportFindings`; review findings print as text | `--disallowedTools` |
+| `artifacts` | The claude.ai artifact tools, including the built-in artifact tools Claude Code adds when that server is hidden; Bridge boards are unaffected | `--disallowedTools` |
+| `chrome` | Claude in Chrome; `playwright-cli` browser work is unaffected | `--no-chrome` |
+| `connectors` | claude.ai connectors such as mail, calendar, and file storage | `"disableClaudeAiConnectors": true` |
+| `skills` | Each listed non-firstmate skill leaves the model's skill list but stays typeable as a slash command | `"skillOverrides"` set to `"user-invocable-only"` |
+| `plugins` | The listed plugins, whose skills `skillOverrides` does not reach | `"enabledPlugins"` set to `false` |
+
+Feedback drafts stay off in every supervisor as in every Firstmate-launched Claude (`CLAUDE_CODE_SEND_FEEDBACK=0` and `"feedbackDrafts": "off"`); they are not a switchable cut.
+Nothing is written to any settings file: the flags ride the command line and the keys ride Claude Code's one `--settings` value, inline for main and in `state/<id>.claude-settings.json` for a secondmate.
+Keep them out of `.claude/settings.local.json` in a home that workers copy, because worker copies read that file too and a deny there cannot be re-allowed, so it would take `Agent` and `Workflow` from every worker.
+
+### Starting main
+
+Start the main firstmate on Claude Code with `bin/fm-claude-main.sh` in place of `claude`, from the same directory; any arguments pass through to `claude`, for example `bin/fm-claude-main.sh --continue`.
+The cuts are process flags and session settings, so a `/clear` keeps them and every fresh start needs the same command.
+`FM_ALLOW_SUBAGENT=1 bin/fm-claude-main.sh` also keeps the delegation tools, so the guard's escape hatch has a tool to allow.
+
+### Switching a cut back
+
+Name the cut in the home's own local, gitignored `config/supervisor-claude-keep`, one name per line; blank lines and `#` comment lines are allowed.
+The next start or relaunch of that supervisor includes it again, and removing the line cuts it again at the next restart.
+A secondmate reads the file from its own home, for a local and a remote launch alike, and the file is not inherited from the primary home.
+An unknown name or an unreadable file refuses the start and names the file.
+A secondmate's delegation guard escape needs `delegation` in its keep file, because the launch passes no `FM_ALLOW_SUBAGENT` into the mate's session.
+
+### Keeping the list current
+
+The skill and plugin names are this fleet's installed non-firstmate skills; a name that matches nothing in a session has no effect.
+Add a newly installed skill or plugin to the lib when supervisors should not see it, and leave out any skill a user setting already turns `off`.
+Host settings outside a home, such as a user-scope start hook or auto memory, stay in that host's `~/.claude/settings.json`.
 
 ## Worker account pin (config/claude-account, config/pi-account)
 

@@ -906,6 +906,11 @@ sm_claude_add_dir() {  # <world> <id>
   printf "%s " "--add-dir '$real/$2.inbox'"
 }
 
+# The supervisor start cuts every Claude secondmate launch carries by default
+# (docs/configuration.md "Supervisor start cuts"), with the trailing space the
+# launch puts before --settings.
+SM_SUPERVISOR_FLAGS="--disallowedTools 'Agent,Workflow,ScheduleWakeup,ListAgents,ReportFindings,mcp__claude-artifacts,Artifact,ArtifactComments,ArtifactData,ArtifactCheck' --no-chrome "
+
 # The parent-state settings file a Claude secondmate launch passes to --settings.
 sm_claude_settings() {  # <world> <id>
   local real
@@ -1018,7 +1023,7 @@ test_spawn_secondmate_harness_model_token() {
   [ "$(meta_field "$meta" model)" = opus ] || fail "model-token: meta model not opus (got '$(meta_field "$meta" model)')"
   [ "$(meta_field "$meta" effort)" = default ] || fail "model-token: meta effort not default (got '$(meta_field "$meta" effort)')"
   launch=$(cat "$launchlog")
-  assert_contains "$launch" "claude --dangerously-skip-permissions $(sm_claude_add_dir "$w" sm)--settings '$(sm_claude_settings "$w" sm)' --model 'opus'" \
+  assert_contains "$launch" "claude --dangerously-skip-permissions $(sm_claude_add_dir "$w" sm)$SM_SUPERVISOR_FLAGS--settings '$(sm_claude_settings "$w" sm)' --model 'opus'" \
     "model-token: launch did not carry --model opus"
   jq -e '.feedbackDrafts == "off" and .attribution.commit == "" and .attribution.pr == "" and .attribution.sessionUrl == false and .hooks.UserPromptSubmit' \
     "$(sm_claude_settings "$w" sm)" >/dev/null \
@@ -1043,9 +1048,71 @@ test_spawn_secondmate_harness_model_and_effort_tokens() {
   [ "$(meta_field "$meta" model)" = opus ] || fail "model-effort-tokens: meta model not opus"
   [ "$(meta_field "$meta" effort)" = high ] || fail "model-effort-tokens: meta effort not high (got '$(meta_field "$meta" effort)')"
   launch=$(cat "$launchlog")
-  assert_contains "$launch" "claude --dangerously-skip-permissions $(sm_claude_add_dir "$w" sm)--settings '$(sm_claude_settings "$w" sm)' --model 'opus' --effort 'high'" \
+  assert_contains "$launch" "claude --dangerously-skip-permissions $(sm_claude_add_dir "$w" sm)$SM_SUPERVISOR_FLAGS--settings '$(sm_claude_settings "$w" sm)' --model 'opus' --effort 'high'" \
     "model-effort-tokens: launch did not carry both --model opus and --effort high"
   pass "C4 spawn: config/secondmate-harness's model+effort tokens thread into the launch and meta"
+}
+
+# A Claude secondmate starts with the supervisor start cuts: the hidden tools and
+# --no-chrome on the command line, and the connector, skill, and plugin keys in its
+# --settings file. Naming a cut in the mate home's own config/supervisor-claude-keep
+# switches exactly that cut back at the next launch, and an unknown name refuses.
+test_spawn_claude_secondmate_supervisor_cuts() {
+  local w sm launchlog launch settings out status
+  w="$TMP_ROOT/spawn-supervisor-cuts"
+  sm="$w/sm"
+  launchlog="$w/launch.log"
+  mkdir -p "$w/home/config"
+  printf 'claude\n' > "$w/home/config/secondmate-harness"
+  make_seeded_home "$sm" sm
+
+  out=$(spawn_secondmate_capture "$w" sm "$sm" "$launchlog" 2>&1); status=$?
+  expect_code 0 "$status" "supervisor-cuts: default Claude secondmate spawn should succeed"$'\n'"$out"
+  launch=$(cat "$launchlog")
+  settings=$(sm_claude_settings "$w" sm)
+  assert_contains "$launch" "$(sm_claude_add_dir "$w" sm)$SM_SUPERVISOR_FLAGS--settings '$settings'" \
+    "supervisor-cuts: the default launch did not hide the unused tools and Chrome"
+  jq -e '.disableClaudeAiConnectors == true
+      and .skillOverrides["code-review"] == "user-invocable-only"
+      and .skillOverrides["anthropic-skills:pdf"] == "user-invocable-only"
+      and .enabledPlugins["codex@openai-codex"] == false
+      and .feedbackDrafts == "off" and .hooks.UserPromptSubmit' "$settings" >/dev/null \
+    || fail "supervisor-cuts: the --settings file did not carry the connector, skill, and plugin cuts beside the session keys"
+
+  w="$TMP_ROOT/spawn-supervisor-cuts-keep"
+  sm="$w/sm"
+  launchlog="$w/launch.log"
+  mkdir -p "$w/home/config"
+  printf 'claude\n' > "$w/home/config/secondmate-harness"
+  make_seeded_home "$sm" sm
+  mkdir -p "$sm/config"
+  printf '%s\n' '# switched back' 'delegation' ' chrome ' 'connectors' > "$sm/config/supervisor-claude-keep"
+  out=$(spawn_secondmate_capture "$w" sm "$sm" "$launchlog" 2>&1); status=$?
+  expect_code 0 "$status" "supervisor-cuts: a spawn with switched-back cuts should succeed"$'\n'"$out"
+  launch=$(cat "$launchlog")
+  settings=$(sm_claude_settings "$w" sm)
+  assert_contains "$launch" "$(sm_claude_add_dir "$w" sm)--disallowedTools 'ReportFindings,mcp__claude-artifacts,Artifact,ArtifactComments,ArtifactData,ArtifactCheck' --settings '$settings'" \
+    "supervisor-cuts: keeping delegation and chrome did not leave exactly the other tool cuts"
+  assert_not_contains "$launch" "--no-chrome" "supervisor-cuts: a kept chrome cut still launched with --no-chrome"
+  jq -e 'has("disableClaudeAiConnectors") | not' "$settings" >/dev/null \
+    || fail "supervisor-cuts: a kept connectors cut still disabled the claude.ai connectors"
+  jq -e '.skillOverrides["code-review"] == "user-invocable-only"' "$settings" >/dev/null \
+    || fail "supervisor-cuts: keeping other cuts dropped the skills cut"
+
+  w="$TMP_ROOT/spawn-supervisor-cuts-bad"
+  sm="$w/sm"
+  launchlog="$w/launch.log"
+  mkdir -p "$w/home/config"
+  printf 'claude\n' > "$w/home/config/secondmate-harness"
+  make_seeded_home "$sm" sm
+  mkdir -p "$sm/config"
+  printf '%s\n' 'delegaton' > "$sm/config/supervisor-claude-keep"
+  out=$(spawn_secondmate_capture "$w" sm "$sm" "$launchlog" 2>&1); status=$?
+  [ "$status" -ne 0 ] || fail "supervisor-cuts: an unknown cut name must refuse the launch"
+  assert_contains "$out" "config/supervisor-claude-keep names 'delegaton'" \
+    "supervisor-cuts: the refusal did not name the file and the unknown entry"
+  [ ! -s "$launchlog" ] || fail "supervisor-cuts: a refused launch still started an agent"
+  pass "C4b spawn: a Claude secondmate starts with the supervisor cuts, and its home's keep file switches named cuts back"
 }
 
 # A pin file the captain wrote before the override grammar existed - a second
@@ -1712,7 +1779,7 @@ test_spawn_secondmate_claude_permission_mode_auto() {
   meta="$w/home/state/sm.meta"
   [ "$(meta_field "$meta" harness)" = claude ] || fail "permmode: meta harness not claude"
   launch=$(cat "$launchlog")
-  assert_contains "$launch" "claude --permission-mode auto $(sm_claude_add_dir "$w" sm)--settings '$(sm_claude_settings "$w" sm)' --model 'opus'" \
+  assert_contains "$launch" "claude --permission-mode auto $(sm_claude_add_dir "$w" sm)$SM_SUPERVISOR_FLAGS--settings '$(sm_claude_settings "$w" sm)' --model 'opus'" \
     "permmode: secondmate launch did not swap the permission flag while keeping --model"
   assert_not_contains "$launch" "--dangerously-skip-permissions" "permmode: secondmate launch must not request bypass mode"
   pass "C2b spawn: config/claude-permission-mode=auto reaches a Claude secondmate launch"
@@ -2982,6 +3049,7 @@ test_spawn_explicit_backend_precedence_over_env_and_inherited_config
 test_spawn_bare_harness_no_model_effort_flag
 test_spawn_secondmate_harness_model_token
 test_spawn_secondmate_harness_model_and_effort_tokens
+test_spawn_claude_secondmate_supervisor_cuts
 test_spawn_secondmate_with_a_legacy_pin_file_uses_the_first_line
 test_spawn_secondmate_with_a_malformed_declared_pin_refuses
 test_spawn_explicit_model_overrides_secondmate_harness_token

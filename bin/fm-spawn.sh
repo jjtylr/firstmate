@@ -552,6 +552,13 @@
 #     __PIEXCLUDE__ optional ` --exclude-tools '<comma-joined names>'` from
 #                  config/crew-exclude-tools on Pi/pi-signed ship and scout
 #                  launches (supplies its own leading space, empty otherwise)
+#     __CLAUDESUPERVISOR__ the supervisor start cuts on a Claude secondmate:
+#                  `--disallowedTools '<names>' --no-chrome ` from
+#                  bin/fm-supervisor-cuts-lib.sh, less any cut the mate home's
+#                  config/supervisor-claude-keep switches back (supplies its own
+#                  trailing space, empty otherwise and for every other kind);
+#                  --settings always follows it. The same lib's settings keys
+#                  ride the mate's state/<task-id>.claude-settings.json.
 #     __CLAUDEEXCLUDE__ optional `--disallowedTools '<comma-joined names>' ` from
 #                  config/crew-exclude-tools on Claude ship and scout launches
 #                  (supplies its own trailing space, empty otherwise). Claude
@@ -822,6 +829,8 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 . "$SCRIPT_DIR/fm-config-inherit-lib.sh"
 # shellcheck source=bin/fm-exclude-tools-lib.sh
 . "$SCRIPT_DIR/fm-exclude-tools-lib.sh"
+# shellcheck source=bin/fm-supervisor-cuts-lib.sh
+. "$SCRIPT_DIR/fm-supervisor-cuts-lib.sh"
 if ! LAUNCH_ENV_ENABLED=$(fm_config_source_present "$CONFIG/launch-env-allowlist"); then
   exit 1
 fi
@@ -2943,7 +2952,7 @@ launch_template() {
   # project and fetched content. A persistent secondmate receives its own
   # supervisor contract instead, so this task-worker statement does not apply.
   claude)
-    printf '%s' 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude __CLAUDEPERMFLAG__ __CLAUDEADDDIRS__--settings __CLAUDESETTINGS__ '
+    printf '%s' 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude __CLAUDEPERMFLAG__ __CLAUDEADDDIRS____CLAUDESUPERVISOR__--settings __CLAUDESETTINGS__ '
     if [ "$kind" != secondmate ]; then
       printf '%s' '__CLAUDEEXCLUDE__'
       printf '%s' "--append-system-prompt '$(spawn_claude_task_channel_statement)' "
@@ -3407,6 +3416,7 @@ fi
 # config/crew-exclude-tools (header above): refuse before worker provisioning
 # if this launch cannot honor the list. Secondmate agents are not covered.
 EXCLUDE_TOOLS=
+SUPERVISOR_KEPT=
 if [ "$KIND" != secondmate ]; then
   EXCLUDE_TOOLS=$(fm_exclude_tools_check "$HARNESS" "$RAW_LAUNCH" "$CONFIG") || exit 1
 fi
@@ -4216,6 +4226,12 @@ if [ "$KIND" = secondmate ]; then
     SECONDMATE_PROJECTS=$SECONDMATE_REGISTRY_MATCH_PROJECTS
   fi
   WT="$PROJ_ABS"
+  # Supervisor start cuts (bin/fm-supervisor-cuts-lib.sh) for a Claude mate,
+  # switched back per mate by its own home's config/supervisor-claude-keep, so
+  # a local and a remote launch of the same mate read the same file.
+  if [ "$HARNESS" = claude ] && [ "$RAW_LAUNCH" -eq 0 ]; then
+    SUPERVISOR_KEPT=$(fm_supervisor_cuts_kept "$PROJ_ABS/config") || exit 1
+  fi
   # Local-HEAD sync: before launch, fast-forward this secondmate's worktree to the
   # PRIMARY checkout's current default-branch commit, so a freshly spawned or
   # recovery-respawned secondmate always runs the primary's version (AGENTS.md
@@ -6634,6 +6650,7 @@ BUSY_GEN=
       if [ "$KEEP_AI_TRAILERS" != 1 ]; then
         session_keys='"feedbackDrafts":"off","attribution":{"commit":"","pr":"","sessionUrl":false},'
       fi
+      session_keys="$session_keys$(fm_supervisor_claude_settings_keys "$SUPERVISOR_KEPT")"
       printf '{%s%s}\n' "$session_keys" "$hooks_json" >"$STATE_REAL/$ID.claude-settings.json"
     else
       mkdir -p "$WT/.claude"
@@ -7610,6 +7627,9 @@ LAUNCH=${LAUNCH//__CLAUDEPERMFLAG__/$CLAUDE_PERM_FLAG}
 CLAUDE_EXCLUDE=
 [ -z "$EXCLUDE_TOOLS" ] || [ "$HARNESS" != claude ] || CLAUDE_EXCLUDE="--disallowedTools $(shell_quote "$EXCLUDE_TOOLS") "
 LAUNCH=${LAUNCH//__CLAUDEEXCLUDE__/$CLAUDE_EXCLUDE}
+CLAUDE_SUPERVISOR=
+[ "$KIND" != secondmate ] || CLAUDE_SUPERVISOR=$(fm_supervisor_claude_flags "$SUPERVISOR_KEPT")
+LAUNCH=${LAUNCH//__CLAUDESUPERVISOR__/$CLAUDE_SUPERVISOR}
 case "$LAUNCH" in
 *__CLAUDESETTINGS__*)
   if [ "$KIND" = secondmate ]; then

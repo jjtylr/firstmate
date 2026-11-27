@@ -159,6 +159,7 @@ The variable must be present when the harness process is launched, so no tool ca
 A deliberate use therefore requires restarting the session with the variable set, which is a conscious act, while an accidental use is impossible.
 
 The escape hatch does not affect any local Claude deny list.
+A Claude supervisor also starts with these tools hidden by the [supervisor start cuts](configuration.md#supervisor-start-cuts-configsupervisor-claude-keep), which owns how to keep them for a deliberate exception.
 A tool removed from the schema stays removed, so a genuinely intended use of a locally denied tool also requires narrowing or removing that local entry before launch.
 
 ## Output contract
