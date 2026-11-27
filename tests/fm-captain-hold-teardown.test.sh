@@ -1815,13 +1815,20 @@ SH
       shown=$(tasks_in "$home" show "$id" --full)
       assert_contains "$shown" 'held: yes' "the successful retry did not hold the task"
       assert_contains "$shown" 'Captain hold origin: origin-b' "a successful hold lost its association"
-      assert_not_contains "$shown" 'Captain hold origin: origin-a' "a successful hold retained the old association"
+      if [ "$phase" = active ]; then
+        assert_contains "$shown" 'Captain hold origin: origin-a' "an open call dropped its earlier origin"
+      else
+        assert_not_contains "$shown" 'Captain hold origin: origin-a' "a successful hold retained the old association"
+      fi
       assert_equals 1 "$(grep -Fc "needs-decision [key=captain-hold-$id-$occurrence]" "$channel")" \
         "retrying the origin write duplicated the parent decision"
       run_captain "$home" complete origin-b "$id" >/dev/null \
         || fail "a successful hold could not complete B"
       run_captain "$home" verify origin-b >/dev/null || fail "a successful hold could not verify B"
-      if run_captain "$home" complete origin-a "$id" >/dev/null 2> "$home/old-origin.err"; then
+      if [ "$phase" = active ]; then
+        run_captain "$home" complete origin-a "$id" >/dev/null \
+          || fail "an open call stopped certifying its earlier origin"
+      elif run_captain "$home" complete origin-a "$id" >/dev/null 2> "$home/old-origin.err"; then
         fail "a successful reassociation still certified A"
       fi
     done
@@ -2218,12 +2225,157 @@ EOF
 }
 
 
+# A second mate home beside <home>, registered in its data/secondmates.md.
+make_mate_home() {  # <home> <mate-id>
+  local home=$1 mate
+  mate=$(make_home "$(basename "$home")-mate-$2")
+  mate=$(cd "$mate" && pwd -P)
+  mkdir -p "$mate/bin"
+  : > "$mate/AGENTS.md"
+  printf '%s\n' "$2" > "$mate/.fm-secondmate-home"
+  printf -- '- %s - sample work (home: %s; scope: sample work; projects: sample; added 2026-07-09)\n' \
+    "$2" "$mate" >> "$home/data/secondmates.md"
+  printf '%s\n' "$mate"
+}
+
+# A reported scout whose one captain call is held for it and attested.
+make_scout_with_call() {  # <home> <scout-id> <call-id>
+  local home=$1 id=$2 call=$3
+  mkdir -p "$home/data/$id"
+  tasks_in "$home" add "$id" "Investigate $id" --kind scout --repo sample --start >/dev/null \
+    || fail "could not create $id"
+  write_origin_meta "$home" "$id"
+  printf 'done: report complete\n' > "$home/state/$id.status"
+  printf '# %s\n\nOne captain choice remains.\n' "$id" > "$home/data/$id/report.md"
+  run_captain "$home" hold "$call" --title "Choose for $call" --reason "captain choice pending" \
+    --repo sample --origin "$id" >/dev/null || fail "could not hold $call for $id"
+  run_captain "$home" complete "$id" "$call" >/dev/null || fail "$id could not attest $call"
+}
+
+# The real handoff, once per home pair. The fixture mate has no live endpoint,
+# so only the receiver wake fails; the move itself is what the gate follows.
+hand_off() {  # <home> <mate-home> <mate-id> <call-id>...
+  local home=$1 mate=$2 mate_id=$3 call
+  shift 3
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" \
+    FM_DATA_OVERRIDE="$home/data" "$ROOT/bin/fm-backlog-handoff.sh" "$mate_id" "$@" \
+    > "$home/handoff.out" 2>&1 || true
+  for call in "$@"; do
+    assert_grep "] $call " "$mate/data/backlog.md" \
+      "the handoff did not move $call: $(cat "$home/handoff.out")"
+    assert_no_grep "] $call " "$home/data/backlog.md" "the handoff left $call in this home"
+  done
+}
+
+home_records() {  # <home>; every durable file of a home with its content checksum
+  (cd "$1" && find . -type f -not -path './fakebin/*' -exec cksum {} + | LC_ALL=C sort -k3)
+}
+
+test_handed_over_hold_still_satisfies_the_gate() {
+  local home mate before
+  home=$(make_home handed-over)
+  mate=$(make_mate_home "$home" ui)
+  make_scout_with_call "$home" sample-open-scout sample-open-call
+  make_scout_with_call "$home" sample-closed-scout sample-closed-call
+  hand_off "$home" "$mate" ui sample-open-call sample-closed-call
+
+  before=$(home_records "$mate")
+  run_captain "$home" complete sample-open-scout sample-open-call >/dev/null 2> "$home/complete.err" \
+    || fail "complete refused a handed-over open call: $(cat "$home/complete.err")"
+  run_teardown "$home" sample-open-scout >/dev/null 2> "$home/open-teardown.err" \
+    || fail "teardown refused a scout whose call is open in the second mate home: $(cat "$home/open-teardown.err")"
+  assert_equals "$before" "$(home_records "$mate")" "the gate changed the second mate home"
+
+  printf 'Captain chose the handed-over option.\n' > "$mate/answer.txt"
+  run_captain "$mate" answer sample-closed-call --decision-file "$mate/answer.txt" >/dev/null 2>"$mate/answer.err" \
+    || fail "the second mate home could not answer the handed-over call"
+  perl -0pi -e 's/done_keep = 10/done_keep = 0/' "$mate/.tasks.toml"
+  tasks_in "$mate" add sample-trigger "Trigger Done retention" --kind ship --repo sample >/dev/null
+  tasks_in "$mate" "done" sample-trigger >/dev/null || fail "could not trigger Done retention"
+  assert_grep sample-closed-call "$mate/data/done-archive.md" "the answered call was not archived"
+  assert_no_grep sample-closed-call "$mate/data/backlog.md" "the answered call is still live"
+  before=$(home_records "$mate")
+  run_teardown "$home" sample-closed-scout >/dev/null 2> "$home/closed-teardown.err" \
+    || fail "teardown refused a scout whose call was answered and archived there: $(cat "$home/closed-teardown.err")"
+  assert_equals "$before" "$(home_records "$mate")" "reading the archive changed the second mate home"
+  pass "a captain call handed to a second mate still satisfies the completion gate, open or archived"
+}
+
+test_handed_over_hold_refuses_without_one_durable_row() {
+  local home ui other before_ui before_other scout
+  home=$(make_home handed-over-refused)
+  ui=$(make_mate_home "$home" ui)
+  other=$(make_mate_home "$home" other)
+  printf -- '- far - far work (host: farhost; root: /srv/fm; home: /srv/fm-home; scope: far work; projects: sample; added 2026-07-09)\n' \
+    >> "$home/data/secondmates.md"
+  for scout in unanswered missing doubled; do
+    make_scout_with_call "$home" "sample-$scout-scout" "sample-$scout-call"
+  done
+  hand_off "$home" "$ui" ui sample-unanswered-call sample-missing-call sample-doubled-call
+  tasks_in "$ui" "done" sample-unanswered-call >/dev/null || fail "could not close the call without an answer"
+  tasks_in "$ui" rm sample-missing-call >/dev/null || fail "could not remove the call"
+  tasks_in "$other" add sample-doubled-call "Same id in another home" --kind captain --repo sample >/dev/null \
+    || fail "could not duplicate the call"
+  tasks_in "$other" hold sample-doubled-call --reason "captain must decide" --kind captain >/dev/null \
+    || fail "could not hold the duplicated call"
+  before_ui=$(home_records "$ui")
+  before_other=$(home_records "$other")
+
+  for scout in unanswered missing doubled; do
+    if run_teardown "$home" "sample-$scout-scout" > "$home/$scout.out" 2> "$home/$scout.err"; then
+      fail "teardown proceeded for the $scout handed-over call"
+    fi
+    assert_present "$home/state/sample-$scout-scout.meta" "refused teardown removed $scout metadata"
+  done
+  assert_grep 'nor closed with a recorded captain answer' "$home/unanswered.err" \
+    "an unanswered close in the second mate home was not refused as such"
+  assert_grep "read from second mate home $ui" "$home/unanswered.err" \
+    "the refusal did not say which home held the row"
+  assert_grep "none of the second mate homes searched: other ($other), ui ($ui)" "$home/missing.err" \
+    "the refusal did not name the homes searched"
+  assert_grep 'remote second mate homes were not checked' "$home/missing.err" \
+    "the refusal did not say remote homes were skipped"
+  assert_grep "more than one second mate home: other ($other), ui ($ui)" "$home/doubled.err" \
+    "a call carried by two homes was not refused as ambiguous"
+  assert_equals "$before_ui" "$(home_records "$ui")" "a refusal changed the second mate home"
+  assert_equals "$before_other" "$(home_records "$other")" "a refusal changed the other second mate home"
+  pass "a handed-over call is refused unless exactly one second mate home carries it durably"
+}
+
+test_one_open_call_serves_every_origin_it_was_held_for() {
+  local home mate scout
+  home=$(make_home shared-call)
+  mate=$(make_mate_home "$home" ui)
+  make_scout_with_call "$home" sample-first-scout sample-shared-call
+  make_scout_with_call "$home" sample-second-scout sample-shared-call
+  for scout in sample-first-scout sample-second-scout; do
+    run_captain "$home" verify "$scout" >/dev/null 2> "$home/shared.err" \
+      || fail "$scout lost the shared call: $(cat "$home/shared.err")"
+  done
+  write_origin_meta "$home" sample-unnamed-scout
+  if run_captain "$home" complete sample-unnamed-scout sample-shared-call >/dev/null 2> "$home/unnamed.err"; then
+    fail "a scout the call was never held for was accepted"
+  fi
+  assert_grep 'was held for origin sample-first-scout,sample-second-scout, not sample-unnamed-scout' \
+    "$home/unnamed.err" "the refusal did not list the origins of the shared call"
+
+  hand_off "$home" "$mate" ui sample-shared-call
+  for scout in sample-first-scout sample-second-scout; do
+    run_teardown "$home" "$scout" >/dev/null 2> "$home/shared-teardown.err" \
+      || fail "$scout could not be cleaned up after the shared call moved: $(cat "$home/shared-teardown.err")"
+  done
+  pass "one open call serves every origin it was held for and no other"
+}
+
 test_hold_origins_follow_backend_holds
 test_interrupted_origin_move_does_not_inherit_the_previous_answer
 test_historical_self_inventory_has_workable_repair
 test_inventory_compares_backend_identities
 test_origin_is_never_its_own_inventory_entry
 test_complete_refuses_an_entry_held_for_another_origin
+test_handed_over_hold_still_satisfies_the_gate
+test_handed_over_hold_refuses_without_one_durable_row
+test_one_open_call_serves_every_origin_it_was_held_for
 test_hold_decodes_a_bare_scalar_body_without_the_nonref_default
 test_retained_body_keeps_its_utf8_bytes
 test_teardown_never_closes_a_captain_held_task
