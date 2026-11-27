@@ -167,13 +167,20 @@ fm_test_launch_git_prefix() {  # <launch>
   printf '%s env-file %s%s' "$helper" "$tail" "$end"
 }
 
-# The launch with its OSC 7501 reporter frame removed: the arm statement ending
-# the first line and the disarm line after the agent command. Suites asserting
-# the exact launch compare the rest in its one-line shape; an empty launch
-# stays empty so "nothing was sent" assertions still hold.
+# The launch with its frame removed: the pane shell export lines heading the
+# staged file (tests/fm-spawn-compact-adviser-disable.test.sh owns their effect),
+# the OSC 7501 arm statement ending the next line, and the disarm line after the
+# agent command. Suites asserting the exact launch compare the rest in its
+# one-line shape; an empty launch stays empty so "nothing was sent" assertions
+# still hold.
 fm_test_launch_unframe() {  # <launch>
   local launch=$1 nl=$'\n' head body last
   [ -n "$launch" ] || return 0
+  # A header line is one whole export statement; the launch's own first line
+  # chains its statements with `;`.
+  while head=${launch%%"$nl"*}; [[ "$head" == export\ * && "$head" != *\;* ]]; do
+    launch=${launch#*"$nl"}
+  done
   case "$launch" in
     *fm-osc7501.sh*' arm --task '*" || true$nl"*"$nl"*fm-osc7501.sh*' disarm --state '*' || true'*) ;;
     *) fail "launch has no OSC 7501 arm/disarm frame: $launch" ;;
