@@ -457,11 +457,11 @@ SH
     tasktmp=$(sed -n 's/^tasktmp=//p' "$HOME_DIR/state/$id.meta")
     [ -n "$tasktmp" ] || fail "$kind: the task record names no temp root"
     want_task=$id
-    [ "$kind" != secondmate ] || want_task=unset
+    [ "$kind" != secondmate ] || want_task='unset'
     want_trace=$(sed -n 's/^traceparent=//p' "$HOME_DIR/state/$id.meta")
     if [ "$kind" = unrecorded-trace ]; then
       [ -z "$want_trace" ] || fail "$kind: the carrier record was meant to fail"
-      want_trace=unset
+      want_trace='unset'
     else
       [ -n "$want_trace" ] || fail "$kind: the spawn recorded no trace carrier"
     fi
