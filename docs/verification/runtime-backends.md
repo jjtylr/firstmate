@@ -1239,6 +1239,33 @@ ok - opencode (1.18.33): the doorbell reached a real worker, which acted and ack
 OpenCode needed `FM_SEND_INBOX_LIVE_TIMEOUT=560` because its configured model was still mid-turn at the default 240 seconds.
 Pi 0.87.1 was installed but not verified: its configured model returned an account error (`The 'gpt-5.6-sol' model is not supported when using Codex with a ChatGPT account`) before it read the inbox.
 
+## Claude idle worker compaction
+
+[Idle worker compaction](../configuration.md#idle-worker-compaction-configidle-worker-compact) owns the contract; this record owns the measurement.
+Verified on 2026-11-27 with Claude Code 2.1.332 and herdr 0.9.5 on macOS, one `haiku` worker in an isolated Herdr lab session wired with the per-task Claude busy hooks, its busy record's turn end moved back 56 minutes and `min-context-tokens=5000`:
+
+```sh
+FM_IDLE_WORKER_COMPACT_LIVE_E2E=1 tests/fm-idle-worker-compact-herdr-live-e2e.test.sh
+```
+
+```text
+# 09:35:42 busy worker: pass verdict busy, nothing typed
+# 09:35:47 pass typed /compact (record: spell=glab76609:4 sent=1795793745 tokens=47887 result=pending )
+# 09:35:55 steer recorded while the worker read idle, 0 new compaction marker(s) so far
+# 09:35:57 compaction marker appeared (1 in the transcript)
+# 09:35:57 log: at=1795793745 task=w1 tokens=47887 result=compacted
+# 09:36:08 the steer sent during the compaction was acted on after it
+# 09:36:09 four passes, one compaction
+ok - idle worker compaction: busy worker left alone, due worker compacted once and confirmed, steer delivered after
+```
+
+Findings that shape the contract:
+
+- A typed `/compact` writes a `type=system` `subtype=compact_boundary` record into the session's transcript, which the pass reads as its confirmation.
+- A typed `/compact` fires no `UserPromptSubmit` hook, so the busy record reads idle for the whole compaction; the pending record is what stops a second pass.
+- A steering doorbell typed during the compaction is queued by Claude Code and answered after it.
+- At 48k tokens on `haiku` the compaction took about ten seconds, well under the 50 to 90 seconds measured for large conversations.
+
 ## Waiting-worker command ceilings
 
 The `# Waiting` section of the ship and scout briefs (`bin/fm-brief.sh`) has a worker hold every external wait inside one blocking shell command, bounded by what its harness lets one command run.

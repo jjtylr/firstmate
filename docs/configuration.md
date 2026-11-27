@@ -11,7 +11,7 @@ Start with the directory layout, then use the setting reference for the behavior
 | Task windows and worker tools | [Runtime backend](#runtime-backend-configbackend--fm_backend) and [harness support](#harness-support) |
 | Worker permissions, accounts, or environment | [Codex approval review](#codex-automatic-approval-review), [Claude permission mode](#claude-permission-mode-configclaude-permission-mode), [Codex permission mode](#codex-permission-mode-configcodex-permission-mode), [persistent managed-policy failover](#persistent-managed-policy-failover), [worker account pin](#worker-account-pin-configclaude-account-configpi-account), [several Claude accounts](#several-claude-accounts-configclaude-accounts), [worker tool exclusions](#worker-tool-exclusions-configcrew-exclude-tools), [supervisor start cuts](#supervisor-start-cuts-configsupervisor-claude-keep), [worker launch environment](#worker-launch-environment-configlaunch-env-allowlist), and its [Orca environment source](#orca-environment-source-configlaunch-env-tmux-session) |
 | Backlog, preferences, and memory | [Backlog backend](#backlog-backend-taskstoml--configbacklog-backend), [captain preferences](#captain-preferences-datacaptainmd--datacaptain-sharedmd), [external memory tiers](#external-memory-tiers-memory-layering-section), [record export](#record-export-configrecord-export-root), [startup memory budget](#startup-memory-budget-configstartup-memory-budget), and [stow guard](#stow-guard-configstow-guard) |
-| Supervision and presentation | [Pi supervision branch](#pi-supervision-branch), [supervision host](#supervision-host-configsupervision-host), [Codex native Stop park](#codex-native-stop-park-configcodex-stop-park), [warm-cache compaction](#warm-cache-compaction-configwarm-compact), [supervisor clear policy](#supervisor-clear-policy-configsupervisor-clear), and [Calm preference](#calm-preference-configcalm) |
+| Supervision and presentation | [Pi supervision branch](#pi-supervision-branch), [supervision host](#supervision-host-configsupervision-host), [Codex native Stop park](#codex-native-stop-park-configcodex-stop-park), [warm-cache compaction](#warm-cache-compaction-configwarm-compact), [supervisor clear policy](#supervisor-clear-policy-configsupervisor-clear), [idle worker compaction](#idle-worker-compaction-configidle-worker-compact), and [Calm preference](#calm-preference-configcalm) |
 | Persistent secondmates | [Secondmate routes](#secondmate-routes-datasecondmatesmd) |
 | Review bots on owned GitHub pull requests | [Contribution review bots](#contribution-review-bots-configcontribution-review-bots) |
 | Stopping idle workers while a PR awaits review, and cleanup on merge | [Park on review](#park-on-review) |
@@ -501,6 +501,43 @@ Main is cleared by typing `/clear` into its own pane, which session start record
 Every ask, save, clear, skip, and restart is one line in `state/supervisor-clear/clear.log`.
 `bin/fm-supervisor-clear.sh`'s header owns the guards that decide when the pane may be typed into, the retry spacing, and the log format, with coverage in [`tests/fm-supervisor-clear.test.sh`](../tests/fm-supervisor-clear.test.sh).
 This policy is separate from [warm-cache compaction](#warm-cache-compaction-configwarm-compact), which is off unless a home opts in.
+
+## Idle worker compaction (config/idle-worker-compact)
+
+A Claude ship or scout worker that waits more than an hour on a review, an approval, or a merge loses its one-hour prompt cache and re-writes its whole conversation at the cache-write price on its next turn.
+Claude Code's own idle compaction does not run for firstmate's workers, so firstmate types one `/compact` into such a worker shortly before the hour.
+It covers only local `kind=ship` and `kind=scout` tasks with `harness=claude`: never the primary, a secondmate, a remote task, or another harness.
+
+The feature is on by default.
+The optional home-local `config/idle-worker-compact` file may hold these lines:
+
+- `enabled=0` turns it off.
+- `min-context-tokens=<n>` is the context size below which a worker is never compacted (default 150000).
+
+Blank lines and lines that start with `#` are ignored, and an unusable value keeps its default.
+The file is local to each home, is not inherited, and is read at every pass, so a change needs no restart.
+
+The watcher starts one detached pass (`bin/fm-idle-worker-compact.sh tick`) about once a minute; there is no daemon.
+A worker is compacted when all of these hold:
+
+- Its turn ended between 55 and 58 minutes ago, by its busy record, and its last request is under 58 minutes old.
+  A missed window, for example while the computer slept or no watcher ran, does nothing, because compacting a cold conversation costs more than leaving it.
+- It was not already acted on in this idle spell, and no compaction marker follows its last request.
+  After a compaction the last request still shows the old size, so this check, not size alone, stops a second compaction.
+- Its context, read by `bin/fm-context-size.sh --compaction`, is at least `min-context-tokens`.
+- It has no declared pause whose `until` time falls before the 60th minute after its turn ended.
+- Its busy record reads idle, the backend does not read it busy, its input box reads provably empty, and its turn and transcript are unchanged since the idle time was read.
+
+The `/compact` line asks the worker to keep its launch brief path, steering inbox, status file, branch, decisions made, and remaining steps.
+A later pass confirms the compaction by a transcript marker newer than the `/compact`, or records a failure after five minutes.
+Each outcome is one line in `state/idle-worker-compact.log`, giving when the `/compact` was typed, the task, the size before, and the result.
+A failure is never retried in the same idle spell.
+A compaction is housekeeping: it adds no wake, status line, or captain-facing message.
+A `/compact` fires no prompt-submit hook, so the worker's busy record still reads idle while it runs; the pending record, not the busy record, stops a second pass from typing again.
+A steering message whose doorbell lands during the compaction is held by Claude Code and acted on after it, as the opt-in live guard [`tests/fm-idle-worker-compact-herdr-live-e2e.test.sh`](../tests/fm-idle-worker-compact-herdr-live-e2e.test.sh) shows.
+
+This feature changes no Claude Code setting.
+`bin/fm-warm-compact-lib.sh` owns the guards, with coverage in [`tests/fm-idle-worker-compact.test.sh`](../tests/fm-idle-worker-compact.test.sh) and that live guard.
 
 ## Backlog backend (.tasks.toml / config/backlog-backend)
 

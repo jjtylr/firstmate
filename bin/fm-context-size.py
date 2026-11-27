@@ -6,6 +6,13 @@ read. Account roots come from recorded launch pins, not current configuration;
 unpinned agents use vendor defaults (ambient launch overrides are not recorded).
 Remote reads use fm-on's existing selected-home transport with a hard deadline.
 No transcript text, log paths, or transport diagnostics enter the observation.
+With --compaction (local tasks only) a read observation also carries
+compacted_after_usage, true when a compaction marker follows the last usage
+record (that record still shows the old size after a compaction),
+compaction_age_seconds, the age of the newest compaction marker in the tail
+or null, and log_signature, an opaque identity of the log that changes
+whenever it is written; bin/fm-warm-compact-lib.sh's idle worker compaction
+reads them.
 """
 import datetime
 import json
@@ -82,7 +89,20 @@ def pi_window(root, model, provider):
         return None
 
 
-def local_observation(meta):
+def compaction_marker(line):
+    if b'"compact_boundary"' not in line:
+        return None
+    try:
+        event = json.loads(line)
+    except ValueError:
+        return None
+    if (isinstance(event, dict) and event.get("type") == "system"
+            and event.get("subtype") == "compact_boundary"):
+        return event
+    return None
+
+
+def local_observation(meta, compaction=False):
     harness = meta.get("harness")
     if harness not in ("claude", "pi", "pi-signed"):
         return unknown("unsupported harness", "not_read")
@@ -105,6 +125,7 @@ def local_observation(meta):
     except ValueError:
         return unknown("no session log")
     with newest.open("rb") as stream:
+        stat = os.fstat(stream.fileno())
         size = stream.seek(0, os.SEEK_END)
         start = max(0, size - TAIL_BYTES)
         stream.seek(start)
@@ -112,7 +133,19 @@ def local_observation(meta):
     if start:
         # The first fragment may be a truncated JSON object.
         tail = tail.partition(b"\n")[2]
-    for line in reversed(tail.splitlines()):
+    lines = tail.splitlines()
+    compacted_after = False
+    marker_age = None
+    if compaction:
+        for line in reversed(lines):
+            marker = compaction_marker(line)
+            if marker is not None:
+                marker_age = call_age(marker, {})
+                break
+    for line in reversed(lines):
+        if compaction and not compacted_after and compaction_marker(line) is not None:
+            compacted_after = True
+            continue
         if b'"usage"' not in line:
             continue
         try:
@@ -142,17 +175,29 @@ def local_observation(meta):
                     provider = meta["model"].split("/", 1)[0]
                 window = pi_window(root, model_id, provider)
             percent = tokens * 100 / window if window else None
-            return dict(status="read", tokens=tokens, context_window=window,
-                        percentage=percent,
-                        over_threshold=percent > CONTEXT_THRESHOLD_PERCENT if window else None,
-                        age_seconds=call_age(event, message), model=model,
-                        reason=None if window else "unknown model window")
+            row = dict(status="read", tokens=tokens, context_window=window,
+                       percentage=percent,
+                       over_threshold=percent > CONTEXT_THRESHOLD_PERCENT if window else None,
+                       age_seconds=call_age(event, message), model=model,
+                       reason=None if window else "unknown model window")
+            if compaction:
+                row["compacted_after_usage"] = compacted_after
+                row["compaction_age_seconds"] = marker_age
+                row["log_signature"] = "%d:%d:%d" % (stat.st_ino, size, stat.st_mtime_ns)
+            return row
         except (ValueError, AttributeError, TypeError):
             continue
     return unknown("no assistant usage in bounded tail")
 
 
 def observe(args):
+    if len(args) == 2 and args[0] == "--compaction":
+        meta = read_meta(args[1])
+        if meta.get("harness") != "claude":
+            return unknown("unsupported harness", "not_read")
+        if meta.get("remote_host"):
+            return unknown("unsupported remote task")
+        return local_observation(meta, compaction=True)
     if len(args) == 2 and args[0] == "--remote-self":
         task_id = args[1]
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", task_id):
