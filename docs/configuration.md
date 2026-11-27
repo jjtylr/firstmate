@@ -11,7 +11,7 @@ Start with the directory layout, then use the setting reference for the behavior
 | Task windows and worker tools | [Runtime backend](#runtime-backend-configbackend--fm_backend) and [harness support](#harness-support) |
 | Worker permissions, accounts, or environment | [Codex approval review](#codex-automatic-approval-review), [Claude permission mode](#claude-permission-mode-configclaude-permission-mode), [Codex permission mode](#codex-permission-mode-configcodex-permission-mode), [persistent managed-policy failover](#persistent-managed-policy-failover), [worker account pin](#worker-account-pin-configclaude-account-configpi-account), [several Claude accounts](#several-claude-accounts-configclaude-accounts), [worker tool exclusions](#worker-tool-exclusions-configcrew-exclude-tools), [supervisor start cuts](#supervisor-start-cuts-configsupervisor-claude-keep), [worker launch environment](#worker-launch-environment-configlaunch-env-allowlist), and its [Orca environment source](#orca-environment-source-configlaunch-env-tmux-session) |
 | Backlog, preferences, and memory | [Backlog backend](#backlog-backend-taskstoml--configbacklog-backend), [captain preferences](#captain-preferences-datacaptainmd--datacaptain-sharedmd), [external memory tiers](#external-memory-tiers-memory-layering-section), [record export](#record-export-configrecord-export-root), [startup memory budget](#startup-memory-budget-configstartup-memory-budget), and [stow guard](#stow-guard-configstow-guard) |
-| Supervision and presentation | [Pi supervision branch](#pi-supervision-branch), [supervision host](#supervision-host-configsupervision-host), [Codex native Stop park](#codex-native-stop-park-configcodex-stop-park), [warm-cache compaction](#warm-cache-compaction-configwarm-compact), and [Calm preference](#calm-preference-configcalm) |
+| Supervision and presentation | [Pi supervision branch](#pi-supervision-branch), [supervision host](#supervision-host-configsupervision-host), [Codex native Stop park](#codex-native-stop-park-configcodex-stop-park), [warm-cache compaction](#warm-cache-compaction-configwarm-compact), [supervisor clear policy](#supervisor-clear-policy-configsupervisor-clear), and [Calm preference](#calm-preference-configcalm) |
 | Persistent secondmates | [Secondmate routes](#secondmate-routes-datasecondmatesmd) |
 | Review bots on owned GitHub pull requests | [Contribution review bots](#contribution-review-bots-configcontribution-review-bots) |
 | Stopping idle workers while a PR awaits review, and cleanup on merge | [Park on review](#park-on-review) |
@@ -114,6 +114,7 @@ Each effective `FM_HOME` contains private operational directories.
 - Private secondmate config-reread generations with their retry and quarantine state.
 - Per-task steering-inbox records under `state/<id>.inbox/` (`bin/fm-task-inbox-lib.sh`).
 - Parent-owned secondmate pending-reply records under `state/pending-replies/` (`bin/fm-pending-reply-lib.sh`).
+- The supervisor clear policy's recorded main endpoint, per-supervisor markers, and `clear.log` under `state/supervisor-clear/` (`bin/fm-supervisor-clear.sh`).
 
 `config/` holds local gitignored operating choices, including explicit extension bindings under `config/extensions.d/`.
 
@@ -475,6 +476,31 @@ A compacted primary still picks up pending wakes and decisions from disk, becaus
 
 This feature does not set `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` or any other autocompact setting.
 `bin/fm-warm-compact-lib.sh` owns the guards, with coverage in [`tests/fm-warm-compact.test.sh`](../tests/fm-warm-compact.test.sh) and the opt-in live guard [`tests/fm-warm-compact-herdr-live-e2e.test.sh`](../tests/fm-warm-compact-herdr-live-e2e.test.sh).
+
+## Supervisor clear policy (config/supervisor-clear)
+
+Main and every second mate this home records, local or remote, get a fresh conversation once theirs grows past a set size.
+It is a clear, never a compaction: the supervisor first writes down the open work held only in its conversation, then starts again from the durable records that session start restores.
+The policy is on by default, and the watcher runs one pass every two minutes, so it needs no separate daemon.
+
+A supervisor is cleared at its next idle moment once its conversation reaches 150,000 tokens, and always before 200,000.
+The optional home-local `config/supervisor-clear` file changes those two sizes or turns the policy off:
+
+- `soft <tokens>` is the size from which a supervisor is cleared at its next idle moment (default 150000).
+- `hard <tokens>` is the size it must not pass: a busy second mate is restarted at its next turn end, and main is told to finish its current step (default 200000).
+- `off`, alone in the file, turns the policy off for this home.
+
+Blank lines and text after `#` are ignored.
+`soft` must be at least 1000 and below `hard`.
+An invalid file turns nothing off quietly: it raises one notification naming the problem, and no supervisor is cleared until it is fixed or removed.
+The file is local to each home and is not inherited; a second mate's own home applies its own file to its own mates.
+
+Size is the conversation's latest model call as `bin/fm-context-size.sh` reads it, so a runtime that command cannot read is never acted on.
+A second mate is restarted through `bin/fm-secondmate-restart.sh --keep-profile --reason context`, so it keeps the harness, model, and effort its record names.
+Main is cleared by typing `/clear` into its own pane, which session start records, and only on Claude in a tmux or Herdr pane; any other runtime gets one line for the captain at the hard size.
+Every ask, save, clear, skip, and restart is one line in `state/supervisor-clear/clear.log`.
+`bin/fm-supervisor-clear.sh`'s header owns the guards that decide when the pane may be typed into, the retry spacing, and the log format, with coverage in [`tests/fm-supervisor-clear.test.sh`](../tests/fm-supervisor-clear.test.sh).
+This policy is separate from [warm-cache compaction](#warm-cache-compaction-configwarm-compact), which is off unless a home opts in.
 
 ## Backlog backend (.tasks.toml / config/backlog-backend)
 

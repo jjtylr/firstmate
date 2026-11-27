@@ -948,6 +948,11 @@ if [ "$READ_ONLY" -eq 0 ]; then
     rm -f "$COMPLETION_FILE" 2>/dev/null || true
   fi
   fm_trace_context_session_start "$CONFIG" "$STATE/.trace-context-effective"
+  # Record main's own endpoint for the supervisor clear policy, silently, on
+  # every locked start and re-emit; the re-emit after a typed /clear is what
+  # confirms that clear (bin/fm-supervisor-clear.sh owns both).
+  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
+    "$SCRIPT_DIR/fm-supervisor-clear.sh" record-main >/dev/null 2>&1 || true
   # A full locked start publishes this home's current structured summary.
   # Publication is side-band and best-effort, so it can never change the
   # session-start result. A context re-emit is not another session start.

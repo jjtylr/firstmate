@@ -677,6 +677,44 @@ test_native_ultra_restart_keeps_local_and_remote_profiles() {
   pass "native Ultra survives local restart and the remote restart transport"
 }
 
+# A size-driven restart (bin/fm-supervisor-clear.sh) keeps the profile the
+# mate's record names, even when this home's pin has since moved, and says why.
+test_keep_profile_restart_keeps_the_recorded_profile() {
+  local dir out rc request meta
+  dir=$(new_case keep-profile)
+  add_local_mate "$dir" sm1
+  sed -i.bak 's/^model=default$/model=claude-opus-5-5/; s/^effort=default$/effort=high/' "$dir/home/state/sm1.meta"
+  arm_answer "$dir" sm1
+  printf 'codex\n' > "$dir/home/config/secondmate-harness"
+
+  out=$(run_restart "$dir" --keep-profile --reason context sm1); rc=$?
+
+  expect_code 0 "$rc" "a profile-keeping restart should succeed"$'\n'"$out"
+  assert_contains "$out" "restarted: sm1 (claude)" "the restart must stay on the mate's recorded runtime, not the moved pin"
+  meta=$(cat "$dir/home/state/sm1.meta")
+  [ "$(grep '^model=' "$dir/home/state/sm1.meta" | tail -1)" = "model=claude-opus-5-5" ] \
+    || fail "the restart dropped the recorded model: $meta"
+  [ "$(grep '^effort=' "$dir/home/state/sm1.meta" | tail -1)" = "effort=high" ] \
+    || fail "the restart dropped the recorded effort: $meta"
+  request=$(cat "$dir/home/state/sm1.inbox"/handled/*.msg "$dir/home/state/sm1.inbox"/*.msg 2>/dev/null)
+  assert_contains "$request" "grown past the size" "the request must say the restart is for conversation size"
+  assert_contains "$request" "First finish the step you are on" "a mate mid-turn must be asked to finish its step"
+  assert_contains "$request" "Open-record persistence" "the request must still be stow's open-record half only"
+
+  dir=$(new_case keep-profile-remote)
+  setup_remote_case "$dir" sm2 ok
+  sed -i.bak 's/^model=default$/model=claude-opus-5-5/; s/^effort=default$/effort=high/' "$dir/home/state/sm2.meta"
+  export FM_FAKE_ANSWER_STATUS="$dir/home/state/sm2.status"
+  printf 'codex\n' > "$dir/home/config/secondmate-harness"
+  out=$(run_restart "$dir" --keep-profile --reason context sm2); rc=$?
+  unset FM_FAKE_ANSWER_STATUS
+  expect_code 0 "$rc" "a profile-keeping remote restart should succeed: $out"
+  [ "$(grep '^fm-remote-secondmate-control.sh relaunch' "$dir/ssh.log" | head -1)" \
+    = "fm-remote-secondmate-control.sh relaunch sm2 claude claude-opus-5-5 high" ] \
+    || fail "the remote restart did not keep the recorded profile: $(grep relaunch "$dir/ssh.log")"
+  pass "a size-driven restart keeps the recorded harness, model, and effort, and says why"
+}
+
 # --- T9: an unrelated concurrent reply cannot release the persist gate -------
 test_concurrent_reply_cannot_release_persist_gate() {
   local dir out rc state corr rec
@@ -996,6 +1034,7 @@ test_unknown_mate_is_accounted_for
 test_refused_restart_falls_back_without_claiming_a_reload
 test_local_restart_uses_the_home_pin_and_reports_what_ran
 test_native_ultra_restart_keeps_local_and_remote_profiles
+test_keep_profile_restart_keeps_the_recorded_profile
 test_remote_mate_restarts_over_the_transport_hop
 test_remote_restart_lands_on_the_per_mate_pin
 test_remote_restart_uses_the_default_for_an_unpinned_mate
