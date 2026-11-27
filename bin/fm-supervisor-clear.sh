@@ -288,14 +288,14 @@ cmd_restart_mate() {  # <id> <tokens>
   while IFS= read -r line; do
     case "$line" in
       restarted:*) log_event "$id" "$tokens" restarted "${line#restarted: }" ;;
-      nudged:*|unreached:*) log_event "$id" "$tokens" restart-failed "$line" ;;
+      nudged:*|failed:*|unreached:*) log_event "$id" "$tokens" restart-failed "$line" ;;
     esac
   done <<EOF
 $out
 EOF
   if [ "$rc" -eq 0 ]; then
     marker_write "$id.restarted" "$(now)" || true
-  elif ! printf '%s\n' "$out" | grep -Eq '^(nudged|unreached):'; then
+  elif ! printf '%s\n' "$out" | grep -Eq '^(nudged|failed|unreached):'; then
     log_event "$id" "$tokens" restart-failed "$(printf '%s\n' "$out" | sed -n '/./{p;q;}')"
   fi
   fm_lock_release "$lock" || true

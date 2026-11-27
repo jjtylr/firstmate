@@ -108,6 +108,14 @@
 #              the prior durable record in place and reports the concrete
 #              state; it never leaves a half-transitioned task claiming to be
 #              running.
+#              A secondmate's relaunch holds that mate's liveness lock
+#              (bin/fm-secondmate-liveness-lib.sh) for the whole transaction,
+#              taken before anything is touched, so the watcher's and session
+#              start's liveness recovery skip the mate instead of reading the
+#              stopped old agent or the starting replacement as a dead
+#              endpoint and killing it mid-launch. A lock still held by
+#              another recovery after FM_CONTROL_LIVENESS_WAIT refuses with
+#              nothing changed.
 #
 # Teardown and discard are NOT verbs here and never will be. `exit` stops an
 # agent and preserves everything else; removing a worktree, killing an
@@ -153,6 +161,8 @@
 #   FM_CONTROL_EXIT_WAIT         alive->dead wait after the exit command (30)
 #   FM_CONTROL_LAUNCH_WAIT       dead->alive wait after a relaunch (90)
 #   FM_CONTROL_EXIT_RETRIES      Enter retries for the exit command (3)
+#   FM_CONTROL_LIVENESS_WAIT     wait for a secondmate's liveness lock before a
+#                                relaunch touches anything (180)
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -213,6 +223,7 @@ ARM_WAIT=${FM_CONTROL_ARM_WAIT:-1.5}
 EXIT_WAIT=${FM_CONTROL_EXIT_WAIT:-30}
 LAUNCH_WAIT=${FM_CONTROL_LAUNCH_WAIT:-90}
 EXIT_RETRIES=${FM_CONTROL_EXIT_RETRIES:-3}
+LIVENESS_WAIT=${FM_CONTROL_LIVENESS_WAIT:-180}
 
 die() {  # <message>
   echo "error: $1" >&2
@@ -221,6 +232,8 @@ die() {  # <message>
 
 CONTROL_LOCK=
 CONTROL_LOCK_HELD=0
+LIVENESS_LOCK=
+LIVENESS_LOCK_HELD=0
 RELAUNCH_ACTIVE=0
 RELAUNCH_PHASE=start
 
@@ -234,6 +247,10 @@ control_cleanup() {
   # the next lifecycle command for this task writes the same path.
   if [ -n "${FM_COMPOSER_DIALOG_SINK:-}" ]; then
     rm -f "$FM_COMPOSER_DIALOG_SINK"
+  fi
+  if [ "$LIVENESS_LOCK_HELD" = 1 ]; then
+    LIVENESS_LOCK_HELD=0
+    fm_lock_release "$LIVENESS_LOCK" || true
   fi
   if [ "$CONTROL_LOCK_HELD" = 1 ]; then
     CONTROL_LOCK_HELD=0
@@ -1223,6 +1240,16 @@ do_relaunch() {
   require_state_verified_backend relaunch
   fm_control_backend_relaunch_supported "$BACKEND" \
     || die "task $ID runs on the $BACKEND backend, where a thread keeps its conversation and a new turn or provider change continues the same agent, so no fresh replacement can be launched into its endpoint; 'interrupt' ends its turn, and a fresh task needs a teardown and a new dispatch"
+  if [ "$KIND" = secondmate ]; then
+    # Between the old agent's exit and the replacement coming up, the endpoint
+    # reads exactly like a dead mate. Liveness recovery serializes on this lock
+    # (bin/fm-secondmate-liveness-lib.sh), so holding it to the end keeps that
+    # recovery from killing the endpoint under this transaction.
+    LIVENESS_LOCK="$STATE/.secondmate-liveness-$ID.lock"
+    fm_lock_acquire_wait_bounded "$LIVENESS_LOCK" "$LIVENESS_WAIT" \
+      || die "a liveness recovery for secondmate $ID still held its lock after ${LIVENESS_WAIT}s; relaunch refused before its agent was touched, nothing changed"
+    LIVENESS_LOCK_HELD=1
+  fi
   resolve_relaunch_profile
 
   case "$KIND" in
