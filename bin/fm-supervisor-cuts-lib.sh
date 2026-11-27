@@ -32,7 +32,8 @@
 # runs with CLAUDE_CODE_SEND_FEEDBACK=0 and "feedbackDrafts": "off"
 # (bin/fm-spawn.sh launch_template), and bin/fm-claude-main.sh does the same.
 #
-# The skill and plugin names are this fleet's installed non-firstmate skills.
+# The skill and plugin names are this fleet's installed non-firstmate skills;
+# `claude plugin list` prints each plugin's id (a claude.ai plugin is <name>@synced).
 # A name that matches nothing in a session has no effect, so a host without
 # one of them is unaffected. Skills a user setting already turns "off" are left
 # out so this list never loosens them.
@@ -45,7 +46,7 @@ FM_SUPERVISOR_ARTIFACT_TOOLS='mcp__claude-artifacts,Artifact,ArtifactComments,Ar
 
 FM_SUPERVISOR_USER_ONLY_SKILLS='update-config keybindings-help code-review simplify ship ship-local steward fewer-permission-prompts claude-approvals loop schedule claude-api workflow-authoring claude-in-chrome run plugin-authoring init security-review dataviz no-mistakes nucleo-icons nucleo-customize anthropic-skills:built-in-browser anthropic-skills:chrome-browser anthropic-skills:computer-use anthropic-skills:deep-research anthropic-skills:docs anthropic-skills:docx anthropic-skills:human-writer anthropic-skills:instruction-audit anthropic-skills:pdf anthropic-skills:pptx anthropic-skills:xlsx'
 
-FM_SUPERVISOR_OFF_PLUGINS='codex@openai-codex cowork-plugin-management@knowledge-work-plugins'
+FM_SUPERVISOR_OFF_PLUGINS='codex@openai-codex cowork-plugin-management@synced'
 
 # fm_supervisor_cuts_kept <config-dir>: print the space-joined cut names the
 # home's config/supervisor-claude-keep switches back, empty when the file is

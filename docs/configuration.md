@@ -1722,6 +1722,8 @@ A secondmate's delegation guard escape needs `delegation` in its keep file, beca
 
 The skill and plugin names are this fleet's installed non-firstmate skills; a name that matches nothing in a session has no effect.
 Add a newly installed skill or plugin to the lib when supervisors should not see it, and leave out any skill a user setting already turns `off`.
+`claude plugin list` prints each plugin's id; a plugin synced from claude.ai is `<name>@synced`.
+The measured effect is in the [verification record](verification/runtime-backends.md#claude-supervisor-start-cuts).
 Host settings outside a home, such as a user-scope start hook or auto memory, stay in that host's `~/.claude/settings.json`.
 
 ## Worker account pin (config/claude-account, config/pi-account)

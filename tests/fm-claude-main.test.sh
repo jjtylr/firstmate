@@ -53,7 +53,7 @@ test_default_start_carries_every_cut() {
   printf '%s' "$settings" | jq -e '.feedbackDrafts == "off"
       and .disableClaudeAiConnectors == true
       and .skillOverrides["anthropic-skills:xlsx"] == "user-invocable-only"
-      and .enabledPlugins["cowork-plugin-management@knowledge-work-plugins"] == false' >/dev/null \
+      and .enabledPlugins["cowork-plugin-management@synced"] == false' >/dev/null \
     || fail "default: settings JSON was '$settings'"
   [ "$(tail -n 3 "$c/args" | tr '\n' '|')" = "--resume|abc|hello there|" ] \
     || fail "default: passed-through arguments were not last and intact"

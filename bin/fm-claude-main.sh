@@ -47,6 +47,7 @@ keep_delegation=0
 
 # The lib prints shell-quoted flags built only from its own fixed names.
 flags=$(fm_supervisor_claude_flags "$kept" "$keep_delegation")
+cut_args=()
 eval "cut_args=($flags)"
 settings="{$(fm_supervisor_claude_settings_keys "$kept")\"feedbackDrafts\":\"off\"}"
 

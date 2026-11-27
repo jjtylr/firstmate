@@ -734,6 +734,28 @@ The token-free live guard refreshes the per-version evidence and fails naming th
 bin/fm-test-run.sh tests/fm-claude-tool-exclude-live.test.sh
 ```
 
+## Claude supervisor start cuts
+
+[Supervisor start cuts](../configuration.md#supervisor-start-cuts-configsupervisor-claude-keep) owns the contract; this record owns the measurement.
+Verified 2026-11-27 on macOS arm64 with Claude Code 2.1.332, logged in, on Opus 5.5, by launching real Claude secondmates through `bin/fm-spawn.sh --secondmate --harness claude --backend herdr` in an isolated Herdr lab session, each in a throwaway clone of this repository.
+The arms differ only in the mate home's `config/supervisor-claude-keep`: the baseline names every cut, so it launches as before the cuts.
+The token figure is input plus cache-write plus cache-read tokens on the first model reply, and the parts are read from the request shape Claude Code records in the session log under `~/.claude/projects/`.
+
+| Launch | First-request tokens | Tools sent in full | Tool schema characters |
+| --- | --- | --- | --- |
+| every cut kept (baseline) | 67187 | 20 | 61783 |
+| default cuts | 34610 | 8 | 18458 |
+| default cuts, first request after `/clear` | 34951 | 8 | 18458 |
+
+Findings that shape the contract:
+
+- Hiding the artifacts server also drops its server instructions, and no built-in `Artifact` tool took its place.
+- Hiding `Agent` also drops the agent-type list from the system prompt.
+- `skillOverrides` from `--settings` reaches claude.ai skills (`anthropic-skills:pdf` left the list) and merges per key with user settings, so a skill the user turned `off` stays off.
+- `skillOverrides` does not reach plugin skills; `"enabledPlugins": {"<name>@<marketplace>": false}` does, and a plugin synced from claude.ai is `<name>@synced`, as `claude plugin list` prints it.
+- `--no-chrome` drops the Claude in Chrome system-prompt section and tools, and `"disableClaudeAiConnectors": true` drops every claude.ai connector's tools and instructions.
+- A `/clear` starts a new session in the same process with the same cuts.
+
 ## Secondmate busy contract
 
 Verified 2026-09-22 on this host with Claude Code 2.1.278, OpenCode 1.18.31, Pi 0.86.1, and Grok 1.0.40.
