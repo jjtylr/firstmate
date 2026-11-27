@@ -372,6 +372,10 @@ SUPERVISOR_CLEAR_INTERVAL=${FM_SUPERVISOR_CLEAR_INTERVAL:-120}  # seconds betwee
 case "$SUPERVISOR_CLEAR_INTERVAL" in
   ''|*[!0-9]*) SUPERVISOR_CLEAR_INTERVAL=120 ;;
 esac
+IDLE_COMPACT_TICK=${FM_IDLE_COMPACT_TICK_SECS:-60}  # seconds between idle worker compaction passes
+case "$IDLE_COMPACT_TICK" in
+  ''|*[!0-9]*|0) IDLE_COMPACT_TICK=60 ;;
+esac
 SIGNAL_GRACE=${FM_SIGNAL_GRACE:-30}   # seconds to linger after a signal so trailing
                                       # signals (a status write, then the same turn's
                                       # turn-end hook) coalesce into one wake
@@ -3989,6 +3993,24 @@ lane_capacity_publish_detached() {
   LANE_CAPACITY_PID=$!
 }
 
+# Idle worker compaction pass (bin/fm-idle-worker-compact.sh): detached for the
+# same beacon-freshness reason, with its tick marker stamped first so a
+# restarted watcher keeps the cadence.
+IDLE_COMPACT_PID=
+idle_worker_compact_detached() {
+  if [ -n "$IDLE_COMPACT_PID" ]; then
+    if kill -0 "$IDLE_COMPACT_PID" 2>/dev/null; then
+      return 0
+    fi
+    wait "$IDLE_COMPACT_PID" 2>/dev/null || true
+    IDLE_COMPACT_PID=
+  fi
+  touch "$STATE/.idle-worker-compact-tick"
+  FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG FM_DATA_OVERRIDE=$DATA \
+    "$SCRIPT_DIR/fm-idle-worker-compact.sh" tick </dev/null >/dev/null 2>&1 &
+  IDLE_COMPACT_PID=$!
+}
+
 [ -e "$STATE/.last-heartbeat" ] || touch "$STATE/.last-heartbeat"
 
 # A merged poll may have queued its terminal wake and then lost the process
@@ -4137,6 +4159,11 @@ while :; do
   # Opt-in lane capacity facts: off costs one file test.
   if [ -e "$CONFIG/lane-capacity" ] && [ "$(age_of "$STATE/lane-capacity.json")" -ge 30 ]; then
     lane_capacity_publish_detached
+  fi
+  # Idle worker compaction (bin/fm-warm-compact-lib.sh owns the guards): one
+  # detached pass per IDLE_COMPACT_TICK that never wakes firstmate.
+  if [ "$(age_of "$STATE/.idle-worker-compact-tick")" -ge "$IDLE_COMPACT_TICK" ]; then
+    idle_worker_compact_detached
   fi
 
   # Bearings publishes reconcile asks as local one-shot request files and

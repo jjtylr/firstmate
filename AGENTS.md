@@ -295,6 +295,7 @@ When any wake reports a merged PR for a project cloned in this home, refresh tha
 When Relay-linked work reaches a milestone or terminal state, load `fmx-respond`; before terminal teardown, use its promised-final reconciliation when a typed public commitment exists, otherwise post the final completion follow-up so the link clears even if earlier follow-ups were spent.
 
 A secondmate's idle endpoint is healthy, and parent supervision relies on its routed status rather than treating a quiet pane as stale.
+A `/compact` in an idle Claude worker's pane near the hour is firstmate's own cache housekeeping (`bin/fm-warm-compact-lib.sh`), not a worker action.
 Waiting on a healthy supervision cycle is silent; empty polls, elapsed time, and no-change updates are not captain-facing progress.
 Never broadly kill watchers, especially never `pkill -f bin/fm-watch.sh`, because that can kill sibling firstmate homes.
 A forced repair must use the home-scoped owner path emitted by supervision instructions.

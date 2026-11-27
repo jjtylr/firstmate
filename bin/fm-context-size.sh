@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Read-only conversation-size observation for one captured task metadata file.
 # Usage: fm-context-size.sh <meta-file>
+#        fm-context-size.sh --compaction <meta-file>   (local Claude tasks)
 #        fm-context-size.sh --remote-self <secondmate-id>
 # The remote form is invoked only through fm-on.sh in the selected home and
 # reads that secondmate's own parent-route record, never its child inventory.
