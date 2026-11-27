@@ -2194,4 +2194,178 @@ assert_contains "$out" 'spendPriority=' "shared_quota false prints quota evidenc
 pass "shared_quota false keeps the unchanged quota-ranked behavior"
 cp "$BASE_RULES" "$RULES"
 
+# --- declared job facts: code settles what the brief declares -----------------
+# Rules: 1 whole spec (captain approval), 2 review of OpenAI-built work,
+# 3 review of Claude-built work, 4 simple bug fix (excluded by Cause: unknown).
+FACT_RULES="$TMP_ROOT/fact-rules.json"
+cat > "$FACT_RULES" <<'JSON'
+{
+  "shared_quota": true,
+  "rules": [
+    { "when": "Building a whole spec handed over entire.", "facts": ["whole-spec"], "approval": "captain",
+      "use": { "harness": "claude", "model": "opus", "effort": "high" } },
+    { "when": "Cross-family review of work an OpenAI model built.", "facts": ["review:codex"],
+      "use": { "harness": "claude", "model": "opus", "effort": "high" } },
+    { "when": "Cross-family review of work a Claude model built.", "facts": ["review:claude"],
+      "use": { "harness": "pi", "model": "openai-codex/gpt-6.2-sol", "effort": "xhigh", "provider": "codex" } },
+    { "when": "A simple bug fix with a stated root cause.", "facts": ["not:cause-unknown"],
+      "use": { "harness": "pi", "model": "openai-codex/gpt-6-luna", "effort": "high", "provider": "codex" } }
+  ],
+  "default": { "harness": "pi", "model": "openai-codex/gpt-6.2-sol", "effort": "high", "provider": "codex" }
+}
+JSON
+cp "$FACT_RULES" "$RULES"
+FACT_DATA="$HOME_DIR/data"
+mkdir -p "$FACT_DATA/fact-job" "$HOME_DIR/state"
+FACT_BRIEF="$FACT_DATA/fact-job/brief.md"
+write_fact_brief() {  # <spec lines...>
+  {
+    printf '# Task\n## Captain'"'"'s intent\nPlease look at the work.\n\n## Firstmate spec\n'
+    printf '%s\n' "$@"
+    printf '\n# Setup\nStandard setup.\n'
+  } > "$FACT_BRIEF"
+}
+# Jev, unsure and pointing elsewhere: default at 0.4.
+write_fact_response() {  # <path> [<without-rule>]
+  jq -n --arg drop "${2:-}" '
+    {rule_1: 0.15, rule_2: 0.15, rule_3: 0.15, rule_4: 0.15, default: 0.4}
+    | del(.[$drop]) | (to_entries | map(.value) | add) as $t | map_values(. / $t) as $p |
+    {model: "jev-1.14.0", answers: {rule: {type: "choice", choice: "default", confidence: 0.4, probabilities: $p}},
+     usage: {input_tokens: 700, output_tokens: 40}}' > "$1"
+}
+fact_record() { tail -n 1 "$DISPATCH_RECORD"; }
+rm -f "$DISPATCH_RECORD"
+
+# Today's code reads only Jev: this unsure answer is ambiguous. A declared
+# whole spec settles rule 1 instead, which still waits for the captain.
+reset_log
+write_fact_brief 'Build every gate of spec 12.' 'Job: whole spec'
+write_fact_response "$RESPONSE"
+TYPESAFE_API_KEY=$KEY run code out err "$FACT_BRIEF" --project pager
+expect_code 0 "$code" "a declared whole spec exits 0"
+assert_contains "$out" '  status: escalate' "a declared whole spec is settled to its approval-gated rule, not left ambiguous"
+assert_contains "$out" '  fact: whole-spec -> rule_1 (Building a whole spec handed over entire.)' "the output names the fact and the rule it settled"
+assert_contains "$out" "  reason: rule requires the captain's explicit approval before dispatch" "the whole-spec rule's approval still applies"
+assert_contains "$out" '  rule: default (No listed rule applies to this task.)   confidence: 0.4' "Jev's own answer is still shown"
+assert_equals '"choice"' "$(jq -c '.questions.rule.type' "$LOG/body")" "Jev is still asked the rule question"
+assert_equals 'escalate rule_1 default fact whole-spec ["whole-spec"]' \
+  "$(fact_record | jq -r '"\(.status) \(.rule) \(.picked_rule) \(.decided_by) \(.fact) \(.declared_facts | tojson)"')" \
+  "the record keeps the fact's rule beside Jev's pick"
+pass "declared facts: a whole spec settles its rule before Jev's answer, and approval still gates it"
+
+# Without approval the same fact resolves clear, its reason naming the fact.
+jq 'del(.rules[0].approval)' "$FACT_RULES" > "$RULES"
+reset_log
+write_fact_response "$RESPONSE"
+TYPESAFE_API_KEY=$KEY run code out err "$FACT_BRIEF" --project pager
+assert_contains "$out" '  status: clear' "a fact-settled rule without approval is clear"
+assert_contains "$out" '  reason: declared fact whole-spec matches rule_1' "the clear reason names the fact"
+assert_contains "$out" "  profile: --harness 'claude' --model 'opus' --effort 'high'" "the fact's rule profile is resolved"
+assert_equals 'clear claude' "$(jq -r '"\(.status) \(.profile.harness)"' "$FACT_DATA/fact-job/dispatch-resolution.json")" "the task record carries the fact's clear decision"
+# A failed Jev answer does not undo a settled fact: it is recorded beside it.
+reset_log
+FAKE_CURL_HTTP=500 TYPESAFE_API_KEY=$KEY run code out err "$FACT_BRIEF" --project pager
+assert_contains "$out" '  status: clear' "a Jev failure does not undo a declared fact"
+assert_contains "$out" '  jev: http 500' "the Jev failure is shown"
+assert_equals 'clear rule_1 fact null http 500 after' \
+  "$(fact_record | jq -r '"\(.status) \(.rule) \(.decided_by) \(.picked_rule) \(.jev_error)"' | sed 's/ [0-9]* ms$//')" \
+  "the record keeps the fact's rule and the lead of Jev's failure"
+cp "$FACT_RULES" "$RULES"
+pass "declared facts: a settled fact resolves clear with its reason, even when Jev fails"
+
+# Review of: a task id reads the builder's latest spawn or restart profile.
+printf '%s\n' \
+  '{"v":1,"ts":100,"event":"dispatch.spawned","task":"build-a","profile":{"harness":"pi","model":"openai-codex/gpt-6.2-sol","effort":"high"}}' \
+  '{"v":1,"ts":200,"event":"dispatch.relaunched","task":"build-a","profile":{"harness":"claude","model":"opus","effort":"high"}}' \
+  '{"v":1,"ts":300,"event":"dispatch.spawned","task":"build-b","profile":{"harness":"pi","model":"openai-codex/gpt-6.2-sol","effort":"high"}}' \
+  '{"v":1,"ts":400,"event":"dispatch.outcome","task":"build-b","outcome":"merged","pr":"https://github.com/acme/app/pull/9"}' \
+  > "$DISPATCH_RECORD"
+reset_log
+write_fact_brief 'Review of: build-a'
+write_fact_response "$RESPONSE"
+TYPESAFE_API_KEY=$KEY run code out err "$FACT_BRIEF" --project pager
+assert_contains "$out" '  fact: review:claude -> rule_3' "a review of work last restarted on Claude settles the review-of-Claude rule"
+assert_contains "$out" "  profile: --harness 'pi' --model 'openai-codex/gpt-6.2-sol' --effort 'xhigh'" "the cross-family reviewer is resolved"
+assert_equals 'rule_3 build-a {"harness":"claude","model":"opus","source":"record","family":"claude"}' \
+  "$(fact_record | jq -r '"\(.rule) \(.review_of) \(.builder | tojson)"')" "the record names the reviewed job and the builder it read"
+# A PR URL names the task whose outcome recorded it.
+reset_log
+write_fact_brief '- Review of: https://github.com/acme/app/pull/9'
+write_fact_response "$RESPONSE"
+TYPESAFE_API_KEY=$KEY run code out err "$FACT_BRIEF" --project pager
+assert_contains "$out" '  fact: review:codex -> rule_2' "a review of a recorded PR built on Sol settles the review-of-OpenAI rule"
+# A PR still open names the task whose state record carries it.
+printf '%s\n' 'pr=https://github.com/acme/app/pull/11' > "$HOME_DIR/state/build-a.meta"
+reset_log
+write_fact_brief 'Review of: https://github.com/acme/app/pull/11'
+write_fact_response "$RESPONSE"
+TYPESAFE_API_KEY=$KEY run code out err "$FACT_BRIEF" --project pager
+assert_contains "$out" '  fact: review:claude -> rule_3' "an open PR is found through this home's task state"
+rm -f "$HOME_DIR/state/build-a.meta"
+# Built by: is the fallback for work this home did not dispatch.
+reset_log
+write_fact_brief 'Review of: https://github.com/other/repo/pull/3' 'Built by: codex:gpt-6.2-sol'
+write_fact_response "$RESPONSE"
+TYPESAFE_API_KEY=$KEY run code out err "$FACT_BRIEF" --project pager
+assert_contains "$out" '  fact: review:codex -> rule_2' "Built by: names the builder when the record does not"
+assert_equals 'declared codex' "$(fact_record | jq -r '"\(.builder.source) \(.builder.family)"')" "the record says the builder was declared"
+# The record wins over Built by: when it names the job.
+reset_log
+write_fact_brief 'Review of: build-a' 'Built by: codex:gpt-6.2-sol'
+write_fact_response "$RESPONSE"
+TYPESAFE_API_KEY=$KEY run code out err "$FACT_BRIEF" --project pager
+assert_contains "$out" '  fact: review:claude -> rule_3' "the dispatch record wins over a Built by: line"
+# With neither, the review behaves as today: Jev decides.
+reset_log
+write_fact_brief 'Review of: https://github.com/other/repo/pull/3'
+write_fact_response "$RESPONSE"
+TYPESAFE_API_KEY=$KEY run code out err "$FACT_BRIEF" --project pager
+assert_contains "$out" '  status: ambiguous' "a review with no known builder is left to Jev, as today"
+assert_contains "$out" '  facts_note: Review of: names no job' "the output says why the review fact is not declared"
+assert_not_contains "$out" '  fact: ' "no fact settles the rule"
+assert_equals 'jev null' "$(fact_record | jq -r '"\(.decided_by) \(.fact)"')" "the record says Jev decided"
+pass "declared facts: Review of: reads this home's record, then Built by:, and otherwise behaves as today"
+
+# Cause: unknown drops the simple-bug-fix rule from the question.
+reset_log
+write_fact_brief 'Find why the pager stalls.' 'Cause: unknown'
+write_fact_response "$RESPONSE" rule_4
+TYPESAFE_API_KEY=$KEY run code out err "$FACT_BRIEF" --project pager
+expect_code 0 "$code" "Cause: unknown exits 0"
+assert_equals '["default","rule_1","rule_2","rule_3"]' "$(jq -c '.questions.rule.criteria | keys' "$LOG/body")" "the excluded rule is not offered to Jev"
+assert_contains "$out" '  excluded: rule_4' "the output names the excluded rule"
+assert_contains "$out" '  status: ambiguous' "with nothing settled, Jev's unsure answer stays ambiguous"
+assert_equals '["rule_4"] ["cause-unknown"]' "$(fact_record | jq -c '[.excluded_rules, .declared_facts]' | jq -r 'map(tojson) | join(" ")')" "the record keeps the exclusion"
+pass "declared facts: Cause: unknown leaves the simple-bug-fix rule out of Jev's options"
+
+# Two facts naming two rules settle nothing; Jev decides, with a note.
+reset_log
+write_fact_brief 'Review of: build-a' 'Job: whole spec'
+write_fact_response "$RESPONSE"
+TYPESAFE_API_KEY=$KEY run code out err "$FACT_BRIEF" --project pager
+assert_contains "$out" '  facts_note: declared facts match more than one rule (rule_1 by whole-spec, rule_3 by review:claude), so Jev decides' "facts naming two rules leave the choice to Jev"
+assert_contains "$out" '  status: ambiguous' "Jev's answer governs as today"
+pass "declared facts: facts that name more than one rule settle nothing"
+
+# The never-send list still stops the request, fact or not.
+reset_log
+write_fact_brief 'Job: whole spec'
+printf '%s\n' 'Please look at the work' > "$HOME_DIR/config/dispatch-never-send"
+TYPESAFE_API_KEY=$KEY run code out err "$FACT_BRIEF" --project pager
+assert_absent "$LOG/argv" "a never-send match sends nothing even with a declared fact"
+assert_equals 'off null null' "$(fact_record | jq -r '"\(.status) \(.rule) \(.decided_by)"')" "a never-send match is off, as today"
+rm -f "$HOME_DIR/config/dispatch-never-send"
+pass "declared facts: the never-send list governs as before"
+
+# An unknown fact name is a configuration error.
+jq '.rules[0].facts = ["whole-specs"]' "$FACT_RULES" > "$RULES"
+reset_log
+TYPESAFE_API_KEY=$KEY run code out err "$FACT_BRIEF" --project pager
+expect_code 2 "$code" "an unknown fact name exits 2"
+assert_contains "$err" 'unknown fact: "whole-specs"' "the error names the unknown fact"
+assert_absent "$LOG/argv" "a malformed facts field sends nothing"
+cp "$BASE_RULES" "$RULES"
+rm -f "$DISPATCH_RECORD"
+pass "declared facts: an unknown fact name is refused before any request"
+
 printf '# all fm-dispatch-resolve tests passed\n'

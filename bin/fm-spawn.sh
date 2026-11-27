@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Spawn a direct report: a crewmate in a treehouse or Orca worktree, or a
 # secondmate in its isolated firstmate home.
-# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--branch-prefix <prefix>] [--base-branch <branch>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--dispatch-override <reason>] [--hermes-profile <name>] [--account <entry>] [--backend <name>] [--herdr-resume-lock-wait]
-#        fm-spawn.sh <task-id> <project-dir> --scout [--base-branch <branch>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--dispatch-override <reason>] [--hermes-profile <name>] [--account <entry>] [--backend <name>] [--herdr-resume-lock-wait]
+# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--branch-prefix <prefix>] [--base-branch <branch>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--dispatch-override <reason>] [--dispatch-rule <rule_N|default>] [--hermes-profile <name>] [--account <entry>] [--backend <name>] [--herdr-resume-lock-wait]
+#        fm-spawn.sh <task-id> <project-dir> --scout [--base-branch <branch>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--dispatch-override <reason>] [--dispatch-rule <rule_N|default>] [--hermes-profile <name>] [--account <entry>] [--backend <name>] [--herdr-resume-lock-wait]
 #        fm-spawn.sh <task-id> [<firstmate-home>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] --secondmate
 #   --mode and --yolo are this task's delivery contract, REQUIRED for every ship
 #   spawn and refused on --scout and --secondmate spawns. Firstmate resolves both
@@ -1007,6 +1007,7 @@ HARNESS_ARG=
 MODEL=
 EFFORT=
 DISPATCH_OVERRIDE=
+DISPATCH_RULE=
 BACKEND_ARG=
 MODE=
 YOLO=
@@ -1056,6 +1057,7 @@ for a in "$@"; do
       EFFORT_SET=1
       ;;
     dispatch-override) DISPATCH_OVERRIDE=$a ;;
+    dispatch-rule) DISPATCH_RULE=$a ;;
     hermes-profile)
       HERMES_PROFILE=$a
       HERMES_PROFILE_SET=1
@@ -1128,6 +1130,8 @@ for a in "$@"; do
     ;;
   --dispatch-override) want_value=dispatch-override ;;
   --dispatch-override=*) DISPATCH_OVERRIDE=${a#--dispatch-override=} ;;
+  --dispatch-rule) want_value=dispatch-rule ;;
+  --dispatch-rule=*) DISPATCH_RULE=${a#--dispatch-rule=} ;;
   --hermes-profile) want_value=hermes-profile ;;
   --hermes-profile=*) HERMES_PROFILE=${a#--hermes-profile=}; HERMES_PROFILE_SET=1 ;;
   --backend) want_value=backend ;;
@@ -2178,6 +2182,7 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
   [ -z "$MODEL" ] || shared_args+=(--model "$MODEL")
   [ -z "$EFFORT" ] || shared_args+=(--effort "$EFFORT")
   [ -z "$DISPATCH_OVERRIDE" ] || shared_args+=(--dispatch-override "$DISPATCH_OVERRIDE")
+  [ -z "$DISPATCH_RULE" ] || shared_args+=(--dispatch-rule "$DISPATCH_RULE")
   [ "$HERMES_PROFILE_SET" -eq 0 ] || shared_args+=(--hermes-profile "$HERMES_PROFILE")
   [ -z "$BACKEND_ARG" ] || shared_args+=(--backend "$BACKEND_ARG")
   # One delivery contract applies to every pair in a batch, exactly like the shared
@@ -3273,6 +3278,28 @@ case "$ARG3" in
 esac
 
 case "$DISPATCH_OVERRIDE" in *[![:print:]]*) echo 'error: --dispatch-override must be a printable reason' >&2; exit 1 ;; esac
+# --dispatch-rule names the rule the job should have had, recorded on the
+# dispatch.spawned line so a later replay can score a proposed rules file.
+if [ -n "$DISPATCH_RULE" ]; then
+  if [ "$KIND" = secondmate ] || [ "$RELAUNCH" -eq 1 ]; then
+    echo 'error: --dispatch-rule records a fresh ship or scout dispatch; it does not apply to a secondmate or a relaunch' >&2
+    exit 1
+  fi
+  dispatch_rule_n=${DISPATCH_RULE#rule_}
+  if [ "$DISPATCH_RULE" != default ]; then
+    case "$DISPATCH_RULE:$dispatch_rule_n" in
+      rule_*:[1-9]|rule_*:[1-9]*[0-9]) case "$dispatch_rule_n" in *[!0-9]*) dispatch_rule_n='' ;; esac ;;
+      *) dispatch_rule_n='' ;;
+    esac
+    [ -n "$dispatch_rule_n" ] || { echo "error: --dispatch-rule must be rule_<n> (a rule's position in config/crew-dispatch.json, from 1) or default, not '$DISPATCH_RULE'" >&2; exit 1; }
+    [ -f "$CONFIG/crew-dispatch.json" ] || { echo "error: --dispatch-rule $DISPATCH_RULE names a rule, but config/crew-dispatch.json does not exist" >&2; exit 1; }
+    dispatch_rule_count=$(jq -r '(.rules // []) | length' "$CONFIG/crew-dispatch.json" 2>/dev/null) || dispatch_rule_count=0
+    if [ "$dispatch_rule_n" -gt "${dispatch_rule_count:-0}" ]; then
+      echo "error: --dispatch-rule $DISPATCH_RULE is not in config/crew-dispatch.json, which has ${dispatch_rule_count:-0} rules" >&2
+      exit 1
+    fi
+  fi
+fi
 DISPATCH_RECORD="$DATA/$ID/dispatch-resolution.json"
 if [ "$KIND" != secondmate ] && [ "$RELAUNCH" -eq 0 ] && [ -f "$CONFIG/crew-dispatch.json" ]; then
   if [ ! -e "$DISPATCH_RECORD" ]; then
@@ -8344,7 +8371,8 @@ if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
   else
     dispatch_record_args=("$ID" --kind "$KIND" --project "${PROJ_ABS##*/}" --harness "$HARNESS" --model "${MODEL:-}" --effort "${EFFORT:-}")
     [ -z "$DISPATCH_OVERRIDE" ] || dispatch_record_args+=(--override "$DISPATCH_OVERRIDE")
-    FM_HOME=$FM_HOME FM_DATA_OVERRIDE=$DATA "$SCRIPT_DIR/fm-dispatch-record.sh" spawned \
+    [ -z "$DISPATCH_RULE" ] || dispatch_record_args+=(--rule "$DISPATCH_RULE")
+    FM_HOME=$FM_HOME FM_DATA_OVERRIDE=$DATA FM_CONFIG_OVERRIDE=$CONFIG "$SCRIPT_DIR/fm-dispatch-record.sh" spawned \
       "${dispatch_record_args[@]}" >/dev/null 2>&1 || true
   fi
 fi

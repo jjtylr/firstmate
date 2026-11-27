@@ -525,7 +525,7 @@ test_recorded_dispatch_selection_allows_matching_flags() {
   expect_code 0 "$status" "flags equal to the recorded selection should launch: $out"
   assert_meta_profile "$HOME_DIR/state/$id.meta" codex gpt-5 high
   assert_no_grep 'dispatch_override=' "$HOME_DIR/state/$id.meta" "a matching launch should record no override"
-  assert_equals '{"event":"dispatch.spawned","task":"'"$id"'","kind":"ship","project":"project","profile":{"harness":"codex","model":"gpt-5","effort":"high"},"override":false,"override_reason":null,"resolution_status":"clear","resolution_profile":{"harness":"codex","model":"gpt-5","effort":"high"},"matches_resolution":true}' \
+  assert_equals '{"event":"dispatch.spawned","task":"'"$id"'","kind":"ship","project":"project","profile":{"harness":"codex","model":"gpt-5","effort":"high"},"override":false,"override_reason":null,"filed_rule":null,"filed_rule_when":null,"resolution_status":"clear","resolution_profile":{"harness":"codex","model":"gpt-5","effort":"high"},"matches_resolution":true}' \
     "$(jq -c 'del(.v, .ts)' "$HOME_DIR/data/dispatch-record.jsonl")" "the spawn appends one dispatch record line naming the launched profile and its resolution"
   pass "a recorded dispatch selection allows the matching launch flags and records the spawn"
 }
@@ -549,6 +549,39 @@ test_recorded_dispatch_selection_allows_recorded_override() {
     "$(jq -r '"\(.event) \(.override) \(.override_reason) \(.profile.harness)/\(.profile.model)/\(.profile.effort) \(.resolution_status) \(.matches_resolution)"' "$HOME_DIR/data/dispatch-record.jsonl")" \
     "an overridden spawn records the override, its reason, and the profile actually launched"
   pass "a task override with its reason permits a different launch and is recorded"
+}
+
+# --dispatch-rule records the rule firstmate filed the job under, so a later
+# replay of a proposed rules file can score it.
+test_recorded_dispatch_rule_is_recorded_and_checked() {
+  local rec id out status
+  id=profile-selected-rule-z13
+  rec=$(make_spawn_case profile-selected-rule claude "$id")
+  read_case_record "$rec"
+  enable_dispatch_profile "$HOME_DIR"
+  record_dispatch "$HOME_DIR" "$id" ambiguous
+
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --harness codex --model gpt-5 --effort high --dispatch-rule rule_2)
+  status=$?
+  expect_code 1 "$status" "a rule the config does not have should be refused"
+  assert_contains "$out" '--dispatch-rule rule_2 is not in config/crew-dispatch.json, which has 1 rules' "spawn did not name the missing rule"
+  assert_absent "$HOME_DIR/state/$id.meta" "a refused rule should not publish the task"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --harness codex --model gpt-5 --effort high --dispatch-rule 'rule 1')
+  status=$?
+  expect_code 1 "$status" "a malformed rule id should be refused"
+  assert_contains "$out" "--dispatch-rule must be rule_<n>" "spawn did not explain the rule id form"
+
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --harness codex --model gpt-5 --effort high \
+    --dispatch-override 'below the floor; firstmate filed it' --dispatch-rule rule_1)
+  status=$?
+  expect_code 0 "$status" "a rule the config has should launch: $out"
+  assert_equals 'dispatch.spawned rule_1 current events true below the floor; firstmate filed it' \
+    "$(jq -r '"\(.event) \(.filed_rule) \(.filed_rule_when) \(.override) \(.override_reason)"' "$HOME_DIR/data/dispatch-record.jsonl")" \
+    "the spawn records the filed rule and its when text beside the override"
+  pass "--dispatch-rule is checked against the rules file and recorded on the spawn"
 }
 
 test_recorded_dispatch_selection_leaves_unset_effort_unbound() {
@@ -3040,6 +3073,7 @@ test_active_dispatch_profile_allows_explicit_harness
 test_recorded_dispatch_selection_refuses_conflicting_flags
 test_recorded_dispatch_selection_allows_matching_flags
 test_recorded_dispatch_selection_allows_recorded_override
+test_recorded_dispatch_rule_is_recorded_and_checked
 test_recorded_dispatch_selection_leaves_unset_effort_unbound
 test_recorded_dispatch_selection_refuses_raw_launch_without_override
 test_active_dispatch_without_task_record_is_refused

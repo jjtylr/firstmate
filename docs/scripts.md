@@ -139,6 +139,8 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-credential-source-lib.sh` | Single owner of the declared credential-source schema and its adapters, read by `fm-dispatch-resolve.sh` and checked by `fm-bootstrap.sh` |
 | `fm-dispatch-record.sh` | Append spawn, relaunch, and cleanup outcome lines to the per-dispatch record and print its summary counts |
 | `fm-dispatch-record-lib.sh` | Single owner of the per-dispatch record's path and append, shared by `fm-dispatch-resolve.sh` and `fm-dispatch-record.sh` |
+| `fm-dispatch-facts-lib.sh` | Single owner of the declared job-fact brief lines, the rule `facts` validation, and the reviewed job's builder lookup, shared by `fm-dispatch-resolve.sh` and `fm-bootstrap.sh` |
+| `fm-dispatch-replay.sh` | Replay this home's recorded dispatches against a proposed `crew-dispatch.json` and report disagreements with firstmate's filings beside a default-for-everything control, with a capped Jev request count |
 | `fm-tier.sh`            | Read a job's worker tier, list jobs due one step up, and restart a job fresh one tier up through `fm-control.sh relaunch` |
 | `fm-tier-lib.sh`        | Shared tier-table validation, profile-to-tier lookup, and checkable-failure line reader for `fm-dispatch-resolve.sh`, `fm-bootstrap.sh`, and `fm-tier.sh` |
 | `fm-quota-choose.sh`     | Choose the first candidate with known positive quota from an ordered harness:model list |

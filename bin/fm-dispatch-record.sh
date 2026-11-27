@@ -8,6 +8,7 @@
 # Usage:
 #   fm-dispatch-record.sh spawned <task> --kind <ship|scout> --project <name>
 #       --harness <h> [--model <m>] [--effort <e>] [--override <reason>]
+#       [--rule <rule_N|default>]
 #   fm-dispatch-record.sh relaunched <task> --harness <h> [--model <m>]
 #       [--effort <e>] [--via <control|spawn>]
 #   fm-dispatch-record.sh outcome <task> <merged|landed_local|report_done|not_landed>
@@ -24,7 +25,9 @@
 # spawned also copies the status and profile from the task's
 # data/<task>/dispatch-resolution.json when one exists, and says whether the
 # launched profile matches a clear resolution. An empty or "default" model or
-# effort is recorded as null.
+# effort is recorded as null. --rule records the rule firstmate filed the job
+# under, with that rule's when text from the home's config/crew-dispatch.json
+# (FM_CONFIG_OVERRIDE, else $FM_HOME/config) when it has one.
 # outcome writes only when the record already names the task, so a task that
 # predates the record, or a home that never resolved or spawned it, gains no
 # orphan outcome. It also records how many relaunched records follow the task's
@@ -68,7 +71,7 @@ command -v jq >/dev/null 2>&1 || { echo "error: jq required" >&2; exit 1; }
 
 cmd=${1:-}
 [ $# -gt 0 ] && shift
-TASK='' KIND='' PROJECT='' HARNESS='' MODEL='' EFFORT='' OVERRIDE='' OVERRIDE_SET=0
+TASK='' KIND='' PROJECT='' HARNESS='' MODEL='' EFFORT='' OVERRIDE='' OVERRIDE_SET=0 FILED_RULE=
 VIA='' OUTCOME='' FORCED=false PR='' JSON=0
 case "$cmd" in
   spawned|relaunched|outcome)
@@ -86,6 +89,7 @@ while [ $# -gt 0 ]; do
     spawned:--kind) [ $# -ge 2 ] || usage; KIND=$2; shift 2 ;;
     spawned:--project) [ $# -ge 2 ] || usage; PROJECT=$2; shift 2 ;;
     spawned:--override) [ $# -ge 2 ] || usage; OVERRIDE=$2; OVERRIDE_SET=1; shift 2 ;;
+    spawned:--rule) [ $# -ge 2 ] || usage; FILED_RULE=$2; shift 2 ;;
     spawned:--harness|relaunched:--harness) [ $# -ge 2 ] || usage; HARNESS=$2; shift 2 ;;
     spawned:--model|relaunched:--model) [ $# -ge 2 ] || usage; MODEL=$2; shift 2 ;;
     spawned:--effort|relaunched:--effort) [ $# -ge 2 ] || usage; EFFORT=$2; shift 2 ;;
@@ -108,6 +112,15 @@ case "$cmd" in
   spawned)
     case "$KIND" in ship|scout) ;; *) usage ;; esac
     [ -n "$PROJECT" ] && [ -n "$HARNESS" ] || usage
+    case "$FILED_RULE" in ''|default) ;; rule_*[!0-9]*|rule_) usage ;; rule_[1-9]*) ;; *) usage ;; esac
+    filed_when=null
+    rules_path="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/crew-dispatch.json"
+    if [ "$FILED_RULE" = default ]; then
+      filed_when='"default"'
+    elif [ -n "$FILED_RULE" ] && [ -f "$rules_path" ]; then
+      filed_when=$(jq -c --arg r "${FILED_RULE#rule_}" '(.rules // [])[($r | tonumber) - 1].when // null' "$rules_path" 2>/dev/null) || filed_when=null
+      [ -n "$filed_when" ] || filed_when=null
+    fi
     resolution=null
     res_path="$DATA/$TASK/dispatch-resolution.json"
     if [ -f "$res_path" ]; then
@@ -117,10 +130,13 @@ case "$cmd" in
     fi
     record=$(jq -cn --arg task "$TASK" --arg kind "$KIND" --arg project "$PROJECT" \
       --argjson profile "$(profile_json)" --argjson resolution "$resolution" \
-      --arg override "$OVERRIDE" --argjson override_set "$OVERRIDE_SET" '
+      --arg override "$OVERRIDE" --argjson override_set "$OVERRIDE_SET" \
+      --arg filed "$FILED_RULE" --argjson filed_when "$filed_when" '
       {event: "dispatch.spawned", task: $task, kind: $kind, project: $project,
        profile: $profile,
        override: ($override_set == 1), override_reason: (if $override_set == 1 then $override else null end),
+       filed_rule: (if $filed == "" then null else $filed end),
+       filed_rule_when: (if $filed == "" then null else $filed_when end),
        resolution_status: ($resolution.status // null),
        resolution_profile: ($resolution.profile // null),
        matches_resolution: (if ($resolution.status // null) == "clear" and ($resolution.profile | type) == "object"

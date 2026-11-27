@@ -463,7 +463,7 @@ family_for_basename() {
     fm-classify-corr-token.test.sh|\
     fm-claude-account-quota.test.sh|\
     fm-claude-stop-autoarm.test.sh|fm-cursor-harness.test.sh|\
-    fm-dispatch-record.test.sh|fm-dispatch-resolve.test.sh|fm-tier.test.sh|\
+    fm-dispatch-record.test.sh|fm-dispatch-replay.test.sh|fm-dispatch-resolve.test.sh|fm-tier.test.sh|\
     fm-extension-binding.test.sh|fm-gitignore-config.test.sh|\
     fm-no-mistakes-required.test.sh|fm-peek-remote.test.sh|\
     fm-pending-reply.test.sh|fm-pi-branch-extension.test.sh|\
@@ -1421,10 +1421,14 @@ families_for_changed_path() {
     bin/fm-claude-account-quota.sh)
       printf '%s\n' "__script__:fm-claude-account-quota.test.sh"
       ;;
-    bin/fm-dispatch-resolve.sh|bin/fm-jev-client-lib.sh)
+    bin/fm-dispatch-resolve.sh|bin/fm-jev-client-lib.sh|bin/fm-dispatch-facts-lib.sh)
       printf '%s\n' "__script__:fm-dispatch-resolve.test.sh"
+      printf '%s\n' "__script__:fm-dispatch-replay.test.sh"
       printf '%s\n' "__script__:fm-memory-write-check.test.sh"
       printf '%s\n' "__script__:fm-tier.test.sh"
+      ;;
+    bin/fm-dispatch-replay.sh)
+      printf '%s\n' "__script__:fm-dispatch-replay.test.sh"
       ;;
     bin/fm-dispatch-record.sh|bin/fm-dispatch-record-lib.sh)
       printf '%s\n' "__script__:fm-dispatch-record.test.sh"

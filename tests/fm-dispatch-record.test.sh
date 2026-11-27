@@ -60,6 +60,30 @@ rec outcome fix-a landed_local
 assert_equals '0 null' "$(tail -n 1 "$RECORD" | jq -r '"\(.relaunched) \(.relaunched_to)"')" "relaunches before the latest spawn are not counted"
 pass "outcome: relaunch count and last relaunch profile come from the record"
 
+# --- spawned --rule records the rule firstmate filed the job under -------------
+RULE_HOME="$TMP_ROOT/rule-home"
+mkdir -p "$RULE_HOME/data" "$RULE_HOME/config"
+printf '%s\n' '{"rules":[{"when":"Whole spec build.","use":{"harness":"claude"}},{"when":"Review of Claude-built work.","use":{"harness":"codex"}}]}' \
+  > "$RULE_HOME/config/crew-dispatch.json"
+rule_rec() { FM_HOME="$RULE_HOME" "$TOOL" "$@"; }
+rule_rec spawned rev-a --kind ship --project webapp --harness codex --override 'review of Claude work' --rule rule_2; code=$?
+expect_code 0 "$code" "spawned --rule exits 0"
+assert_equals 'rule_2 Review of Claude-built work. true' \
+  "$(tail -n 1 "$RULE_HOME/data/dispatch-record.jsonl" | jq -r '"\(.filed_rule) \(.filed_rule_when) \(.override)"')" \
+  "spawned records the filed rule and its when text"
+rule_rec spawned rev-b --kind scout --project webapp --harness claude --rule default
+assert_equals 'default default false' \
+  "$(tail -n 1 "$RULE_HOME/data/dispatch-record.jsonl" | jq -r '"\(.filed_rule) \(.filed_rule_when) \(.override)"')" \
+  "a job filed under default records default, with or without an override"
+rule_rec spawned rev-c --kind ship --project webapp --harness claude
+assert_equals 'null null' "$(tail -n 1 "$RULE_HOME/data/dispatch-record.jsonl" | jq -r '"\(.filed_rule) \(.filed_rule_when)"')" \
+  "a spawn without --rule records no filing"
+for bad in rule_0 rule_x review; do
+  rule_rec spawned rev-d --kind ship --project webapp --harness claude --rule "$bad" >/dev/null 2>&1; code=$?
+  expect_code 2 "$code" "spawned --rule $bad is a usage error"
+done
+pass "spawned: --rule records the filed rule with its when text"
+
 # --- usage errors -------------------------------------------------------------
 for args in "outcome fix-a done" "spawned fix-a --kind secondmate --project p --harness h" "spawned ../x --kind ship --project p --harness h" "relaunched fix-a --harness h --via elsewhere" "bogus"; do
   # shellcheck disable=SC2086 # each case is a word list on purpose
