@@ -52,7 +52,9 @@
 # hold preserves the existing timestamp, while re-holding released work starts
 # a new lifecycle. A task already closed is refused rather than reopened.
 # `--origin` also records the origin on a `Captain hold origin:` body line, which
-# `complete` and `verify` check. The reason may hold parentheses and line breaks:
+# `complete` and `verify` check. Repeating it on a call that is still open adds a
+# line, so one call can serve several origins, while re-holding released work
+# replaces them. The reason may hold parentheses and line breaks:
 # tasks-axi refuses them, so `hold` escapes them where it writes the reason and
 # readers decode them (bin/fm-hold-reason-lib.sh owns the encoding).
 # `--until` records the captain's own deferral date through `tasks-axi hold
@@ -149,8 +151,8 @@
 # has no unresolved captain call, and is refused while the origin still has an
 # open keyed status decision. With a non-empty inventory, every listed task is
 # verified durable (docs/captain-hold-lifecycle.md owns the inventory checks),
-# is never the origin itself, and, when `hold --origin` recorded one, was held
-# for this origin; a hold with no recorded origin is accepted on durability
+# is never the origin itself, and, when `hold --origin` recorded any, lists this
+# origin among them; a hold with no recorded origin is accepted on durability
 # alone and named in the output,
 # the inventory is unioned idempotently into the metadata, and every still-open
 # keyed status decision is transferred to its durable owner with a
@@ -164,6 +166,11 @@
 # `complete` and `verify` also read an entry that markdown Done retention moved
 # into the configured Done archive, where it counts only through a recorded
 # resolution; no other subcommand reads the archive.
+# An entry absent from this home's backlog and archive may have been handed to a
+# second mate, so those two also read, and never write, each local second mate
+# home registered in data/secondmates.md: exactly one must carry the task id, and
+# that row must pass the same checks. A refusal names the homes searched; remote
+# homes are not checked.
 # Metadata compatibility: the attestation keeps the historical
 # `decisions_reviewed=1` and `decision_keys=` keys, and an inventory entry that
 # names no existing task resolves through the legacy `<origin>-decision-<entry>`
@@ -282,6 +289,9 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 # shellcheck source=bin/fm-afk-contract.sh
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/fm-afk-contract.sh"
+# shellcheck source=bin/fm-secondmate-registry-lib.sh
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/fm-secondmate-registry-lib.sh"
 
 PARENT_HOLD_PUBLISHED=0
 publish_parent_hold() {  # <task-id> <occurrence> <verb> <note> [until-date]
@@ -871,11 +881,11 @@ write_hold_set_stamp() {  # <task-id> <shown-body> <timestamp> <preserve-existin
   rm -f -- "$tmp"
 }
 
-# The origin a hold was recorded for lives in the held task's own body, on a
-# line of its own, so `complete` can tell a call held for this origin from one
-# held for another. Omitting --origin leaves any existing association intact.
-body_hold_origin() {  # <decoded-task-body>
-  printf '%s\n' "$1" | sed -n 's/^Captain hold origin: \(.*\)$/\1/p' | head -1
+# The origins a hold was recorded for live in the held task's own body, one per
+# line, so `complete` can tell a call held for this origin from one held for
+# others. Omitting --origin leaves any existing association intact.
+body_hold_origins() {  # <decoded-task-body>
+  printf '%s\n' "$1" | sed -n 's/^Captain hold origin: \(.*\)$/\1/p'
 }
 
 task_identity() {
@@ -889,16 +899,27 @@ task_identity() {
   printf '%s' "$id"
 }
 
-write_hold_origin() {  # <task-id> <shown-body> <origin>
-  local id=$1 body=$2 origin=$3 stamp rest new_body tmp
+# With <keep> 1 (the call was already open) the new origin joins the ones above
+# the newest resolution record; a line below it belongs to an earlier,
+# already-resolved lifecycle and is dropped.
+write_hold_origin() {  # <task-id> <shown-body> <origin> <keep-0-or-1>
+  local id=$1 body=$2 origin=$3 keep=$4 stamp rest new_body tmp kept=''
   body=$(decode_shown_value "$body") \
     || fail "could not decode the existing body for $id"
   stamp=$(printf '%s\n' "$body" | sed -n 1p)
   [ -n "$(body_hold_set_timestamp "$body")" ] \
     || fail "task $id lost its hold-set stamp before its origin was recorded"
+  if [ "$keep" = 1 ]; then
+    kept=$(printf '%s\n' "$body" | awk -v added="Captain hold origin: $origin" '
+      /^Resolution recorded by fm-(captain|decision)-hold\.$/ { exit }
+      /^Captain hold origin: / && $0 != added
+    ')
+  fi
   rest=$(printf '%s\n' "$body" | sed 1d | awk '!/^Captain hold origin: /' \
     | awk 'NF || started { started = 1; print }')
-  new_body=$(printf '%s\nCaptain hold origin: %s' "$stamp" "$origin")
+  new_body=$stamp
+  [ -z "$kept" ] || new_body=$(printf '%s\n%s' "$new_body" "$kept")
+  new_body=$(printf '%s\nCaptain hold origin: %s' "$new_body" "$origin")
   if [ -n "$rest" ]; then
     new_body=$(printf '%s\n\n%s' "$new_body" "$rest")
   fi
@@ -1056,6 +1077,75 @@ archived_entry() {  # <origin-or-empty> <entry>; prints the archived id
   return 1
 }
 
+# --- calls handed to a second mate -------------------------------------------
+#
+# bin/fm-backlog-handoff.sh moves a row into a second mate home's backlog and
+# leaves the originating inventory naming it. Only the completion gate follows
+# it there, and only to read.
+
+# Registered second mate homes on this machine that carry their own marker, one
+# "<id><TAB><resolved home>" per line.
+local_secondmate_homes() {
+  local reg="$DATA/secondmates.md" line home
+  [ -f "$reg" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in "- "*) ;; *) continue ;; esac
+    secondmate_registry_parse_line "$line" || continue
+    [ "$SECONDMATE_REGISTRY_REMOTE" = 0 ] || continue
+    case "$SECONDMATE_REGISTRY_HOME" in /*) ;; *) continue ;; esac
+    home=$(CDPATH='' cd -- "$SECONDMATE_REGISTRY_HOME" 2>/dev/null && pwd -P) || continue
+    [ "$(cat "$home/.fm-secondmate-home" 2>/dev/null)" = "$SECONDMATE_REGISTRY_ID" ] || continue
+    printf '%s\t%s\n' "$SECONDMATE_REGISTRY_ID" "$home"
+  done < "$reg" | LC_ALL=C sort -u
+}
+
+# 0 when the addressed backlog or its Done archive carries the row, 3 when
+# neither does; any other status means that could not be established.
+backlog_carries_row() {  # <task-id>
+  local status=0
+  task_show "$1" && return 0
+  printf '%s\n' "$TASK_SHOW_OUTPUT" | grep -q '^code: NOT_FOUND$' || return 1
+  task_show_archived "$1" || status=$?
+  [ "$status" -ne 1 ] || return 3
+  return "$status"
+}
+
+# Run one read-only backlog helper against a second mate home's records.
+in_mate_home() {  # <home> <function> [args...]
+  local DATA="$1/data"
+  shift
+  "$@"
+}
+
+# Print the one local second mate home carrying <task-id>; otherwise refuse,
+# naming the homes searched.
+secondmate_home_carrying() {  # <task-id>
+  local id=$1 mate home status searched='' found='' found_home='' count=0
+  while IFS=$'\t' read -r mate home; do
+    [ -n "$mate" ] || continue
+    searched="${searched}${searched:+, }$mate ($home)"
+    status=0
+    (in_mate_home "$home" backlog_carries_row "$id") </dev/null || status=$?
+    case "$status" in
+      0)
+        count=$((count + 1))
+        found="${found}${found:+, }$mate ($home)"
+        found_home=$home
+        ;;
+      3) ;;
+      124) exit 124 ;;
+      *) fail "could not read the backlog of second mate $mate ($home) while looking for captain-held task $id" ;;
+    esac
+  done <<EOF
+$(local_secondmate_homes)
+EOF
+  case "$count" in
+    1) printf '%s\n' "$found_home" ;;
+    0) fail "captain-held task $id is in none of the second mate homes searched: ${searched:-none registered on this machine}; remote second mate homes were not checked" ;;
+    *) fail "captain-held task $id is in more than one second mate home: $found; remote second mate homes were not checked" ;;
+  esac
+}
+
 # Resolve one entry and verify the row it names is durably captain-held. A
 # resolution failure that is not the read bound keeps resolve_entry's own
 # status - its stderr already named the entry; 124 means the backend never
@@ -1064,6 +1154,7 @@ archived_entry() {  # <origin-or-empty> <entry>; prints the archived id
 # origin was recorded, so completion can disclose the legacy fallback.
 verify_entry_durable() {  # <origin-or-empty> <entry>; prints "<id> <how> <origin-state>"
   local origin=$1 entry=$2 resolved resolve_status=0 id how stored origin_state=unrecorded origin_id stored_id resolve_err archived archived_status
+  local mate_home='' mate_note='' matched status candidate
   # The origin task is never its own captain-call inventory: it is the work the
   # calls were found in, so accepting it would let a refused hold look recorded.
   if [ -n "$origin" ] && [ "$origin" != "$BINDING_ANY" ] && [ "$entry" = "$origin" ]; then
@@ -1081,6 +1172,19 @@ verify_entry_durable() {  # <origin-or-empty> <entry>; prints "<id> <how> <origi
     elif [ "$archived_status" -eq 124 ]; then
       rm -f -- "$resolve_err"
       exit 124
+    # Only an id this home positively lacks may have been handed over.
+    elif ! task_show "$entry" \
+      && printf '%s\n' "$TASK_SHOW_OUTPUT" | grep -q '^code: NOT_FOUND$'; then
+      status=0
+      mate_home=$(secondmate_home_carrying "$entry" 2>>"$resolve_err") || status=$?
+      if [ "$status" -eq 0 ]; then
+        mate_note=" (read from second mate home $mate_home)"
+        resolved="$entry secondmate"
+        resolve_status=0
+      else
+        cat "$resolve_err" >&2
+        [ "$status" -ne 124 ] || resolve_status=124
+      fi
     else
       cat "$resolve_err" >&2
     fi
@@ -1095,10 +1199,20 @@ verify_entry_durable() {  # <origin-or-empty> <entry>; prints "<id> <how> <origi
   fi
   id=${resolved%% *}
   how=${resolved##* }
-  verify_hold_durable "$id"
+  if [ -n "$mate_home" ]; then
+    status=0
+    TASK_SHOW_OUTPUT=$(in_mate_home "$mate_home" verify_hold_durable "$id" \
+      && printf '%s' "$TASK_SHOW_OUTPUT") || status=$?
+    if [ "$status" -ne 0 ]; then
+      printf 'fm-captain-hold: captain-held task %s was read from second mate home %s\n' "$id" "$mate_home" >&2
+      exit "$status"
+    fi
+  else
+    verify_hold_durable "$id"
+  fi
   id=$(show_field_value "$TASK_SHOW_OUTPUT" id)
   validate_slug backend-task-id "$id"
-  stored=$(body_hold_origin "$(decode_shown_value "$(show_field "$TASK_SHOW_OUTPUT" body)")")
+  stored=$(body_hold_origins "$(decode_shown_value "$(show_field "$TASK_SHOW_OUTPUT" body)")")
   origin_id=$origin
   if [ -n "$origin" ] && [ "$origin" != "$BINDING_ANY" ]; then
     origin_id=$(task_identity "$origin") || exit $?
@@ -1106,10 +1220,15 @@ verify_entry_durable() {  # <origin-or-empty> <entry>; prints "<id> <how> <origi
   fi
   if [ -n "$stored" ]; then
     if [ -n "$origin" ] && [ "$origin" != "$BINDING_ANY" ]; then
-      stored_id=$(task_identity "$stored") || exit $?
-      if [ "$stored_id" != "$origin_id" ]; then
-        fail "captain-held task $id was held for origin $stored, not $origin; hold a task for $origin or list the right one"
-      fi
+      matched=0
+      while IFS= read -r candidate <&3; do
+        stored_id=$(task_identity "$candidate") || exit $?
+        [ "$stored_id" != "$origin_id" ] || { matched=1; break; }
+      done 3<<EOF
+$stored
+EOF
+      [ "$matched" = 1 ] \
+        || fail "captain-held task $id was held for origin $(printf '%s\n' "$stored" | paste -sd, -), not $origin; hold a task for $origin or list the right one$mate_note"
     fi
     origin_state=recorded
   fi
@@ -1118,7 +1237,7 @@ verify_entry_durable() {  # <origin-or-empty> <entry>; prints "<id> <how> <origi
 
 command_hold() {
   local id=${1:-} title='' reason='' repo='' origin='' until='' show state existing_title body='' hold_kind hold_set occurrence
-  local existing_hold_kind='' existing_held='' preserve_hold_set=0 stored_reason original_body='' hold_status=0
+  local existing_hold_kind='' existing_held='' preserve_hold_set=0 stored_reason original_body='' hold_status=0 call_open=0
   [ "$#" -ge 1 ] || { usage >&2; exit 2; }
   shift
   while [ "$#" -gt 0 ]; do
@@ -1159,6 +1278,8 @@ command_hold() {
       || fail "task $id is already closed; a new captain call needs its own task"
     existing_hold_kind=$(show_field_value "$show" hold_kind)
     existing_held=$(show_field_value "$show" held)
+    # A date-expired hold keeps its captain annotation and is still open.
+    [ "$existing_hold_kind" != captain ] || call_open=1
     if [ "$existing_hold_kind" = captain ] && [ "$existing_held" = yes ]; then
       preserve_hold_set=1
     fi
@@ -1226,7 +1347,7 @@ command_hold() {
   occurrence=$(( $(resolution_record_count "$(show_field "$show" body)") + 1 ))
   publish_parent_hold "$id" "$occurrence" needs-decision "$reason" "$until"
   if [ -n "$origin" ]; then
-    write_hold_origin "$id" "$(show_field "$show" body)" "$origin" || exit $?
+    write_hold_origin "$id" "$(show_field "$show" body)" "$origin" "$call_open" || exit $?
   fi
   printf '%s\n' "$id"
 }

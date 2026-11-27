@@ -25,7 +25,7 @@ This document records the deterministic mechanism, structured surfaces, compatib
 A decision is not a separate thing in this system.
 It is an ordinary backlog task held for the captain, and the task id is the identity every surface and channel uses.
 `bin/fm-captain-hold.sh` is the only lifecycle command layered on that primitive.
-The command addresses the active home's configured data directory.
+The command addresses the active home's configured data directory; the one exception is the completion gate's [read of second mate homes](#calls-handed-to-a-second-mate).
 As a result, the existing backlog remains the only durable work database, and a secondmate-owned captain call stays in the secondmate home.
 It never reads report bodies, review artifacts, terminal output, or chat.
 
@@ -55,7 +55,7 @@ It works in this order:
 3. It invokes the underlying tasks-axi hold operation.
 4. It verifies the captain-hold annotations and timestamp.
 5. In a secondmate home, it publishes the verified hold to the parent channel.
-6. When `--origin` is supplied, it records the origin on the task, replacing any previous association only after the backend hold succeeds.
+6. When `--origin` is supplied, it records the origin on the task only after the backend hold succeeds.
 
 Publishing the stamp first ensures a snapshot cannot observe a newly captain-held task without the timestamp that defines its age.
 
@@ -63,19 +63,22 @@ Repeat and edge cases:
 
 - Retries of an active hold preserve its hold-set timestamp.
 - Re-holding released work starts a new timestamped lifecycle.
+- `--origin` on a call that is still open, including a date-expired one, adds an origin and keeps the earlier ones, so one held task can serve every origin that raised its question.
+  `--origin` on released or new work replaces any earlier association.
+  An origin recorded below the newest resolution record belongs to that resolved lifecycle, so retrying a re-hold whose origin write failed still replaces it.
 - A closed task is refused rather than reopened.
 - `--until` stores the captain's own deferral date through tasks-axi's date gate.
 - `--origin` resolves the backend origin identity before writing the hold-set stamp.
-  The association lives on its own `Captain hold origin:` body line; [completion inventory checks](#recording-a-reviewed-inventory-complete) own how it is verified.
+  Each association lives on its own `Captain hold origin:` body line; [completion inventory checks](#recording-a-reviewed-inventory-complete) own how it is verified.
   The ordering above prevents an interrupted or refused backend hold from publishing the new association, even when an old captain hold is still active or date-expired.
 - If the backend hold fails, `hold` attempts to restore the previous body.
-  If restoration also fails, the new stamp can remain, but the previous origin is unchanged.
-  If the subsequent origin write fails, the command returns nonzero, but the successful captain hold and its stamp remain with the previous association (or with no recorded origin for a new task).
+  If restoration also fails, the new stamp can remain, but the recorded origins are unchanged.
+  If the subsequent origin write fails, the command returns nonzero, but the successful captain hold and its stamp remain with the previous origins (or with no recorded origin for a new task).
   Parent publication is attempted before that write in a secondmate home, so an origin-write failure cannot skip delivery; a channel failure retains the existing `actionable:` diagnostic.
   Re-running `hold` retries origin publication without duplicating the parent decision.
 - If an incomplete hold leaves a stamp above an earlier answer, the [completion durability boundary](#recording-a-reviewed-inventory-complete) applies.
-  When the task already records its previous origin, replaying the earlier `answer --release` can remove that stamp, and normal work completion can retain the answer, but neither transition changes the stored origin: neither can certify the failed move's new origin.
-  Re-running `hold` completes the move, and re-running the same `answer --release` also normalizes a release interrupted before its stamp was removed.
+  When the task already records a previous origin, replaying the earlier `answer --release` can remove that stamp, and normal work completion can retain the answer, but neither transition changes the stored origins: neither can certify the failed hold's new origin.
+  Re-running `hold` records the new origin, and re-running the same `answer --release` also normalizes a release interrupted before its stamp was removed.
 - The reason may contain parentheses, semicolons, quotes, and line breaks.
   [`bin/fm-hold-reason-lib.sh`](../bin/fm-hold-reason-lib.sh) owns the storage encoding and compatibility rules; [`bin/fm-tasks-axi.sh --help`](../bin/fm-tasks-axi.sh) owns the public read commands and output contract.
 
@@ -129,12 +132,23 @@ A Done task still requires a recorded resolution, but is not subject to that sta
 An answered entry that markdown Done retention moved into the configured Done archive still counts, while an archived close with no recorded answer does not.
 The origin is never its own inventory entry, so a hold that failed cannot be vouched for by the origin row.
 For a historical inventory that names its own origin, hold a separate captain task with `--origin`, replace only the invalid entry in the final `decision_keys=` line of the origin metadata with that task id while preserving all other entries, and re-run `complete`.
-An entry whose recorded origin differs from the one being completed is refused, comparing backend identities rather than alias spellings.
+An entry that records origins, none of them the one being completed, is refused, comparing backend identities rather than alias spellings.
 An entry with no recorded origin, such as a hold made before origins were recorded or without `--origin`, is accepted on the durability check alone and named in the output.
 
 With a non-empty inventory, `complete` appends a `captain-held [key=<key>]` transfer event for every still-open keyed status decision.
 The event names the reviewed inventory.
 `bin/fm-classify-lib.sh` recognizes it as closing the live status copy without claiming that the captain has answered it.
+
+### Calls handed to a second mate
+
+`bin/fm-backlog-handoff.sh` moves a held row into a second mate home's backlog and leaves the originating inventory naming it.
+When a listed id is positively absent from this home's backlog and Done archive, `complete` and `verify` look for that exact id in the backlog and Done archive of each second mate home that `data/secondmates.md` registers on this machine and that carries its own `.fm-secondmate-home` marker.
+Those homes are only read.
+
+- Exactly one home must carry the row, and it must pass the durability and origin checks above.
+- A row found in no home or in more than one is refused, naming the homes.
+- A registered home whose backlog cannot be read refuses the entry, because exactly one cannot then be established.
+- Remote second mate homes are not checked, so a call handed to one is still refused and the refusal says so.
 
 ### Checking before scout teardown (`verify`)
 
@@ -565,6 +579,7 @@ The suite does not test the accepted merge-to-cleanup re-hold window or asynchro
 - The recorded-answer guard holds: a bare `tasks-axi done` close fails `verify` until `answer` records the captain's word, and an ordinary finished task cannot be dressed up as an answered call.
 - `test_hold_origins_follow_backend_holds` exercises lookup, backend-hold, and origin-write failures for new, active, and released holds, including secondmate publication and retry deduplication.
 - `test_interrupted_origin_move_does_not_inherit_the_previous_answer` exercises failed restoration, TERM interruption, active and expired holds, earlier-answer replay, and normal released-work completion against the [hold failure semantics](#creating-a-hold-hold) and inventory checks above.
+- `test_handed_over_hold_still_satisfies_the_gate`, `test_handed_over_hold_refuses_without_one_durable_row`, and `test_one_open_call_serves_every_origin_it_was_held_for` in `tests/fm-captain-hold-teardown.test.sh` move calls with the real handoff and exercise the [second mate read](#calls-handed-to-a-second-mate), its refusals, and a call held for two origins.
 - An answered call that markdown Done retention moved into the Done archive still passes `verify`, `complete`, and scout teardown, while an archived close carrying no recorded answer still refuses teardown, and an attested call found nowhere is refused by name.
 
 ### Answers, stamps, and deferral
